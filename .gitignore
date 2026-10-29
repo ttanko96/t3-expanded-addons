@@ -1,0 +1,4 @@
+﻿# out-of-tree developer builds (dev shim)
+/dev/build/
+/docs/INVENTORY.md
+/docs/API_GAPS.md

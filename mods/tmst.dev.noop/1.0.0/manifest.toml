@@ -1,0 +1,24 @@
+format_version = 5
+id = "tmst.dev.noop"
+version = "1.0.0"
+name = "TMST add-on test"
+author = "TMST"
+description = "Developer check of the TMST add-on: shows that its code is in the game. It changes nothing in the game; with it on, the log says so. Removed before the first release."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-00402"
+exe_sha256 = "fbda8b68e5799dbef4af39a161783bc670c15b0aa0e87dce65e210717da19b8c"
+
+[[feature]]
+id = "noop"
+name = "TMST add-on test (does nothing)"
+description = "Writes two lines to the log (\"TMST: tmst.dev.noop is active\") and changes nothing else."
+group = "TMST"
+default_enabled = false
+
+[[plugin]]
+feature = "noop"
+id = "tmst.dev.noop"
