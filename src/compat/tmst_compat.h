@@ -17,6 +17,12 @@ enum {
     TMST_NEED_GAME_OPTIONS = 1u << 4,    /* tekken3_game_options_add */
 };
 
+/* The Expanded's stage engine in the upper VRAM half (tekken3_arcade_stages.c,
+ * found at link time, absent = nothing taken): nonzero when the rectangle
+ * holds its pixels now; its generation changes whenever it uploads. */
+int tmst_compat_high_vram_taken(int x, int y, int w, int h);
+unsigned tmst_compat_high_vram_generation(void);
+
 /* The TMST_NEED_* this build found (src/compat/tmst_features.cmake). */
 unsigned tmst_compat_available(void);
 /* The names of the needs in `mask`, for the log. */

@@ -13,6 +13,10 @@ set(TMST_TESTED_WITH "v1.4.1")
 # C sources linked into the game (psx-runtime).
 set(TMST_SOURCES
     src/core/tmst_core.c
+    src/core/tmst_font.c
+    src/core/tmst_overlay.c
+    src/core/tmst_audio.c
+    src/core/tmst_music.c
     src/compat/tmst_compat.c
     src/dev/tmst_noop.c
 )
@@ -24,6 +28,16 @@ set(TMST_INCLUDE_DIRS
 # Symbols wrapped with -Wl,--wrap, each "symbol|file defining __wrap_symbol".
 # Only symbols the Expanded does not wrap itself (docs/COMPAT.md).
 set(TMST_WRAPS
+    "gpu_ws_prepass_linked_list|src/core/tmst_overlay.c"
+    "psx_sdl_audio_open|src/core/tmst_audio.c"
+)
+
+# Guest routines the Expanded wraps itself, each "symbol|file defining
+# __wrap_symbol": ours runs first and calls __tmst_chain_symbol (theirs).
+# The build renames their wrapper (dev/tmst_chain.py); on a release that
+# does not wrap the symbol, it wraps it for us instead.
+set(TMST_CHAINS
+    "func_8006AE14|src/core/tmst_music.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).

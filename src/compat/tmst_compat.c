@@ -3,6 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Weak: a release without them still links, and nothing counts as taken. */
+extern int tekken3_stage_high_vram_used(int x, int y, int w, int h) __attribute__((weak));
+extern unsigned tekken3_stage_high_vram_generation(void) __attribute__((weak));
+
+int tmst_compat_high_vram_taken(int x, int y, int w, int h) {
+    return tekken3_stage_high_vram_used ? tekken3_stage_high_vram_used(x, y, w, h) : 0;
+}
+unsigned tmst_compat_high_vram_generation(void) {
+    return tekken3_stage_high_vram_generation ? tekken3_stage_high_vram_generation() : 0;
+}
+
 unsigned tmst_compat_available(void) {
     unsigned m = 0;
 #ifdef TMST_HAS_ACTIVATION_PLUGIN

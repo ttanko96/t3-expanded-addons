@@ -12,7 +12,7 @@ The Expanded's tracked files are never touched. The setup must have run once
 (generated/ holds the game made from the player's disc).
 """
 from __future__ import annotations
-import argparse, os, re, shutil, subprocess, sys
+import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 
 DEV = Path(__file__).resolve().parent
@@ -74,6 +74,27 @@ def configure_args(toolchain, source: Path, build: Path, with_addon: bool) -> li
     return args
 
 
+def chains_listed() -> set[str]:
+    text = (ADDON / 'addon.cmake').read_text(encoding='utf-8')
+    m = re.search(r'set\(\s*TMST_CHAINS\b(.*?)\)', text, re.S)
+    body = re.sub(r'#.*', '', m.group(1)) if m else ''
+    return {t.strip('"').split('|')[0] for t in body.split()}
+
+
+def forget_chains(build: Path, keep: set[str]) -> None:
+    """Objects whose wrapper dev/tmst_chain.py renamed, for symbols no longer
+    chained (all of them without the add-on): deleted, so that Ninja compiles
+    them again as the Expanded wrote them."""
+    state_file = build / 'tmst_chain_state.json'
+    try: state = json.loads(state_file.read_text(encoding='utf-8'))
+    except (OSError, ValueError): return
+    for sym in [s for s in state if s not in keep]:
+        for obj in state.pop(sym):
+            Path(obj).unlink(missing_ok=True)
+            print(f'TMST build: {Path(obj).name} back to the Expanded\'s own (no chain on {sym})')
+    state_file.write_text(json.dumps(state, indent=1), encoding='utf-8')
+
+
 def run(args, env):
     print('>', ' '.join(str(a) for a in args), flush=True)
     if subprocess.run(args, env=env).returncode:
@@ -118,13 +139,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('ref', nargs='?', help='a tag, branch or commit of the Expanded (default: the game you play)')
     parser.add_argument('--without', action='store_true', help='build without the add-on')
+    parser.add_argument('--debug', action='store_true',
+                        help='a debug build of the installed Expanded (debug server: screenshots, input) in dev/build/debug')
     a = parser.parse_args()
 
     setup = expanded_setup()
     toolchain, env = environment(setup)
     with_addon = not a.without
+    keep = chains_listed() if with_addon else set()
+    if a.debug:
+        build = DEV / 'build' / 'debug'
+        forget_chains(build, keep)
+        args = configure_args(toolchain, ROOT, build, with_addon)
+        args = [x for x in args if not x.startswith('-DPSX_DEBUG_TOOLS=')] + ['-DPSX_DEBUG_TOOLS=ON']
+        run(args, env)
+        run([args[0], '--build', str(build), '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
+        print(f'TMST build: debug build in {build}')
+        return
     if a.ref:
         source, build = worktree(a.ref)
+        forget_chains(build, keep)
         run(configure_args(toolchain, source, build, with_addon), env)
         run([configure_args(toolchain, source, build, with_addon)[0], '--build', str(build),
              '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
@@ -135,6 +169,7 @@ def main() -> None:
         fail('no build-release yet: run Setup Tekken 3 first')
     # The framework empties build-release/mods at every link: the Expanded's
     # setup keeps the player's mod settings and data aside meanwhile.
+    forget_chains(build, keep)
     with setup.kept_mods():
         run(configure_args(toolchain, ROOT, build, with_addon), env)
         run([configure_args(toolchain, ROOT, build, with_addon)[0], '--build', str(build),

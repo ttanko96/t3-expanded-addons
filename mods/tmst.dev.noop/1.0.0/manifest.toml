@@ -15,7 +15,7 @@ exe_sha256 = "fbda8b68e5799dbef4af39a161783bc670c15b0aa0e87dce65e210717da19b8c"
 [[feature]]
 id = "noop"
 name = "TMST add-on test (does nothing)"
-description = "Writes two lines to the log (\"TMST: tmst.dev.noop is active\") and changes nothing else."
+description = "Shows a small TMST ADD-ON label in the top left corner, beeps once when the sound starts and writes to the log. Nothing else changes."
 group = "TMST"
 default_enabled = false
 
