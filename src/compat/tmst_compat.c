@@ -14,6 +14,18 @@ unsigned tmst_compat_high_vram_generation(void) {
     return tekken3_stage_high_vram_generation ? tekken3_stage_high_vram_generation() : 0;
 }
 
+/* psxrecomp/runtime/src/gpu.c: the half's 1024 x 512 pixels, NULL before
+ * psx_mod_gpu_high_vram_enable(). */
+extern const uint16_t *gpu_high_vram_pixels(void) __attribute__((weak));
+
+int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out) {
+    const uint16_t *half = gpu_high_vram_pixels ? gpu_high_vram_pixels() : NULL;
+    if (!half || x < 0 || y < 512 || w <= 0 || h <= 0 || x + w > 1024 || y + h > 1024) return 0;
+    for (int row = 0; row < h; row++)
+        memcpy(out + (size_t)row * (size_t)w, half + (size_t)(y - 512 + row) * 1024u + (size_t)x, (size_t)w * 2);
+    return 1;
+}
+
 unsigned tmst_compat_available(void) {
     unsigned m = 0;
 #ifdef TMST_HAS_ACTIVATION_PLUGIN

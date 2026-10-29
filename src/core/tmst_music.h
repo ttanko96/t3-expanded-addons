@@ -11,8 +11,8 @@ extern "C" {
  * -1 for silence (the call is skipped), or `id` itself to let it be. */
 typedef int (*TmstMusicHook)(int id);
 
-/* One hook (the Jukebox); a second registration replaces the first. */
-void tmst_music_set_hook(TmstMusicHook hook);
+/* Up to 4 hooks, run in the order added; the first -1 skips the call. */
+int tmst_music_add_hook(TmstMusicHook hook);
 
 #ifdef __cplusplus
 }

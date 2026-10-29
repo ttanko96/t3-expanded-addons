@@ -4,6 +4,7 @@
  * fixed in this folder only (docs/COMPAT.md). */
 #ifndef TMST_COMPAT_H
 #define TMST_COMPAT_H
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +23,9 @@ enum {
  * holds its pixels now; its generation changes whenever it uploads. */
 int tmst_compat_high_vram_taken(int x, int y, int w, int h);
 unsigned tmst_compat_high_vram_generation(void);
+/* The upper half's pixels of a rectangle (y 512..1023) into `out` (w x h);
+ * 0 when this runtime cannot read them back (gpu_high_vram_pixels). */
+int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out);
 
 /* The TMST_NEED_* this build found (src/compat/tmst_features.cmake). */
 unsigned tmst_compat_available(void);

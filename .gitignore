@@ -2,3 +2,5 @@
 /dev/build/
 /docs/INVENTORY.md
 /docs/API_GAPS.md
+# the add-on's data made on the player's machine (setup): never committed
+/workspace/

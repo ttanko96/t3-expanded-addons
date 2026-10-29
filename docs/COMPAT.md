@@ -28,11 +28,20 @@
 | setup internals: `tools()`, `kept_mods`, `build_game()` arguments | `dev/build.py` | `check_expanded.py` |
 | `git describe` of the Expanded folder | version guard (`tmst_guard`) | – |
 | symbols the Expanded wraps itself (we must not wrap them again) | `addon.cmake` `TMST_WRAPS` | build (duplicate `__wrap_` = link error) |
-| chained symbols: the Expanded's `__wrap_<sym>` renamed in its compiled object before the link | `addon.cmake` `TMST_CHAINS`, `dev/tmst_chain.py` | build (missing object = error naming the symbol); a release that stops wrapping one: we wrap it, `tmst_chain_bridge.c` |
+| chained symbols: the Expanded's `__wrap_<sym>` renamed in its compiled object before the link | `addon.cmake` `TMST_CHAINS`, `dev/tmst_chain.py` | build (missing object = error naming the symbol); wrapped or not is read from psx-runtime's link options at configure time; not wrapped (another release, TTT1 Characters off): we wrap it and our file's `TMST_BRIDGE_<sym>` part calls `__real_<sym>` |
 | runtime functions we wrap: `gpu_ws_prepass_linked_list` (start of each GPU list DMA), `psx_sdl_audio_open` (audio output) | `src/core/tmst_overlay.c`, `tmst_audio.c` | build (link error if renamed) |
 | upper VRAM: `psx_mod_gpu_high_vram_*`, packet memory as trusted source; area x 0..511, y 768..1023 | `src/core/tmst_overlay.c` | `TMST_HAS_HIGH_VRAM_UPLOAD` |
 | `tekken3_stage_high_vram_used/generation()` (weak) | `src/compat/tmst_compat.c` | absent = nothing taken |
 | guest: 0x8006AE14 = play music (a0 = id) | `src/core/tmst_music.c` | retail, stable |
+| main menu: the working list's address in the menu's LUI/ORI (0x800DB5D0/D8, patched by the Expanded), its layout (count +4, rows of 8 from +16), the Expanded's menu code in its `__wrap_func_80028CD4` (seen only with its own rows: ours are in the list in phase 1 only) | `src/core/tmst_menu.c` | retail + the Expanded's patch, checked by the menu entry's first word |
+| `tekken3_outfits_input` (every pad read, main.cpp), chained | `src/core/tmst_input.c` | build |
+| `spu_render`, `spu_set_host_mix_volume` (the Expanded's TTT1 voices wrap both), chained; `__real_spu_set_host_mix_volume` to mute the game's music | `src/core/tmst_spu.c` | build |
+| `gpu_high_vram_pixels()` (weak): borrowing upper VRAM on menus | `src/compat/tmst_compat.c` | absent = no borrowing |
+| `tekken3_guest_key()`, `tekken3_ttt1_grid_character()` (weak), `mods/ttt1/<Key>-T3-label.txt` | `src/jukebox/tmst_jukebox.c` | absent = stock fighters only |
+| OpenGL samples the upper half only if it exists before the context: `tmst_overlay_prepare()` at every drawing mod's activation | `src/core/tmst_overlay.c` | – |
+| the selector's title font in VRAM: page (832,0) 4 bpp, palette (336,505), 14 x 24 cells from u 172 (retail) | Jukebox banner and category line | retail, stable |
+| runtime disc reader `iso_open`/`iso_read_*` (psxrecomp), `disc.cfg` beside the game, `disc/SLUS_004.02` (setup's copy, for the title lists) | Jukebox | link / file present |
+| `memcard_debug_info()`: `jukebox.txt` beside the memory card | Jukebox | link |
 
 ## Known limits of the dev shim
 

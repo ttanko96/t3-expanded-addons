@@ -21,6 +21,11 @@ int tmst_upstream_tested(void);
  * switches the mod off (logged, never a crash). Returns 1 to go on. */
 int tmst_guard(const char *mod, unsigned needs);
 
+/* Defined by Unified Character Select (tmst.ui.unified-select) once it
+ * exists: nonzero while its single grid is on. Other mods declare it weak and
+ * read it only when it is linked (the Jukebox hides its L2 / R2 hint then). */
+int tmst_unified_select_active(void) __attribute__((weak));
+
 #ifdef __cplusplus
 }
 #endif

@@ -3,8 +3,8 @@ makes, on the player's machine and from the player's own discs, what the
 add-on's mods need. Nothing it makes is ever committed.
 
 Each step is a function in STEPS: it checks whether its output is current
-(a version stamp under workspace/tmst/) and does its work only when not.
-P2: no steps yet (the skeleton only).
+(a version stamp under addons/tmst/workspace/) and does its work only when not.
+Steps: the Jukebox's title lists.
 """
 from __future__ import annotations
 import argparse, json, sys
@@ -12,7 +12,9 @@ from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
 ROOT = ADDON.parents[1]                     # <expanded>/addons/tmst/setup
-STATE = ROOT / 'workspace' / 'tmst'
+# The add-on's own data: in its folder, which the Expanded's setup (its
+# free-space step deletes workspace/) never touches.
+STATE = ADDON / 'workspace'
 
 
 def log(message: str) -> None:
@@ -31,7 +33,15 @@ def save_stamp(name: str, data: dict) -> None:
     (STATE / f'{name}.json').write_text(json.dumps(data, indent=1), encoding='utf-8')
 
 
-STEPS: list = []
+def jukebox_titles() -> None:
+    """The Jukebox's title lists (tools/jukebox_titles.py): every run, since
+    it only adds lines for music that came since."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import jukebox_titles as titles
+    titles.update(ROOT)
+
+
+STEPS: list = [jukebox_titles]
 
 
 def main() -> int:

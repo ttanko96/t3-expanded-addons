@@ -17,8 +17,12 @@ set(TMST_SOURCES
     src/core/tmst_overlay.c
     src/core/tmst_audio.c
     src/core/tmst_music.c
+    src/core/tmst_menu.c
+    src/core/tmst_input.c
+    src/core/tmst_spu.c
     src/compat/tmst_compat.c
     src/dev/tmst_noop.c
+    src/jukebox/tmst_jukebox.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -32,17 +36,24 @@ set(TMST_WRAPS
     "psx_sdl_audio_open|src/core/tmst_audio.c"
 )
 
-# Guest routines the Expanded wraps itself, each "symbol|file defining
-# __wrap_symbol": ours runs first and calls __tmst_chain_symbol (theirs).
-# The build renames their wrapper (dev/tmst_chain.py); on a release that
-# does not wrap the symbol, it wraps it for us instead.
+# Symbols the Expanded may wrap itself (guest routines and runtime
+# functions), each "symbol|file defining __wrap_symbol": ours runs first and
+# calls __tmst_chain_symbol (theirs). Wrapped in the build: the build renames
+# their wrapper (dev/tmst_chain.py). Not wrapped there (another release, or
+# TTT1 Characters off): we wrap it, and the file defines __tmst_chain_ under
+# TMST_BRIDGE_symbol as a call of __real_symbol.
 set(TMST_CHAINS
     "func_8006AE14|src/core/tmst_music.c"
+    "func_80028CD4|src/core/tmst_menu.c"
+    "tekken3_outfits_input|src/core/tmst_input.c"
+    "spu_render|src/core/tmst_spu.c"
+    "spu_set_host_mix_volume|src/core/tmst_spu.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
 set(TMST_PACKAGES
     tmst.dev.noop
+    tmst.jukebox
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).

@@ -47,7 +47,8 @@ static void activate(void) {
     on = tmst_guard("tmst.dev.noop", TMST_NEED_ACTIVATION | TMST_NEED_VBLANK | TMST_NEED_HIGH_VRAM);
     if (!on) return;
     tmst_log("tmst.dev.noop is active");
-    tmst_music_set_hook(music);
+    tmst_overlay_prepare();
+    tmst_music_add_hook(music);
     tmst_fill_argb(label, LABEL_W, LABEL_H, 0, 0, LABEL_W, LABEL_H, 0xFF202040u);
     tmst_text_argb(label, LABEL_W, LABEL_H, 3, 2, "TMST ADD-ON", 1, 0xFFFFD040u);
     atomic_store(&beep_left, 13230);    /* 0.3 s at 44.1 kHz */

@@ -1,6 +1,5 @@
 /* TMST core: text into ARGB pictures, with the add-on's own 5x7 font (drawn
- * for TMST, upper case, digits and ASCII punctuation; lower case is shown in
- * upper case). Each character is a 6x8 cell, times `scale`. */
+ * for TMST: ASCII 32..126). Each character is a 6x8 cell, times `scale`. */
 #ifndef TMST_FONT_H
 #define TMST_FONT_H
 #include <stdint.h>
