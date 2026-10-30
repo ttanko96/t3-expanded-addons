@@ -75,9 +75,6 @@ default). Restart the game after switching a mod. "TMST add-on test" is a develo
   ```
   Deleting the folder first breaks the Expanded's Update & play: put it back and rebuild without it.
 
-A Hungarian guide with troubleshooting is in `docs\INSTALL.hu.md`. Report problems with the add-on to its author, not
-to the Expanded's.
-
 ## License
 
 PolyForm Noncommercial 1.0.0.
