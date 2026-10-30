@@ -20,9 +20,15 @@ set(TMST_SOURCES
     src/core/tmst_menu.c
     src/core/tmst_input.c
     src/core/tmst_spu.c
+    src/core/tmst_pause.c
+    src/core/tmst_camera.c
+    src/core/tmst_png.c
+    src/core/tmst_files.c
     src/compat/tmst_compat.c
     src/dev/tmst_noop.c
     src/jukebox/tmst_jukebox.c
+    src/photo/tmst_photo.c
+    src/photo/tmst_photo_fx.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -48,12 +54,17 @@ set(TMST_CHAINS
     "tekken3_outfits_input|src/core/tmst_input.c"
     "spu_render|src/core/tmst_spu.c"
     "spu_set_host_mix_volume|src/core/tmst_spu.c"
+    "func_800780BC|src/core/tmst_pause.c"
+    "func_80048240|src/core/tmst_camera.c"
+    "func_8004A6BC|src/core/tmst_camera.c"
+    "func_8003A818|src/core/tmst_camera.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
 set(TMST_PACKAGES
     tmst.dev.noop
     tmst.jukebox
+    tmst.photo-mode
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).

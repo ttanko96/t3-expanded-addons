@@ -12,7 +12,14 @@
  * One picture at a time, up to TMST_OVERLAY_MAX_W x TMST_OVERLAY_MAX_H, in
  * the game's screen coordinates (368 x 480 in fights and on the selectors).
  * Alpha below 128 is see-through, 128..254 half see-through (the GPU's
- * B/2 + F/2), 255 opaque. */
+ * B/2 + F/2), 255 opaque.
+ *
+ * Several mods may draw (each on its own screens: the Jukebox on the
+ * selectors, Photo Mode in fights): the picture is whoever showed it last,
+ * and every mod's builder and visitor runs while a picture is shown, so each
+ * returns at once while its mod shows nothing. Every drawing mod calls
+ * tmst_overlay_vblank() from its VBlank plugin; more than one call per
+ * VBlank only makes the half-second refresh come sooner. */
 #ifndef TMST_OVERLAY_H
 #define TMST_OVERLAY_H
 #include <stdint.h>
@@ -29,7 +36,9 @@ enum {
     /* The area may hold the stage engine's pixels (a stage pack stays loaded
      * after its fight): take it anyway. Only for screens without a stage
      * (menus, selectors). The area's pixels are always kept and given back. */
-    TMST_OVERLAY_BORROW = 1
+    TMST_OVERLAY_BORROW = 1,
+    /* The picture under the builders' primitives (by default over them). */
+    TMST_OVERLAY_UNDER = 2
 };
 
 /* Shows `argb` (w x h texels, copied) from the next frame on, until hidden,
@@ -39,9 +48,28 @@ enum {
 int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, int dw, int dh, unsigned flags);
 int tmst_overlay_show_ex(const uint32_t *argb, int w, int h, int x, int y, unsigned flags);
 int tmst_overlay_show(const uint32_t *argb, int w, int h, int x, int y);
+/* The builders' primitives (and the visitors) from the next frame on with
+ * no picture, until hidden: for screens where the stage engine leaves no
+ * room for a picture (the fights). */
+void tmst_overlay_show_prims(void);
+/* A backdrop: from the next frame on, while the primitives or the picture
+ * are shown, the frame's ordering table starts with a rectangle of `bgr`
+ * (the GPU's 0xBBGGRR) over the whole screen, so where the game draws
+ * nothing (Tekken 3 never clears the screen) no older frame shows. off = 0
+ * takes it away. */
+void tmst_overlay_backdrop(int on, uint32_t bgr);
 /* Moves the shown picture. */
 void tmst_overlay_move(int x, int y);
-/* Hidden from the next frame; the area's pixels are given back now. */
+/* The picture hidden from the next frame (its area's pixels given back
+ * now), the primitives still drawn. */
+void tmst_overlay_hide_picture(void);
+/* Nonzero: the borrowed picture found no place clear of TTT Hitspark's (or
+ * the wolf's) cells; it is written again every frame over theirs, and an
+ * effect drawn over the picture then shows its pixels (a smaller picture
+ * may find a place). */
+int tmst_overlay_picture_contested(void);
+/* Hidden from the next frame (the picture and the primitives); the areas'
+ * pixels are given back now. */
 void tmst_overlay_hide(void);
 int tmst_overlay_visible(void);
 /* Once per VBlank, from the VBlank plugin of the mod that shows the picture:
@@ -55,14 +83,47 @@ typedef struct TmstPrims TmstPrims;
 void tmst_prim_room(TmstPrims *k, unsigned words);
 void tmst_prim_word(TmstPrims *k, uint32_t word);
 static inline uint32_t tmst_xy(int x, int y) { return ((uint32_t)(y & 0xffff) << 16) | (uint32_t)(x & 0xffff); }
-/* A builder, run while the picture is shown (before the picture is drawn). */
+/* Text in the add-on's font (tmst_font.h) as textured quads, from a 4-bit
+ * sheet of the font (192 x 9 halfwords, its palette in its last row) the
+ * core keeps in the upper VRAM half, in a corner the stage engine leaves
+ * free (placed, kept and given back as the picture is). Each character a
+ * cell of cw x ch screen pixels from (x, y) (the font's 6 x 8: 6 x 16 looks
+ * square on the 480-line screens), its colour `tint` (0x808080 = white;
+ * 0xBBGGRR, the GPU's x/128). Nothing is drawn the first frame, nor while no
+ * place is free. Returns the text's width. */
+int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch, uint32_t tint);
+/* The frame being drawn as a texture: the screen rectangle (x, y, w, h)
+ * drawn again from the frame's own pixels (dx, dy) away, each texel times
+ * `tint` / 128 (0xBBGGRR, 0x808080 = as it is); `blend` -1 opaque, 0..3
+ * the GPU's semi-transparency (B/2 + F/2, B + F, B - F, B + F/4; the
+ * source's mask bits are set first, so every texel blends). Within the
+ * 368 x 480 screen (the wide screen's sides are not in VRAM). The OpenGL
+ * renderer samples the frame at the native resolution: copies over the
+ * whole screen soften it. */
+void tmst_prim_screen_copy(TmstPrims *k, int x, int y, int w, int h, int dx, int dy, uint32_t tint, int blend);
+/* A builder, run while the picture is shown (before the picture is drawn).
+ * Up to 4 builders (one per mod), run in the order added. */
 typedef void (*TmstPrimsBuilder)(TmstPrims *k);
 void tmst_overlay_set_prims(TmstPrimsBuilder builder);
+/* A builder whose primitives go into the frame's ordering table right after
+ * the entry of `rank` (drawn after the ranks above it, before its own and
+ * those below: rank 1006 = after the stage and the fighters' shadows,
+ * before the top HUD and the fighters), for that drawing only, while the
+ * primitives or the picture are shown. One at a time; NULL takes it away. */
+void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder builder);
 /* A visitor of each node of the game's lists (not ours), called while the
  * picture is shown, before the GPU draws the node: a mod may move the game's
- * primitives out of sight. */
+ * primitives out of sight. Up to 4 visitors (one per mod). */
 typedef void (*TmstNodeVisitor)(uint32_t node);
 void tmst_overlay_set_visitor(TmstNodeVisitor visitor);
+/* For a visitor: the ordering-table rank the node is linked at (the last OT
+ * entry the walk passed: 1023 farthest, drawn first; T3's stage 1010, its
+ * HUD 1009..1006), -1 in a list that is not the frame's ordering table. */
+int tmst_overlay_rank(void);
+/* For a visitor: every primitive of the node off screen for this drawing
+ * only (a VRAM copy copies onto its own source). Its words are given back before the next list is drawn, so a packet
+ * the game builds once and keeps is never changed for good. */
+void tmst_overlay_hide_node(uint32_t node);
 
 #ifdef __cplusplus
 }

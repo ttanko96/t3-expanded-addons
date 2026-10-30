@@ -15,6 +15,9 @@ int tmst_text_width(const char *text, int scale);
 void tmst_text_argb(uint32_t *dst, int w, int h, int x, int y, const char *text, int scale, uint32_t argb);
 /* A filled rectangle, clipped. */
 void tmst_fill_argb(uint32_t *dst, int w, int h, int x, int y, int rw, int rh, uint32_t argb);
+/* The 5 x 7 glyph of `c` (any other than 32..126 draws '?'): 7 rows, the
+ * row's leftmost pixel in bit 4. */
+const uint8_t *tmst_font_glyph(unsigned char c);
 
 #ifdef __cplusplus
 }

@@ -6,7 +6,9 @@
  * with the upper-half bit 11. What the area held is kept before our upload
  * and given back on hide (others' pixels that the stage engine does not
  * report live there too); while the stage engine says the area is its own,
- * nothing is drawn unless the picture borrows it (TMST_OVERLAY_BORROW).
+ * the picture moves to a place it leaves free (x in steps of a page, the
+ * other row of pages), or, finding none, is not drawn, unless it borrows the
+ * area (TMST_OVERLAY_BORROW: always at its first place).
  *
  * When: the runtime calls gpu_ws_prepass_linked_list() at the start of every
  * linked-list GPU DMA, before the walk (psxrecomp/runtime/src/dma.c). Our
@@ -25,17 +27,21 @@
 #include "tmst_overlay.h"
 #include "tmst_core.h"
 #include "tmst_compat.h"
+#include "tmst_font.h"
 #include "mod_plugins.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-enum { VX = 0, TILE = 256, BUF_WORDS = 4096, BUF_BYTES = BUF_WORDS * 4, NODE_MAX = 255,
+enum { TILE = 256, BUF_WORDS = 8192, BUF_BYTES = BUF_WORDS * 4, NODE_MAX = 255,
        LONG_LIST = 256, MAX_WALK = 200000 };
 
 static uint32_t packet;                 /* guest address of our chain's first node */
+static uint32_t backdrop_node;          /* our node linked after the ordering table's first entry */
+static int backdrop_on;
+static uint32_t backdrop_bgr;
 static int ready, failed;
-static int shown, sx, sy, sw, sh, pw, ph, vy;
+static int shown, prims_shown, sx, sy, sw, sh, pw, ph, vx, vy;
 static unsigned show_flags;
 static uint16_t pixels[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
 static int dirty;
@@ -43,11 +49,28 @@ static unsigned vram_generation;        /* the stage engine's, at our upload */
 static uint16_t kept[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
 static int kept_x, kept_y, kept_w, kept_h;
 static unsigned frame, linked_frame = ~0u, uploaded_frame;
-static TmstPrimsBuilder builder;
-static TmstNodeVisitor visitor;
+enum { MAX_CLIENTS = 4 };
+static TmstPrimsBuilder builders[MAX_CLIENTS];
+static TmstNodeVisitor visitors[MAX_CLIENTS];
+static int builder_count, visitor_count;
+static TmstPrimsBuilder rank_builder;   /* tmst_overlay_set_rank_prims */
+static int rank_target;
+static uint32_t rank_packet;
+enum { RANK_BYTES = 16384 };
+/* The drawing mode as the GPU will have it: E1, which textured polygons set
+ * too (their texture page word: bits 0-8 and 11), the drawing offset (E5)
+ * and the mask setting (E6), followed through every list drawn (the drawing
+ * environment comes in a short list of its own). */
+static uint32_t gpu_e1 = 0xE1000400u, gpu_e5 = 0xE5000000u, gpu_e6 = 0xE6000000u;
 
-void tmst_overlay_set_prims(TmstPrimsBuilder b) { builder = b; }
-void tmst_overlay_set_visitor(TmstNodeVisitor v) { visitor = v; }
+void tmst_overlay_set_prims(TmstPrimsBuilder b) {
+    for (int i = 0; i < builder_count; i++) if (builders[i] == b) return;
+    if (b && builder_count < MAX_CLIENTS) builders[builder_count++] = b;
+}
+void tmst_overlay_set_visitor(TmstNodeVisitor v) {
+    for (int i = 0; i < visitor_count; i++) if (visitors[i] == v) return;
+    if (v && visitor_count < MAX_CLIENTS) visitors[visitor_count++] = v;
+}
 
 /* At the mod's activation (start-up): the OpenGL renderer builds its upper-
  * half sampling only when the half exists before its context does. */
@@ -61,6 +84,7 @@ static int setup(void) {
         failed = 1; tmst_log("overlay: no packet memory"); return 0;
     }
     psx_mod_write_word(packet, 0x00FFFFFFu);    /* empty, end of list */
+    backdrop_node = psx_mod_alloc_gpu_dma_memory(16, 16);
     ready = 1;
     return 1;
 }
@@ -84,11 +108,36 @@ static void keep(int x, int y, int w, int h) {
     if (tmst_compat_high_vram_read(x, y, w, h, kept)) { kept_x = x; kept_y = y; kept_w = w; kept_h = h; }
 }
 
+/* Where a borrowed picture goes: the first place (rows of pages from the
+ * half's top for a tall one, the lower row first for one up to a page tall,
+ * x in steps of a page) clear of TTT Hitspark's and the wolf's cells, which
+ * are written again while their effects play (the stage engine's own pixels
+ * are borrowed); none clear: the first place, contested. */
+static int borrow_contested;
+static void borrow_place(int w, int h, int *bx, int *by) {
+    static const int tall[1] = {512}, low[2] = {768, 512};
+    const int *rows = h <= TILE ? low : tall;
+    int n = h <= TILE ? 2 : 1;
+    for (int r = 0; r < n; r++)
+        for (int x = 0; x + w <= 1024; x += 64)
+            if (!tmst_compat_high_vram_effects(x, rows[r], w, h)) { *bx = x; *by = rows[r]; borrow_contested = 0; return; }
+    *bx = 0; *by = rows[0]; borrow_contested = 1;
+}
+int tmst_overlay_picture_contested(void) { return shown && (show_flags & TMST_OVERLAY_BORROW) && borrow_contested; }
+
 int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, int dw, int dh, unsigned flags) {
     if (!argb || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || w > TMST_OVERLAY_MAX_W || h > TMST_OVERLAY_MAX_H || !setup())
         return 0;
     int changed = w != pw || h != ph;
-    if (changed && kept_w) give_back();        /* a new size: a new area */
+    if (changed && kept_w) give_back();        /* a new size: a new area, at its first place */
+    if (flags & TMST_OVERLAY_BORROW) {
+        int bx, by;
+        borrow_place(w, h, &bx, &by);
+        if (kept_w && (vx != bx || vy != by)) { give_back(); changed = 1; }
+        vx = bx; vy = by;
+    } else if (changed) {
+        vx = 0; vy = h <= TILE ? 1024 - TILE : 512;
+    }
     for (int row = 0; row < h; row++) {
         uint16_t *line = pixels + row * w;
         for (int col = 0; col < w; col++) {
@@ -97,7 +146,6 @@ int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, i
         }
     }
     pw = w; ph = h; sx = x; sy = y; sw = dw; sh = dh; shown = 1; show_flags = flags;
-    vy = h <= TILE ? 1024 - TILE : 512;
     if (changed) dirty = 1;
     return 1;
 }
@@ -109,14 +157,30 @@ int tmst_overlay_show(const uint32_t *argb, int w, int h, int x, int y) {
 }
 
 void tmst_overlay_move(int x, int y) { sx = x; sy = y; }
+void tmst_overlay_hide_picture(void) {
+    if (!shown) return;
+    shown = 0;
+    give_back();
+    dirty = 1;
+}
+void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder b) {
+    if (b && !rank_packet && setup()) rank_packet = psx_mod_alloc_gpu_dma_memory(RANK_BYTES, 16);
+    rank_builder = b && rank_packet && rank >= 0 && rank < 1024 ? b : NULL;
+    rank_target = rank;
+}
 /* The area goes back to what it held: our pixels are no longer there, so
  * the next show uploads them again. */
-void tmst_overlay_hide(void) { shown = 0; give_back(); dirty = 1; }
+static void atlas_give_back(void);
+void tmst_overlay_show_prims(void) { if (setup()) prims_shown = 1; }
+void tmst_overlay_backdrop(int on, uint32_t bgr) { backdrop_on = on; backdrop_bgr = bgr & 0xFFFFFFu; }
+void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; give_back(); atlas_give_back(); dirty = 1; }
 int tmst_overlay_visible(void) { return shown; }
+static int drawing(void) { return shown || prims_shown; }
 
 /* ---- the chain's builder ---- */
 struct TmstPrims { uint32_t head, at, end; unsigned words; };
-static void prims_begin(TmstPrims *k) { k->head = packet; k->at = packet + 4; k->end = packet + BUF_BYTES; k->words = 0; }
+static void prims_begin_at(TmstPrims *k, uint32_t buf, uint32_t bytes) { k->head = buf; k->at = buf + 4; k->end = buf + bytes; k->words = 0; }
+static void prims_begin(TmstPrims *k) { prims_begin_at(k, packet, BUF_BYTES); }
 void tmst_prim_room(TmstPrims *k, unsigned n) {
     if (k->words + n <= NODE_MAX || k->at + 4 + n * 4 > k->end) return;
     psx_mod_write_word(k->head, (uint32_t)k->words << 24 | (k->at & 0x00FFFFFFu));
@@ -126,8 +190,144 @@ void tmst_prim_word(TmstPrims *k, uint32_t w) {
     if (k->at + 4 >= k->end || k->words >= NODE_MAX) return;   /* the last word stays free */
     psx_mod_write_word(k->at, w); k->at += 4; k->words++;
 }
-static void prims_finish(TmstPrims *k) {
-    psx_mod_write_word(k->head, (uint32_t)k->words << 24 | 0x00FFFFFFu);
+static void prims_finish_to(TmstPrims *k, uint32_t next) {
+    psx_mod_write_word(k->head, (uint32_t)k->words << 24 | (next & 0x00FFFFFFu));
+}
+static void prims_finish(TmstPrims *k) { prims_finish_to(k, 0x00FFFFFFu); }
+
+/* ---- the font's sheet ----
+ * 95 glyphs (ASCII 32..126) of 6 x 8 texels, 4-bit, 42 to a texture page
+ * (256 texels), 3 pages side by side; row 8 holds the palette (0 see-
+ * through, 1 white). Placed from the half's bottom right corner, where the
+ * stage packs leave room; its 8 glyph rows within one row of pages. */
+enum { ATLAS_PER_PAGE = 42, ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 9, CELL_W = 6, CELL_H = 8 };
+static uint16_t atlas[ATLAS_W * ATLAS_H], atlas_kept[ATLAS_W * ATLAS_H];
+static int atlas_built, atlas_x = -1, atlas_y, atlas_has_kept, atlas_dirty = 1, text_wanted, text_ready, atlas_said;
+static unsigned atlas_generation, atlas_frame;
+
+static void build_atlas(void) {
+    memset(atlas, 0, sizeof atlas);
+    for (int g = 0; g < 95; g++) {
+        const uint8_t *rows = tmst_font_glyph((unsigned char)(32 + g));
+        int u0 = (g / ATLAS_PER_PAGE) * 256 + (g % ATLAS_PER_PAGE) * CELL_W;
+        for (int row = 0; row < 7; row++)
+            for (int col = 0; col < 5; col++)
+                if (rows[row] >> (4 - col) & 1) {
+                    int u = u0 + col;                    /* 4 texels to a halfword, the first lowest */
+                    atlas[row * ATLAS_W + u / 4] |= (uint16_t)(1u << (u % 4 * 4));
+                }
+    }
+    atlas[8 * ATLAS_W + 1] = 0x7fff;             /* palette: 0 see-through, 1 white */
+    atlas_built = 1;
+}
+static void atlas_give_back(void) {
+    if (atlas_x >= 0 && atlas_has_kept) psx_mod_gpu_high_vram_upload(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas_kept);
+    atlas_x = -1; atlas_has_kept = 0; atlas_dirty = 1;
+}
+static int atlas_fits(int x, int y) {
+    return (y - 512) / 256 == (y + CELL_H - 1 - 512) / 256 && !tmst_compat_high_vram_taken(x, y, ATLAS_W, ATLAS_H);
+}
+/* This frame: the sheet in place and up to date, or 0. */
+static int place_atlas(void) {
+    if (!atlas_built) build_atlas();
+    unsigned gen = tmst_compat_high_vram_generation();
+    if (atlas_x < 0 || !atlas_fits(atlas_x, atlas_y)) {
+        atlas_give_back();
+        for (int y = 1024 - ATLAS_H; y >= 512 && atlas_x < 0; y -= 8)
+            for (int x = 1024 - ATLAS_W; x >= 0; x -= 64)
+                if (atlas_fits(x, y)) { atlas_x = x; atlas_y = y; break; }
+        if (atlas_x < 0) {
+            if (!atlas_said) { atlas_said = 1; tmst_log("overlay: no room for the font in the upper VRAM half"); }
+            return 0;
+        }
+    }
+    if (atlas_dirty || gen != atlas_generation || frame - atlas_frame >= 30) {
+        if (!atlas_has_kept || gen != atlas_generation)
+            atlas_has_kept = tmst_compat_high_vram_read(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas_kept);
+        psx_mod_gpu_high_vram_upload(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas);
+        atlas_dirty = 0; atlas_generation = gen; atlas_frame = frame;
+    }
+    return 1;
+}
+
+int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch, uint32_t tint) {
+    int n = text ? (int)strlen(text) : 0;
+    text_wanted = 1;
+    if (!text_ready) return n * cw;
+    int base = atlas_y < 768 ? 512 : 768, v0 = atlas_y - base;
+    uint32_t clut = 0x8000u | (uint32_t)(atlas_y + CELL_H - 512) << 6 | (uint32_t)(atlas_x / 16);
+    for (int i = 0; i < n; i++, x += cw) {
+        unsigned char c = (unsigned char)text[i];
+        if (c == ' ') continue;
+        int g = (c < 32 || c > 126 ? '?' : c) - 32;
+        uint32_t tpage = (uint32_t)(atlas_x / 64 + g / ATLAS_PER_PAGE) | (uint32_t)(base - 512) / 256u << 4 | 1u << 11;
+        uint32_t u0 = (uint32_t)(g % ATLAS_PER_PAGE * CELL_W), u1 = u0 + CELL_W;
+        uint32_t t = (uint32_t)v0 << 8, b = (uint32_t)(v0 + CELL_H) << 8;
+        tmst_prim_room(k, 9);
+        tmst_prim_word(k, 0x2C000000u | (tint & 0xFFFFFFu));      /* textured quad, opaque, tinted */
+        tmst_prim_word(k, tmst_xy(x, y));           tmst_prim_word(k, u0 | t | clut << 16);
+        tmst_prim_word(k, tmst_xy(x + cw, y));      tmst_prim_word(k, u1 | t | tpage << 16);
+        tmst_prim_word(k, tmst_xy(x, y + ch));      tmst_prim_word(k, u0 | b);
+        tmst_prim_word(k, tmst_xy(x + cw, y + ch)); tmst_prim_word(k, u1 | b);
+    }
+    return n * cw;
+}
+
+/* The drawing offset (E5: x in bits 0-10, y in 11-21, both signed): the
+ * screen's (0, 0) in VRAM, so the frame being drawn is a texture there. */
+static int e5_x(void) { return (int)((gpu_e5 & 0x7FFu) ^ 0x400u) - 0x400; }
+static int e5_y(void) { return (int)((gpu_e5 >> 11 & 0x7FFu) ^ 0x400u) - 0x400; }
+
+void tmst_prim_screen_copy(TmstPrims *k, int x, int y, int w, int h, int dx, int dy, uint32_t tint, int blend) {
+    int ox = e5_x(), oy = e5_y();
+    /* the source within the 368 x 480 screen and the lower VRAM half */
+    int x0 = x + dx < 0 ? -dx : x, y0 = y + dy < 0 ? -dy : y;
+    int x1 = x + w + dx > 368 ? 368 - dx : x + w, y1 = y + h + dy > 480 ? 480 - dy : y + h;
+    if (x0 >= x1 || y0 >= y1 || ox + x0 + dx < 0 || oy + y0 + dy < 0 || ox + x1 + dx > 1024 || oy + y1 + dy > 512) return;
+    if (blend >= 0) {
+        /* Only texels with the mask bit blend: the source's pixels get it
+         * first, unchanged (black added, the mask bit forced). */
+        tmst_prim_room(k, 5);
+        tmst_prim_word(k, 0xE6000001u);
+        tmst_prim_word(k, 0xE1000420u);                         /* B + F, drawing to the display */
+        tmst_prim_word(k, 0x62000000u);
+        tmst_prim_word(k, tmst_xy(x0 + dx, y0 + dy));
+        tmst_prim_word(k, (uint32_t)(y1 - y0) << 16 | (uint32_t)(x1 - x0));
+        tmst_prim_room(k, 1);
+        tmst_prim_word(k, 0xE6000000u);
+    }
+    for (int ty = y0; ty < y1;) {
+        int vy0 = oy + ty + dy, py = vy0 >= 256 ? 256 : 0, v = vy0 - py;
+        int th = y1 - ty < 256 - v ? y1 - ty : 256 - v;
+        for (int tx = x0; tx < x1;) {
+            int vx0 = ox + tx + dx, px = vx0 & ~63, u = vx0 - px;
+            int tw = x1 - tx < 256 - u ? x1 - tx : 256 - u;
+            uint32_t tpage = (uint32_t)(px / 64) | (uint32_t)(py / 256) << 4 | 2u << 7 /* 15-bit */ | 1u << 10;
+            tmst_prim_room(k, 5);
+            tmst_prim_word(k, 0xE1000000u | tpage | (blend >= 0 ? (uint32_t)(blend & 3) << 5 : 0u));
+            tmst_prim_word(k, (blend >= 0 ? 0x66000000u : 0x64000000u) | (tint & 0xFFFFFFu));
+            tmst_prim_word(k, tmst_xy(tx, ty));
+            tmst_prim_word(k, (uint32_t)v << 8 | (uint32_t)u);
+            tmst_prim_word(k, (uint32_t)th << 16 | (uint32_t)tw);
+            tx += tw;
+        }
+        ty += th;
+    }
+    if (blend >= 0) {
+        /* The mask bits off again, colours unchanged (black added, drawn
+         * without the mask bit), on the source and the copy: a pixel left
+         * with it would not be drawn over by a game that checks it (the
+         * software renderer kept such pixels from frame to frame). */
+        int sy0 = y0 + dy < y0 ? y0 + dy : y0, sy1 = y1 + dy > y1 ? y1 + dy : y1;
+        int sx0 = x0 + dx < x0 ? x0 + dx : x0, sx1 = x1 + dx > x1 ? x1 + dx : x1;
+        tmst_prim_room(k, 4);
+        tmst_prim_word(k, 0xE1000420u);
+        tmst_prim_word(k, 0x62000000u);
+        tmst_prim_word(k, tmst_xy(sx0, sy0));
+        tmst_prim_word(k, (uint32_t)(sy1 - sy0) << 16 | (uint32_t)(sx1 - sx0));
+    }
+    tmst_prim_room(k, 1);
+    tmst_prim_word(k, gpu_e6);
 }
 
 /* The picture's tiles: 1:1 as sprites (an E1 for each page), scaled as
@@ -139,7 +339,7 @@ static void picture_prims(TmstPrims *k) {
         for (int tx = 0; tx * TILE < pw; tx++) {
             int w = pw - tx * TILE < TILE ? pw - tx * TILE : TILE;
             int h = ph - ty * TILE < TILE ? ph - ty * TILE : TILE;
-            unsigned page = (unsigned)(VX + tx * TILE) / 64u;
+            unsigned page = (unsigned)(vx + tx * TILE) / 64u;
             unsigned ybit = (unsigned)(vy + ty * TILE - 512) / 256u & 1u;
             uint32_t tpage = page | ybit << 4 | 2u << 7 /* 15-bit */ | 1u << 11;
             if (one) {
@@ -164,24 +364,49 @@ static void picture_prims(TmstPrims *k) {
         }
 }
 
-/* This frame's chain: empty while hidden; the picture left out while its
- * area is the stage engine's (unless borrowed). */
+/* A place the stage engine leaves free for the picture, from its first
+ * (x 0) on: the area moves there (what the old one held given back). 0 when
+ * there is none. */
+static int find_place(void) {
+    for (int y = ph <= TILE ? 1024 - TILE : 512; y >= 512; y -= TILE) {
+        for (int x = 0; x + pw <= 1024; x += 64) {
+            if (tmst_compat_high_vram_taken(x, y, pw, ph)) continue;
+            if (x != vx || y != vy) { give_back(); vx = x; vy = y; dirty = 1; }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* This frame's chain: empty while hidden; the picture left out while the
+ * stage engine leaves it no place (unless borrowed). */
 static void write_chain(uint32_t e1_before) {
     TmstPrims k; prims_begin(&k);
-    if (shown) {
-        int taken = tmst_compat_high_vram_taken(VX, vy, pw, ph);
-        if (builder) builder(&k);
-        if (!taken || (show_flags & TMST_OVERLAY_BORROW)) {
+    if (drawing()) {
+        text_ready = text_wanted && place_atlas();
+        int borrow = (show_flags & TMST_OVERLAY_BORROW) != 0;
+        int placed = shown && (borrow || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
+        int under = (show_flags & TMST_OVERLAY_UNDER) != 0;
+        if (placed) {
             unsigned gen = tmst_compat_high_vram_generation();
             /* Again every half second too: an upload of someone else's into
-             * the area (an effect, a stage's animated texture) is undone. */
-            if (dirty || gen != vram_generation || frame - uploaded_frame >= 30) {
-                if (!kept_w || gen != vram_generation) keep(VX, vy, pw, ph);
-                psx_mod_gpu_high_vram_upload(VX, vy, pw, ph, pixels);
+             * the area (an effect, a stage's animated texture) is undone.
+             * A borrowed area is kept once: what the stage engine moves
+             * into it later is ours over theirs, not theirs to give back.
+             * One over TTT Hitspark's (or the wolf's) cells, every frame:
+             * they write their images there each frame an effect plays
+             * (before the list: ours, written as it is walked, is what is
+             * drawn; their effects are under our picture meanwhile). */
+            int contested = borrow && tmst_compat_high_vram_effects(vx, vy, pw, ph);
+            if (dirty || contested || gen != vram_generation || frame - uploaded_frame >= 30) {
+                if (!kept_w || (gen != vram_generation && !borrow)) keep(vx, vy, pw, ph);
+                psx_mod_gpu_high_vram_upload(vx, vy, pw, ph, pixels);
                 dirty = 0; vram_generation = gen; uploaded_frame = frame;
             }
-            picture_prims(&k);
+            if (under) picture_prims(&k);
         }
+        for (int i = 0; i < builder_count; i++) builders[i](&k);
+        if (placed && !under) picture_prims(&k);
         tmst_prim_room(&k, 1);
         tmst_prim_word(&k, e1_before);
     }
@@ -189,10 +414,6 @@ static void write_chain(uint32_t e1_before) {
 }
 
 
-/* The drawing mode as the GPU will have it: E1, which textured polygons set
- * too (their texture page word: bits 0-8 and 11), followed through every
- * list drawn. */
-static uint32_t gpu_e1 = 0xE1000400u;
 
 /* Words of the GP0 command at word i of a node of n words. */
 static unsigned command_words(uint32_t node, unsigned i, unsigned n) {
@@ -224,6 +445,8 @@ static unsigned command_words(uint32_t node, unsigned i, unsigned n) {
     if (op >= 0xC0 && op < 0xE0) return 3;
     if (op == 0x02) return 3;
     if (op == 0xE1) gpu_e1 = w;
+    if (op == 0xE5) gpu_e5 = w;
+    if (op == 0xE6) gpu_e6 = w;
     return 1;
 }
 static void follow(uint32_t node) {
@@ -236,16 +459,114 @@ static int ours(uint32_t at) {
     return at >= lo && at < lo + BUF_BYTES;
 }
 
+/* The ordering table's ranks: T3 clears it in reverse (ClearOTagR), so the
+ * list starts at its last entry, rank 1023, and each entry is an empty node
+ * 4 bytes below the one before. */
+enum { OT_SIZE = 1024 };
+static uint32_t ot_top;                 /* the walked list's first node (rank OT_SIZE - 1), 0 in another list */
+static int rank = -1;
+int tmst_overlay_rank(void) { return rank; }
+static void note_rank(uint32_t at, uint32_t tag) {
+    if (!ot_top || (tag >> 24) != 0 || at > ot_top || ot_top - at >= OT_SIZE * 4u || ((ot_top - at) & 3u)) return;
+    rank = OT_SIZE - 1 - (int)((ot_top - at) / 4u);
+}
+
+/* tmst_overlay_hide_node's changes, given back before the next list. */
+enum { UNDO_MAX = 8192 };
+static uint32_t undo_at[UNDO_MAX], undo_word[UNDO_MAX];
+static int undo_count;
+static void give_back_nodes(void) {
+    while (undo_count > 0) { undo_count--; psx_mod_write_word(undo_at[undo_count], undo_word[undo_count]); }
+}
+static void undo_write(uint32_t at, uint32_t word) {
+    if (undo_count >= UNDO_MAX) return;
+    undo_at[undo_count] = at; undo_word[undo_count++] = psx_mod_read_word(at);
+    psx_mod_write_word(at, word);
+}
+static void hide_vertex(uint32_t at) { undo_write(at, tmst_xy(-1024, -1024)); }
+void tmst_overlay_hide_node(uint32_t node) {
+    unsigned n = psx_mod_read_word(node) >> 24;
+    for (unsigned i = 0; i < n;) {
+        uint32_t at = node + 4 + i * 4, w = psx_mod_read_word(at);
+        unsigned op = w >> 24, len;
+        if (op >= 0x20 && op < 0x40) {                  /* polygons: each vertex's position word */
+            unsigned verts = (op & 8) ? 4 : 3, tex = (op & 4) ? 1 : 0, shaded = (op & 0x10) ? 1 : 0, k = 1;
+            for (unsigned v = 0; v < verts; v++) {
+                if (v && shaded) k++;
+                if (i + k < n) hide_vertex(at + k * 4);
+                k += 1 + tex;
+            }
+            len = k;
+        } else if (op >= 0x40 && op < 0x60) {           /* lines: their points up to the end mark */
+            unsigned shaded = (op & 0x10) ? 1 : 0, k = 1;
+            for (unsigned v = 0; i + k < n; v++) {
+                if (v && shaded) k++;
+                if (i + k >= n) break;
+                uint32_t pt = psx_mod_read_word(at + k * 4);
+                if (v >= 2 && (op & 8) && (pt & 0xF000F000u) == 0x50005000u) break;
+                hide_vertex(at + k * 4); k++;
+                if (v == 1 && !(op & 8)) break;
+            }
+            len = k + ((op & 8) ? 1 : 0);
+        } else if (op >= 0x60 && op < 0x80) {           /* rectangles and sprites */
+            if (i + 1 < n) hide_vertex(at + 4);
+            len = 2 + ((op & 4) ? 1 : 0) + ((op & 0x18) == 0 ? 1 : 0);
+        } else if (op >= 0x80 && op < 0xA0) {           /* VRAM copies: onto their own source, nothing moves */
+            if (i + 2 < n) undo_write(at + 8, psx_mod_read_word(at + 4));
+            len = 4;
+        } else {
+            len = command_words(node, i, n);
+        }
+        i += len ? len : 1;
+    }
+}
+
+/* This drawing only (given back before the next list): the backdrop after
+ * the table's first entry, a rectangle past the screen's edges (the wide
+ * screen's sides too); the rank builder's primitives after the entry of its
+ * rank, ending with the drawing mode the game had there. */
+static void link_extras(uint32_t rank_entry, uint32_t rank_e1) {
+    if (backdrop_on && backdrop_node && ot_top) {
+        uint32_t first = psx_mod_read_word(ot_top);
+        psx_mod_write_word(backdrop_node, 3u << 24 | (first & 0x00FFFFFFu));
+        psx_mod_write_word(backdrop_node + 4, 0x60000000u | backdrop_bgr);
+        psx_mod_write_word(backdrop_node + 8, tmst_xy(-256, 0));
+        psx_mod_write_word(backdrop_node + 12, tmst_xy(368 + 512, 512));
+        undo_write(ot_top, (first & 0xFF000000u) | (backdrop_node & 0x00FFFFFFu));
+    }
+    if (rank_entry && rank_builder) {
+        uint32_t entry = psx_mod_read_word(rank_entry);
+        TmstPrims k; prims_begin_at(&k, rank_packet, RANK_BYTES);
+        rank_builder(&k);
+        if (k.at == rank_packet + 4 && k.head == rank_packet) return;     /* nothing to draw: not linked */
+        /* The drawing mode back, without the upper half's bit (the stage
+         * engine's polygons leave it in what we follow, but this packet is
+         * not one the runtime lets read the half: on a PS1 E1 it is the
+         * texture-disable bit). */
+        tmst_prim_room(&k, 2);
+        tmst_prim_word(&k, rank_e1 & ~0x800u);
+        tmst_prim_word(&k, gpu_e6);
+        prims_finish_to(&k, entry);
+        undo_write(rank_entry, (entry & 0xFF000000u) | (rank_packet & 0x00FFFFFFu));
+    }
+}
+
 /* One walk of the list about to be drawn. Our chain already in it (a list
- * not cleared since) gets this frame's content, or goes out when hidden;
- * otherwise, shown, the frame's first long list gets it after its last node. */
+ * not cleared since: the paused frame's) gets this frame's content, or goes
+ * out when hidden; otherwise, shown, the frame's first long list gets it
+ * after its last node. */
 static void link_into(uint32_t start) {
     uint32_t at = start & 0x00FFFFFFu, last = 0;
     unsigned n = 0;
+    ot_top = (psx_mod_read_word(0x80000000u | at) >> 24) == 0 ? 0x80000000u | at : 0;
+    rank = -1;
+    uint32_t rank_entry = 0, rank_e1 = 0;
+    uint32_t rank_at = ot_top && rank_builder ? ot_top - 4u * (uint32_t)(OT_SIZE - 1 - rank_target) : 0;
     while (at != 0x00FFFFFFu && n < MAX_WALK) {
         uint32_t node = 0x80000000u | at;
+        note_rank(node, psx_mod_read_word(node));
         if (ours(at)) {
-            if (!shown) {                               /* hidden: out of the list */
+            if (!drawing()) {                           /* hidden: out of the list */
                 if (last) {
                     uint32_t tag = psx_mod_read_word(0x80000000u | last);
                     psx_mod_write_word(0x80000000u | last, (tag & 0xFF000000u) | 0x00FFFFFFu);
@@ -253,18 +574,21 @@ static void link_into(uint32_t start) {
                 psx_mod_write_word(packet, 0x00FFFFFFu);
             } else if (linked_frame != frame) {
                 linked_frame = frame;
+                link_extras(rank_entry, rank_e1);
                 write_chain(gpu_e1);
             }
             return;
         }
-        if (shown && visitor) visitor(node);
+        if (node == rank_at) { rank_entry = node; rank_e1 = gpu_e1; }
+        if (drawing()) for (int i = 0; i < visitor_count; i++) visitors[i](node);
         follow(node);
         last = at;
         at = psx_mod_read_word(node) & 0x00FFFFFFu;
         n++;
     }
-    if (!shown || n < LONG_LIST || n >= MAX_WALK || linked_frame == frame) return;
+    if (!drawing() || n < LONG_LIST || n >= MAX_WALK || linked_frame == frame) return;
     linked_frame = frame;
+    link_extras(rank_entry, rank_e1);
     write_chain(gpu_e1);
     uint32_t tag = psx_mod_read_word(0x80000000u | last);
     psx_mod_write_word(0x80000000u | last, (tag & 0xFF000000u) | (packet & 0x00FFFFFFu));
@@ -272,8 +596,9 @@ static void link_into(uint32_t start) {
 
 extern void __real_gpu_ws_prepass_linked_list(uint32_t start_addr);
 void __wrap_gpu_ws_prepass_linked_list(uint32_t start_addr) {
+    give_back_nodes();                  /* the list before is drawn */
     if (ready && psx_mod_game_started()) link_into(start_addr);
     __real_gpu_ws_prepass_linked_list(start_addr);
 }
 
-void tmst_overlay_vblank(void) { frame++; }
+void tmst_overlay_vblank(void) { frame++; give_back_nodes(); }

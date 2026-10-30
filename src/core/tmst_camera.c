@@ -1,0 +1,152 @@
+/* TMST core: a free camera over a paused fight (tmst_camera.h). */
+#include "tmst_camera.h"
+#include "tmst_core.h"
+#include "tmst_compat.h"
+#include "cpu_state.h"
+#include "mod_plugins.h"
+#include <math.h>
+#include <string.h>
+
+enum { SLOT0 = 0x800a02a8u, VIEW = 0x800a85c0u, VIEW_PITCH = 0, VIEW_YAW = 4, VIEW_X = 20, VIEW_Y = 24, VIEW_Z = 28,
+       FULL_DRAW = 0x800954a4u, FIGHTERS = 0x800adca8u, FIGHTER_BYTES = 16,
+       P1 = 0x800a9228u, P2 = 0x800a9228u + 6284u, SHOW_HUD = 4816,
+       HUD = 0x8003d6b0u, BEFORE_END = 0x8002b650u, END_RETURN = 0x8002b658u, GTE_H = 26,
+       TILE = 0x8009e780u, TILES_X = 0x8009e824u, TILES_Z = 0x8009e828u, ARCADE_CELL = 2500, ARCADE_CELLS = 10 };
+
+static TmstCamera ours;
+static int free_on, hud_on, ending, fighters_hidden;          /* ending: frames still drawn the whole way, the game's view back */
+static int saved;                            /* the game's values below are kept */
+static uint32_t game_view[8], game_flag, game_h;
+static int have_h, hud_done;
+
+void tmst_camera_game(TmstCamera *c) {
+    int32_t *v = &c->x;
+    for (int i = 0; i < 6; i++) v[i] = (int32_t)psx_mod_read_word(SLOT0 + 4u * (uint32_t)i);
+}
+
+void tmst_camera_fighters(int32_t *x, int32_t *y, int32_t *z) {
+    int32_t sx = 0, sy = 0, sz = 0;
+    for (uint32_t p = 0; p < 2; p++) {
+        sx += (int32_t)psx_mod_read_word(FIGHTERS + p * FIGHTER_BYTES);
+        sy += (int32_t)psx_mod_read_word(FIGHTERS + p * FIGHTER_BYTES + 4);
+        sz += (int32_t)psx_mod_read_word(FIGHTERS + p * FIGHTER_BYTES + 8);
+    }
+    *x = sx / 2; *y = sy / 2; *z = sz / 2;
+}
+
+/* The PS1 floor (0x80048E58 / 0x80049848) is a grid of TILES_X x TILES_Z
+ * tiles of TILE (1 800 in Gon's arena), its centre snapped to a tile; the
+ * Expanded's T3 arcade stages draw theirs instead, 10 x 10 cells of 2 500
+ * (tekken3_arcade_stages.c, arcade_floor). Both are centred on the
+ * fighters' midpoint (or, the camera high and looking down, where it looks;
+ * a step back looking up). */
+int tmst_camera_floor(int32_t *half_x, int32_t *half_z, int32_t *cell) {
+    if (tmst_compat_arcade_stage() >= 0) {
+        *half_x = *half_z = ARCADE_CELL * ARCADE_CELLS / 2; *cell = ARCADE_CELL;
+        return 1;
+    }
+    int32_t t = (int32_t)psx_mod_read_word(TILE), nx = (int32_t)psx_mod_read_word(TILES_X),
+            nz = (int32_t)psx_mod_read_word(TILES_Z);
+    if (t <= 0 || t > 10000 || nx <= 0 || nx > 16 || nz <= 0 || nz > 16) { *half_x = *half_z = *cell = 0; return 0; }
+    *half_x = t * nx / 2; *half_z = t * nz / 2; *cell = t;
+    return 1;
+}
+
+void tmst_camera_free(const TmstCamera *c, int hud) {
+    if (!saved) {
+        for (int i = 0; i < 8; i++) game_view[i] = psx_mod_read_word(VIEW + 4u * (uint32_t)i);
+        game_flag = psx_mod_read_word(FULL_DRAW);
+        saved = 1; have_h = 0;
+    }
+    ours = *c; hud_on = hud; free_on = 1; ending = 0;
+    psx_mod_write_word(FULL_DRAW, 1);
+}
+
+void tmst_camera_hide_fighters(int on) { fighters_hidden = on; }
+
+void tmst_camera_restore(void) {
+    if (!saved || !free_on) return;
+    free_on = 0; fighters_hidden = 0;
+    for (int i = 0; i < 8; i++) psx_mod_write_word(VIEW + 4u * (uint32_t)i, game_view[i]);
+    hud_on = 1;
+    ending = 2;                             /* the game's view, drawn the whole way once */
+}
+
+void tmst_camera_vblank(void) {
+    if (!ending || --ending) return;
+    psx_mod_write_word(FULL_DRAW, game_flag);
+    saved = 0;
+}
+
+/* The start of the scene's drawing: our view and H. */
+extern void __tmst_chain_func_80048240(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_80048240
+extern void __real_func_80048240(CPUState *cpu);
+void __tmst_chain_func_80048240(CPUState *cpu) { __real_func_80048240(cpu); }
+#endif
+void __wrap_func_80048240(CPUState *cpu) {
+    if (cpu->pc == 0 && saved) {
+        if (!have_h) { game_h = cpu->gte_ctrl[GTE_H]; have_h = 1; }
+        if (free_on) {
+            psx_mod_write_word(VIEW + VIEW_PITCH, (uint32_t)(ours.pitch >> 6));
+            psx_mod_write_word(VIEW + VIEW_YAW, (uint32_t)(ours.yaw >> 6));
+            psx_mod_write_word(VIEW + VIEW_X, (uint32_t)ours.x);
+            psx_mod_write_word(VIEW + VIEW_Y, (uint32_t)ours.y);
+            psx_mod_write_word(VIEW + VIEW_Z, (uint32_t)ours.z);
+            cpu->gte_ctrl[GTE_H] = (uint32_t)(ours.h > 0 ? ours.h : 1) & 0xffffu;
+        } else {
+            cpu->gte_ctrl[GTE_H] = game_h;
+        }
+    }
+    __tmst_chain_func_80048240(cpu);
+}
+
+/* A fighter's drawing (0x8003A818, a0 its record: from 0x8002BA64, for
+ * each fighter), left out while the fighter is behind our eye or nearer
+ * than NEAR in front of it: the game never sees a fighter there, and the
+ * GTE draws such a model's vertices behind the eye as shards across the
+ * screen. */
+#define NEAR 900.0
+static int behind(uint32_t record) {
+    int p = record == P1 ? 0 : record == P2 ? 1 : -1;
+    if (p < 0) return 0;
+    double fx = (int32_t)psx_mod_read_word(FIGHTERS + (uint32_t)p * FIGHTER_BYTES);
+    double fz = (int32_t)psx_mod_read_word(FIGHTERS + (uint32_t)p * FIGHTER_BYTES + 8);
+    double a = ours.yaw * 6.283185307179586 / TMST_TURN;
+    double depth = (fx - ours.x) * -sin(a) + (fz - ours.z) * cos(a);   /* along the view, on the floor plane */
+    return depth < NEAR;
+}
+extern void __tmst_chain_func_8003A818(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_8003A818
+extern void __real_func_8003A818(CPUState *cpu);
+void __tmst_chain_func_8003A818(CPUState *cpu) { __real_func_8003A818(cpu); }
+#endif
+void __wrap_func_8003A818(CPUState *cpu) {
+    if (cpu->pc == 0 && free_on && (fighters_hidden || behind(cpu->gpr[4]))) { cpu->pc = cpu->gpr[31]; return; }
+    __tmst_chain_func_8003A818(cpu);
+}
+
+/* The end of the scene's drawing in the whole-screen pause frame (called
+ * from 0x8002B650, returning to 0x8002B658): first the HUD routine, as the
+ * plain pause frame calls it (both fighters' HUD flag set, a0 / a1 the
+ * fighters), coming back to 0x8002B650, which calls this again. */
+extern void __tmst_chain_func_8004A6BC(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_8004A6BC
+extern void __real_func_8004A6BC(CPUState *cpu);
+void __tmst_chain_func_8004A6BC(CPUState *cpu) { __real_func_8004A6BC(cpu); }
+#endif
+void __wrap_func_8004A6BC(CPUState *cpu) {
+    if (cpu->pc == 0 && saved && cpu->gpr[31] == END_RETURN) {
+        if (hud_on && !hud_done) {
+            hud_done = 1;
+            psx_mod_write_word(P1 + SHOW_HUD, 1);
+            psx_mod_write_word(P2 + SHOW_HUD, 1);
+            cpu->gpr[4] = P1; cpu->gpr[5] = P2;
+            cpu->gpr[31] = BEFORE_END;
+            cpu->pc = HUD;
+            return;
+        }
+        hud_done = 0;
+    }
+    __tmst_chain_func_8004A6BC(cpu);
+}

@@ -18,14 +18,44 @@ enum {
     TMST_NEED_GAME_OPTIONS = 1u << 4,    /* tekken3_game_options_add */
 };
 
-/* The Expanded's stage engine in the upper VRAM half (tekken3_arcade_stages.c,
- * found at link time, absent = nothing taken): nonzero when the rectangle
- * holds its pixels now; its generation changes whenever it uploads. */
+/* The Expanded's users of the upper VRAM half (found at link time, absent =
+ * nothing taken): the stage engine (tekken3_arcade_stages.c), TTT Hitspark
+ * and Unknown's wolf. Nonzero when the rectangle holds pixels of theirs now;
+ * the stage engine's generation changes whenever it uploads. (The PS2 lasers
+ * of Devil and Angel have no such query: API_GAPS.) */
 int tmst_compat_high_vram_taken(int x, int y, int w, int h);
+/* Only TTT Hitspark's and the wolf's cells: written again whenever their
+ * effect plays (each frame, "unless already there"). */
+int tmst_compat_high_vram_effects(int x, int y, int w, int h);
 unsigned tmst_compat_high_vram_generation(void);
 /* The upper half's pixels of a rectangle (y 512..1023) into `out` (w x h);
  * 0 when this runtime cannot read them back (gpu_high_vram_pixels). */
 int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out);
+
+/* The screen's extra width on each side in fights (the Expanded's true
+ * widescreen, psx_mod_widescreen_x_margin), 0 without it: what a fill must
+ * cover (it includes the culling's guard, past the visible edge). */
+int tmst_compat_widescreen_margin(void);
+/* The visible side's width now (the wide compositor's, ws_nw_extra / 2):
+ * where a frame's edge goes. The margin above without the compositor. */
+int tmst_compat_widescreen_side(void);
+
+/* The T3 arcade stage the Expanded's stage engine draws in place of the
+ * PS1's (0..12, its arena), or -1: none (the PS1's own, a TTT stage, or a
+ * release without the engine; tekken3_arcade_stages_t3_stage, weak). */
+int tmst_compat_arcade_stage(void);
+
+/* The frame on the screen, as the player sees it, at the renderer's
+ * resolution (16:9: the wide frame, its sides too): *out (malloc'd ARGB,
+ * the caller frees) w x h, `scale` output pixels to a native one each way,
+ * `side` the width of each wide side in output pixels (0: none). Waits for
+ * the GPU (never every frame). Returns 0 when it cannot be read (24-bit
+ * display, a runtime without the readout). */
+int tmst_compat_read_frame(uint32_t **out, int *w, int *h, int *scale, int *side);
+
+/* The renderer drawing (gr_backend, weak): TMST_RENDERER_*. */
+enum { TMST_RENDERER_UNKNOWN = -1, TMST_RENDERER_SOFTWARE, TMST_RENDERER_OPENGL, TMST_RENDERER_VULKAN };
+int tmst_compat_renderer(void);
 
 /* The TMST_NEED_* this build found (src/compat/tmst_features.cmake). */
 unsigned tmst_compat_available(void);

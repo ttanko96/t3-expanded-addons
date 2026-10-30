@@ -928,6 +928,7 @@ static void panel(TmstPrims *k, int x, int y, int w, int h) {
 static int list_view(void) { return jb.view == VIEW_LIST || (jb.view == VIEW_DIALOG && jb.from == VIEW_LIST); }
 static int category_count(void);
 static void jukebox_prims(TmstPrims *k) {
+    if (!jb.active) return;                      /* another mod's picture */
     /* The panel: see-through, half the backdrop, half dark (B/2 + F/2),
      * from under the grid to the screen's bottom. */
     tmst_prim_room(k, 1);
@@ -963,6 +964,7 @@ static void jukebox_prims(TmstPrims *k) {
 static int vertex_x(uint32_t w) { return (int16_t)(w & 0xffff); }
 static int vertex_y(uint32_t w) { return (int16_t)(w >> 16); }
 static void hide_below_grid(uint32_t node) {
+    if (!jb.active) return;                      /* another mod's picture */
     unsigned words = psx_mod_read_word(node) >> 24;
     for (unsigned i = 1; i <= words;) {
         uint32_t a = node + i * 4, cmd = psx_mod_read_word(a) >> 24;

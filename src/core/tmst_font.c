@@ -57,6 +57,7 @@ static const uint8_t *glyph(unsigned char c) {
     if (c < 32 || c > 126) c = '?';
     return glyphs[c - 32];
 }
+const uint8_t *tmst_font_glyph(unsigned char c) { return glyph(c); }
 
 int tmst_text_width(const char *text, int scale) {
     int n = 0;
