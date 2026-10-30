@@ -7,7 +7,7 @@ No game data is included: everything a mod needs from the game is made on your m
 
 ## Features (currently)
 
-### Jukebox
+### Jukebox ###
 Choose the music of every fighter.
 - **Open:** the last row of the main menu, **JUKEBOX**.
 - **Grid:** ✕ a fighter's music list · L2/R2 switch the character panel (with TTT1 characters) · □ reset every
