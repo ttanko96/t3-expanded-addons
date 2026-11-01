@@ -19,8 +19,11 @@
  *                      arcade; bit 7 = a CD audio track), and the disc's CD
  *                      audio tracks (Console)
  *   TEKKEN TAG TOURNAMENT CONSOLE / ARCADE  addons/tmst/workspace/ttt-music/{console,
- *                      arcade}/*.bgm, when a source for them comes (their
- *                      title lists are already the setup's)
+ *                      arcade}/*.bgm: Console the 14 PS2 stage pieces the
+ *                      add-on's setup decodes from the Expanded's
+ *                      mods/ttt-ps2-music (tools/ttt_ps2_music.py); Arcade
+ *                      the 14 arcade stage pieces it renders from
+ *                      mods/ttt-music's C352 writes (tools/ttt_arcade_music.py)
  *
  * Titles: addons/tmst/workspace/jukebox/<category>.txt ("file = title"; the setup
  * writes the defaults, the player may edit them; "--disable" in a title

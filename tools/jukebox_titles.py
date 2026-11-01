@@ -11,7 +11,8 @@ One file per category of the Jukebox (src/jukebox/tmst_jukebox.c), each line
 for the music this install has now: the .bgm files of the category's
 folders, and for Tekken 3 the music the disc's executable names (xa-NN, an
 XA stream of TEKKEN3.XAS; cd-track-N, a CD audio track). A new file gets a
-line whose title is its name (without .bgm); lines already there are never
+line whose title is its name (without .bgm), the new files' lines in the
+order of their titles; lines already there are never
 changed, reordered or removed, so titles written by hand stay, and so do the
 lines of music that is gone (the game leaves those out). A title with
 "--disable" in it keeps that music out of the game's list. The game lists the
@@ -140,7 +141,10 @@ def update(root: Path) -> int:
         if text and not text.endswith('\n'):
             text += '\n'
         defaults = default_lines(file)
-        text += ''.join(defaults.get(n, f'{n} = {n[:-4] if n.endswith(".bgm") else n}') + '\n' for n in new)
+        lines = [defaults.get(n, f'{n} = {n[:-4] if n.endswith(".bgm") else n}') for n in new]
+        if mode is None:                # files: in the order of their titles (the disc's music: its own)
+            lines.sort(key=lambda line: line.split('=', 1)[1].strip().casefold())
+        text += ''.join(line + '\n' for line in lines)
         path.write_text(text, encoding='utf-8')
         added += len(new)
         print(f'{path.relative_to(root)}: {len(new)} new line(s)')

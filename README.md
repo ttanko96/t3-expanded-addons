@@ -39,7 +39,7 @@ The Expanded's own add-on support is still being made. Until then the add-on is 
 developer build script; once that support exists, the Expanded's **Update & play** will be enough.
 
 You need Windows 10/11, a Tekken 3 Expanded that has been set up once (the game starts; `build-release\` and
-`.setup\venv\` exist in its folder), access to this repository and about 300 MB of free space. Below,
+`.setup\venv\` exist in its folder), access to this repository and about 750 MB of free space. Below,
 `C:\Games\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
@@ -48,7 +48,8 @@ You need Windows 10/11, a Tekken 3 Expanded that has been set up once (the game 
    git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\Games\tekken3-expanded\addons\tmst"
    ```
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
-3. **Set it up** (makes what the mods need on your machine, such as the Jukebox's title lists):
+3. **Set it up** (makes what the mods need on your machine: the Jukebox's TTT console and arcade music, from the TTT PS2 disc's
+   and tektagt.zip's music the Expanded's setup imported, and its title lists):
    ```bash
    "C:\Games\tekken3-expanded\.setup\venv\Scripts\python.exe" "C:\Games\tekken3-expanded\addons\tmst\setup\tmst_setup.py"
    ```
