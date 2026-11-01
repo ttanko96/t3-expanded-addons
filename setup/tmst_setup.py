@@ -4,7 +4,14 @@ add-on's mods need. Nothing it makes is ever committed.
 
 Each step is a function in STEPS: it checks whether its output is current
 (a version stamp under addons/tmst/workspace/) and does its work only when not.
-Steps: the Jukebox's TTT console and arcade music, then its title lists.
+Steps: the Tekken 2 disc (checked and remembered: nothing taken from it yet),
+the Jukebox's TTT console and arcade music, then its title lists.
+
+    tmst_setup.py                    the steps, asking nothing (the Expanded's hook)
+    tmst_setup.py --interactive      asks for the Tekken 2 disc in a window when
+                                     none is known (Setup TMST.cmd)
+    tmst_setup.py --t2-disc <file>   that Tekken 2 disc (.cue, .bin or .chd)
+    tmst_setup.py --no-t2-disc       no Tekken 2 disc (forgets the one known)
 """
 from __future__ import annotations
 import argparse, json, sys
@@ -15,6 +22,11 @@ ROOT = ADDON.parents[1]                     # <expanded>/addons/tmst/setup
 # The add-on's own data: in its folder, which the Expanded's setup (its
 # free-space step deletes workspace/) never touches.
 STATE = ADDON / 'workspace'
+OPTIONS = argparse.Namespace(interactive=False, t2_disc=None, no_t2_disc=False)
+
+
+class SetupFailed(Exception):
+    pass
 
 
 def log(message: str) -> None:
@@ -56,6 +68,106 @@ def music_pack_step(music, name: str, label: str, source: str, convert) -> None:
     names = convert(pack, out, disc)
     if names is not None:
         save_stamp(name, {'stamp': want, 'files': names})
+
+
+def file_stamp(path: Path) -> dict:
+    st = path.stat()
+    return {'size': st.st_size, 'mtime': int(st.st_mtime)}
+
+
+def expanded_source_folders() -> list[Path]:
+    """The folders of the files the Expanded's setup was last given (its
+    .setup/last-inputs.json), then the Expanded's own folder."""
+    try:
+        inputs = json.loads((ROOT / '.setup/last-inputs.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        inputs = {}
+    folders = []
+    for value in inputs.values():
+        if isinstance(value, str) and value:
+            folder = Path(value).parent
+            if folder not in folders:
+                folders.append(folder)
+    return folders + [ROOT]
+
+
+def ask_t2_disc() -> Path | None:
+    """The Tekken 2 disc chosen in a file window; None when cancelled (or no window)."""
+    try:
+        import tkinter
+        from tkinter import filedialog
+        window = tkinter.Tk()
+        window.withdraw()
+        window.attributes('-topmost', True)
+        chosen = filedialog.askopenfilename(
+            parent=window, title='Tekken 2 disc (optional): Cancel to go on without it',
+            filetypes=[('Tekken 2 disc image', '*.cue *.bin *.chd'), ('All files', '*.*')])
+        window.destroy()
+    except Exception as error:   # noqa: BLE001 - no Tk, no display: go on without asking
+        log(f'Tekken 2 disc: cannot open a window ({error})')
+        return None
+    return Path(chosen) if chosen else None
+
+
+def tekken2_disc() -> None:
+    """The player's Tekken 2 disc (tools/tekken2_disc.py), checked and kept in
+    workspace/tekken2-disc.json for the imports to come. Optional: without it
+    the setup goes on; a disc given on the command line that is not Tekken 2
+    stops it."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import tekken2_disc as t2
+    from disc_image import DiscError
+    name = 'tekken2-disc'
+
+    def keep(info: dict, how: str) -> None:
+        save_stamp(name, {'version': t2.VERSION, 'disc': info, 'file': file_stamp(Path(info['path']))})
+        log(f'Tekken 2 disc: {info["region"]} ({info["serial"]}), {how}: {info["path"]}')
+
+    if OPTIONS.no_t2_disc:
+        save_stamp(name, {'version': t2.VERSION, 'declined': True})
+        log('Tekken 2 disc: none (as asked)')
+        return
+    if OPTIONS.t2_disc:
+        try:
+            keep(t2.identify(OPTIONS.t2_disc), 'given')
+        except (DiscError, OSError) as error:
+            raise SetupFailed(f'Tekken 2 disc: {error}') from None
+        return
+    have = stamp(name)
+    known = have.get('disc')
+    if known:
+        path = Path(known['path'])
+        try:
+            if have.get('version') == t2.VERSION and have.get('file') == file_stamp(path):
+                log(f'Tekken 2 disc: {known["region"]} ({known["serial"]}): {path}')
+                return
+            keep(t2.identify(path), 'checked again')
+            return
+        except (DiscError, OSError) as error:
+            log(f'Tekken 2 disc: the one known cannot be used any more ({error})')
+    elif have.get('declined') and not OPTIONS.interactive:
+        return
+    for candidate in t2.search(expanded_source_folders()):
+        try:
+            keep(t2.identify(candidate), 'found')
+            return
+        except (DiscError, OSError) as error:
+            log(f'Tekken 2 disc: {candidate.name} not used ({error})')
+    if have.get('declined') or not OPTIONS.interactive:
+        log('Tekken 2 disc: none (optional; Setup TMST.cmd asks for it, or drop the disc on it)')
+        return
+    log('Tekken 2 disc: choose it in the window (optional: Cancel goes on without it)')
+    while True:
+        chosen = ask_t2_disc()
+        if not chosen:
+            save_stamp(name, {'version': t2.VERSION, 'declined': True})
+            log('Tekken 2 disc: none (drop the disc on Setup TMST.cmd to add it later)')
+            return
+        try:
+            keep(t2.identify(chosen), 'chosen')
+            return
+        except (DiscError, OSError) as error:
+            log(f'Tekken 2 disc: {error}')
 
 
 def ttt_ps2_music() -> None:
@@ -105,17 +217,25 @@ def jukebox_titles() -> None:
     titles.update(ROOT)
 
 
-STEPS: list = [ttt_ps2_music, ttt_arcade_music, jukebox_titles]   # the music first: the titles list it
+STEPS: list = [tekken2_disc, ttt_ps2_music, ttt_arcade_music, jukebox_titles]   # the music first: the titles list it
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='TMST add-on setup (after the Expanded setup).')
-    parser.parse_args()
+    parser.add_argument('--interactive', action='store_true', help='ask for what is missing in a window')
+    choice = parser.add_mutually_exclusive_group()
+    choice.add_argument('--t2-disc', metavar='FILE', help='the Tekken 2 disc (.cue, .bin or .chd)')
+    choice.add_argument('--no-t2-disc', action='store_true', help='no Tekken 2 disc')
+    parser.parse_args(namespace=OPTIONS)
     if not (ROOT / 'game.toml').is_file():
         log(f'{ROOT} is not a Tekken 3 Expanded folder')
         return 1
-    for step in STEPS:
-        step()
+    try:
+        for step in STEPS:
+            step()
+    except SetupFailed as error:
+        log(str(error))
+        return 1
     log('done' if STEPS else 'nothing to make yet')
     return 0
 

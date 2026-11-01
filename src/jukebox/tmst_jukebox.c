@@ -227,8 +227,11 @@ static int find_xas(void) {
     lba = le32(s + 156 + 2); size = le32(s + 156 + 10);
     return iso_find(lba, size, "TEKKEN3", &lba, &size) && iso_find(lba, size, "TEKKEN3.XAS", &xas_lba, &size);
 }
-/* The game's disc: the first line of disc.cfg beside it (the launcher's). */
-static int disc_path(char *out, size_t size) {
+/* The game's disc: the first line of disc.cfg beside it (the runtime caches
+ * the disc picked there); else game.toml's [game] disc, relative to the folder
+ * that holds game.toml (the Expanded's launcher passes --disc and writes no
+ * disc.cfg). */
+static int disc_cfg_path(char *out, size_t size) {
     char cfg[4200]; snprintf(cfg, sizeof cfg, "%sdisc.cfg", game_exe_dir());
     FILE *f = fopen(cfg, "rb");
     if (!f) return 0;
@@ -239,11 +242,46 @@ static int disc_path(char *out, size_t size) {
     while (n && (out[n - 1] == '\n' || out[n - 1] == '\r' || out[n - 1] == ' ')) out[--n] = 0;
     return n > 0;
 }
+static char *trim(char *s);
+static int game_toml_disc_path(char *out, size_t size) {
+    const char *root = game_root();
+    size_t r = strlen(root);
+    const char *sep = r && (root[r - 1] == '/' || root[r - 1] == '\\') ? "" : "/";
+    char toml[4200]; snprintf(toml, sizeof toml, "%s%sgame.toml", root, sep);
+    FILE *f = fopen(toml, "rb");
+    if (!f) return 0;
+    char line[4200], value[4096] = "";
+    int in_game = 0;
+    while (!value[0] && fgets(line, sizeof line, f)) {
+        char *s = trim(line);
+        if (*s == '[') { in_game = !strncmp(s, "[game]", 6); continue; }
+        if (!in_game || strncmp(s, "disc", 4)) continue;
+        s = trim(s + 4);
+        if (*s != '=') continue;
+        s = trim(s + 1);
+        char quote = *s;
+        if (quote != '"' && quote != '\'') continue;
+        char *end = strchr(s + 1, quote);
+        if (!end || end == s + 1) continue;
+        size_t o = 0;                        /* a basic string's \\ is one backslash */
+        for (char *c = s + 1; c < end && o + 1 < sizeof value; c++)
+            value[o++] = quote == '"' && c[0] == '\\' && c[1] == '\\' ? *c++ : *c;
+        value[o] = 0;
+    }
+    fclose(f);
+    if (!value[0]) return 0;
+    int absolute = value[0] == '/' || value[0] == '\\' || (value[0] && value[1] == ':');
+    if (absolute) return snprintf(out, size, "%s", value) < (int)size;
+    return snprintf(out, size, "%s%s%s", root, sep, value) < (int)size;
+}
 static int disc_ready(void) {
     if (disc_tried) return disc != NULL;
     disc_tried = 1;
     char path[4200];
-    if (!disc_path(path, sizeof path)) { tmst_log("jukebox: no disc.cfg beside the game"); return 0; }
+    if (!disc_cfg_path(path, sizeof path) && !game_toml_disc_path(path, sizeof path)) {
+        tmst_log("jukebox: no disc.cfg beside the game and no [game] disc in game.toml");
+        return 0;
+    }
     disc = iso_open(path);
     if (disc && !find_xas()) { tmst_log("jukebox: no TEKKEN3.XAS on %s", path); disc = NULL; }
     return disc != NULL;

@@ -25,7 +25,6 @@ set(TMST_SOURCES
     src/core/tmst_png.c
     src/core/tmst_files.c
     src/compat/tmst_compat.c
-    src/dev/tmst_noop.c
     src/jukebox/tmst_jukebox.c
     src/photo/tmst_photo.c
     src/photo/tmst_photo_fx.c
@@ -62,7 +61,6 @@ set(TMST_CHAINS
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
 set(TMST_PACKAGES
-    tmst.dev.noop
     tmst.jukebox
     tmst.photo-mode
 )
