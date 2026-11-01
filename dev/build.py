@@ -212,11 +212,40 @@ def main() -> None:
     # The framework empties build-release/mods at every link: the Expanded's
     # setup keeps the player's mod settings and data aside meanwhile.
     forget_chains(build, keep)
+    was_ready = expanded_ready(setup)
     with setup.kept_mods():
         run(configure_args(toolchain, ROOT, build, with_addon), env)
         run([configure_args(toolchain, ROOT, build, with_addon)[0], '--build', str(build),
              '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
+    if was_ready:
+        keep_ready(setup)
     print('TMST build: build-release ' + ('with' if with_addon else 'WITHOUT') + ' the add-on')
+
+
+def expanded_ready(setup) -> bool:
+    """The Expanded's setup is done but for the exe's digest (an earlier
+    build of ours, or none yet): its ready() with the digest it expects."""
+    digest = setup.digest
+    try:
+        expected = setup.load_json(setup.STATE / 'ready.json').get('exe_sha256')
+        setup.digest = lambda path: expected
+        return bool(expected) and bool(setup.ready())
+    except Exception:   # noqa: BLE001 - another Expanded setup: its own launcher decides
+        return False
+    finally:
+        setup.digest = digest
+
+
+def keep_ready(setup) -> None:
+    """The Expanded's setup is done when the game's exe is the one it built
+    (.setup/ready.json exe_sha256): the exe built here takes its place, or its
+    Tekken 3 Expanded.exe would ask for an update (and build once more)."""
+    try:
+        state = setup.load_json(setup.STATE / 'ready.json')
+        state['exe_sha256'] = setup.digest(setup.EXE)
+        setup.save_json(setup.STATE / 'ready.json', state)
+    except Exception as error:   # noqa: BLE001 - the game still plays; its launcher rebuilds once
+        print(f'TMST build: the Expanded setup state is not updated ({error})')
 
 
 if __name__ == '__main__':
