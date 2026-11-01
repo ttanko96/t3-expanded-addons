@@ -9,7 +9,7 @@ the Jukebox's TTT console and arcade music, then its title lists.
 
     tmst_setup.py                    the steps, asking nothing (the Expanded's hook)
     tmst_setup.py --interactive      asks for the Tekken 2 disc in a window when
-                                     none is known (Setup TMST.cmd)
+                                     none is known (without setup/tmst_gui.py)
     tmst_setup.py --t2-disc <file>   that Tekken 2 disc (.cue, .bin or .chd)
     tmst_setup.py --no-t2-disc       no Tekken 2 disc (forgets the one known)
 """
@@ -231,7 +231,8 @@ def main() -> int:
         log(f'{ROOT} is not a Tekken 3 Expanded folder')
         return 1
     try:
-        for step in STEPS:
+        for n, step in enumerate(STEPS, 1):
+            print(f'TMST step {n}/{len(STEPS)}: {step.__name__}', flush=True)   # the setup window's progress
             step()
     except SetupFailed as error:
         log(str(error))

@@ -45,17 +45,20 @@ Expanded's folder: change it if yours is elsewhere.
    git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\Games\tekken3-expanded\addons\tmst"
    ```
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
-3. **Double-click `addons\tmst\Setup TMST.cmd`.** It uses the Expanded's own Python and compilers, and:
-   - looks for your **Tekken 2** disc (optional; nothing is taken from it yet) beside the discs the Expanded's setup was
-     given, else asks for it in a window (Cancel goes on without it). USA (SLUS-00213) and Europe (SCES-00255), as a
-     `.cue` with its `.bin` files, a `.bin` or a `.chd`. To give or change it later, drop the disc on `Setup TMST.cmd`;
+3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
+   progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
+   - takes your **Tekken 2** disc (optional; nothing is taken from it yet): the window fills it in when it finds one
+     beside the discs the Expanded's setup was given; **Browse** for another, or clear the field to go on without it. USA
+     (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`. A disc dropped on
+     `Setup TMST.cmd` is filled in too;
    - makes what the mods need on your machine: the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and
      tektagt.zip's music the Expanded's setup imported) and its title lists;
    - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode), as the Expanded's setup builds it: your mod
      settings and game data stay.
 
-   It stops with a clear message if the Expanded has not been set up yet, and ends with
-   `The TMST add-on is installed`. Once the Expanded runs add-on setups itself, its **Update & play** does all of this.
+   The window says so if the Expanded has not been set up yet or the game is running. When it reads
+   `The TMST add-on is installed`, **Play** opens the game's launcher. Once the Expanded runs add-on setups itself, its
+   **Update & play** does all of this.
 
 ## Settings
 

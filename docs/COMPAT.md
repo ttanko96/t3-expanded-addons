@@ -26,6 +26,7 @@
 | `mod_plugins.h` function names | `src/compat/tmst_features.cmake` → `TMST_HAS_*` | build |
 | `tekken3_game_options_add()` | `src/compat/` (Jukebox, T2 option) | build |
 | setup internals: `tools()`, `kept_mods`, `build_game()` arguments | `dev/build.py` | `check_expanded.py` |
+| setup state: `ready()`, `digest()`, `.setup/ready.json` `exe_sha256` (our build writes the new exe's digest, else Tekken 3 Expanded.exe asks for an update); `launch_game()`, `easy_launcher.ProcessJob` | `dev/build.py`, `setup/tmst_gui.py` | – (failure: the launcher rebuilds once; Cancel stops only the step's process) |
 | `git describe` of the Expanded folder | version guard (`tmst_guard`) | – |
 | symbols the Expanded wraps itself (we must not wrap them again) | `addon.cmake` `TMST_WRAPS` | build (duplicate `__wrap_` = link error) |
 | chained symbols: the Expanded's `__wrap_<sym>` renamed in its compiled object before the link | `addon.cmake` `TMST_CHAINS`, `dev/tmst_chain.py` | build (missing object = error naming the symbol); wrapped or not is read from psx-runtime's link options at configure time; not wrapped (another release, TTT1 Characters off): we wrap it and our file's `TMST_BRIDGE_<sym>` part calls `__real_<sym>` |
