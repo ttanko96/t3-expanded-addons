@@ -7,8 +7,9 @@ the Expanded's own add-on hook exists (docs/API_GAPS.md G11).
                               worktree of its own: dev/build/<ref>/ (compat check)
 
 It builds exactly as the Expanded's setup does (launcher/setup_backend.py:
-build_game), with one argument more: -DCMAKE_PROJECT_INCLUDE=dev/tmst_inject.cmake.
-The Expanded's tracked files are never touched. The setup must have run once
+build_game), with one argument more: -DCMAKE_PROJECT_INCLUDE=<build>/tmst_include.cmake,
+a stub written there that includes dev/tmst_inject.cmake while the add-on is
+in place (STUB). The Expanded's tracked files are never touched. The setup must have run once
 (generated/ holds the game made from the player's disc).
 """
 from __future__ import annotations
@@ -19,6 +20,47 @@ DEV = Path(__file__).resolve().parent
 ADDON = DEV.parent
 ROOT = ADDON.parents[1]                    # <expanded>/addons/tmst/dev
 INJECT = DEV / 'tmst_inject.cmake'
+
+# The build's CMAKE_PROJECT_INCLUDE (the cache keeps it, so the Expanded's own
+# Update & play configures with it too). It lives in the build folder, not in
+# the add-on's: once addons/tmst is deleted without build.cmd --without, it
+# deletes the objects whose wrapper dev/tmst_chain.py renamed (they compile
+# again as the Expanded wrote them) and the game is built without the add-on.
+STUB = '''# Written by addons/tmst/dev/build.py (the TMST add-on): includes the add-on
+# while it is in place; once its folder is gone, the Expanded builds as its own.
+if(NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    return()
+endif()
+if(EXISTS "@INJECT@")
+    include("@INJECT@")
+elseif(NOT DEFINED TMST_GONE)
+    set(TMST_GONE 1)
+    set(_tmst_state "${CMAKE_BINARY_DIR}/tmst_chain_state.json")
+    if(EXISTS "${_tmst_state}")
+        # {"symbol": ["<object>", ...]}: every quoted object path in it.
+        file(READ "${_tmst_state}" _tmst_json)
+        string(REGEX MATCHALL "\\"[^\\"]+\\\\.o(bj)?\\"" _tmst_objs "${_tmst_json}")
+        foreach(_tmst_obj IN LISTS _tmst_objs)
+            string(REPLACE "\\"" "" _tmst_obj "${_tmst_obj}")
+            string(REPLACE "\\\\\\\\" "/" _tmst_obj "${_tmst_obj}")
+            file(TO_CMAKE_PATH "${_tmst_obj}" _tmst_obj)
+            file(REMOVE "${_tmst_obj}")
+            message(STATUS "TMST: ${_tmst_obj} back to the Expanded's own")
+        endforeach()
+        file(REMOVE "${_tmst_state}")
+    endif()
+    message(STATUS "TMST: the add-on's folder is gone; the Expanded is built without it")
+endif()
+'''
+
+
+def write_stub(build: Path) -> Path:
+    build.mkdir(parents=True, exist_ok=True)
+    stub = build / 'tmst_include.cmake'
+    text = STUB.replace('@INJECT@', INJECT.as_posix())
+    if not stub.is_file() or stub.read_text(encoding='utf-8') != text:
+        stub.write_text(text, encoding='utf-8')
+    return stub
 
 
 def fail(message: str) -> None:
@@ -70,7 +112,7 @@ def configure_args(toolchain, source: Path, build: Path, with_addon: bool) -> li
     args.append('-DTEKKEN3_TTT1_CHARACTERS=' + ttt1)
     # The cache keeps CMAKE_PROJECT_INCLUDE: set or clear it every time, so that
     # the Expanded's own Update & play builds what was built last.
-    args.append('-DCMAKE_PROJECT_INCLUDE=' + (INJECT.as_posix() if with_addon else ''))
+    args.append('-DCMAKE_PROJECT_INCLUDE=' + (write_stub(build).as_posix() if with_addon else ''))
     return args
 
 

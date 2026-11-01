@@ -33,14 +33,11 @@ A free camera in any paused fight, and photos of it.
   sides are shown exactly once the camera stands still; while it moves, a close look.
 - Best with the OpenGL renderer. With Vulkan the panel's text and the exact preview are not shown.
 
-## Installation (currently)
+## Installation
 
-The Expanded's own add-on support is still being made. Until then the add-on is built into the game by its own
-developer build script; once that support exists, the Expanded's **Update & play** will be enough.
-
-You need Windows 10/11, a Tekken 3 Expanded that has been set up once (the game starts; `build-release\` and
-`.setup\venv\` exist in its folder), access to this repository and about 750 MB of free space. Below,
-`C:\Games\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
+You need Windows 10/11, a Tekken 3 Expanded that has been set up once with its own `Setup Tekken 3.cmd` (the game
+starts), access to this repository and about 750 MB of free space. Below, `C:\Games\tekken3-expanded` is the
+Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
 2. **Put the add-on in place**, exactly at `C:\Games\tekken3-expanded\addons\tmst\`:
@@ -48,33 +45,33 @@ You need Windows 10/11, a Tekken 3 Expanded that has been set up once (the game 
    git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\Games\tekken3-expanded\addons\tmst"
    ```
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
-3. **Set it up** (makes what the mods need on your machine: the Jukebox's TTT console and arcade music, from the TTT PS2 disc's
-   and tektagt.zip's music the Expanded's setup imported, and its title lists):
-   ```bash
-   "C:\Games\tekken3-expanded\.setup\venv\Scripts\python.exe" "C:\Games\tekken3-expanded\addons\tmst\setup\tmst_setup.py"
-   ```
-   It ends with `TMST setup: done`.
-4. **Rebuild the game with the add-on** (as the Expanded's setup builds it; your mod settings and game data stay):
-   ```bash
-   "C:\Games\tekken3-expanded\addons\tmst\dev\build.cmd"
-   ```
-   It ends with `TMST build: build-release with the add-on`.
+3. **Double-click `addons\tmst\Setup TMST.cmd`.** It uses the Expanded's own Python and compilers, and:
+   - looks for your **Tekken 2** disc (optional; nothing is taken from it yet) beside the discs the Expanded's setup was
+     given, else asks for it in a window (Cancel goes on without it). USA (SLUS-00213) and Europe (SCES-00255), as a
+     `.cue` with its `.bin` files, a `.bin` or a `.chd`. To give or change it later, drop the disc on `Setup TMST.cmd`;
+   - makes what the mods need on your machine: the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and
+     tektagt.zip's music the Expanded's setup imported) and its title lists;
+   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode), as the Expanded's setup builds it: your mod
+     settings and game data stay.
+
+   It stops with a clear message if the Expanded has not been set up yet, and ends with
+   `The TMST add-on is installed`. Once the Expanded runs add-on setups itself, its **Update & play** does all of this.
 
 ## Settings
 
 Start `Tekken 3 Expanded.exe`, open the **Mods** tab and switch the mods on in the **TMST** group (both are off by
-default). Restart the game after switching a mod. "TMST add-on test" is a developer test: leave it off.
+default). Restart the game after switching a mod.
 
 ## Updating and removing
 
-- **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, repeat
-  step 4.
-- **Add-on update:** `git -C "C:\Games\tekken3-expanded\addons\tmst" pull`, then steps 3 and 4.
+- **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, run
+  `Setup TMST.cmd` again.
+- **Add-on update:** `git -C "C:\Games\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd`.
 - **Removing:** close the game, rebuild without the add-on, then delete the folder:
   ```bash
   "C:\Games\tekken3-expanded\addons\tmst\dev\build.cmd" --without
   ```
-  Deleting the folder first breaks the Expanded's Update & play: put it back and rebuild without it.
+  If the folder is deleted first, the Expanded's next Update & play builds the game without the add-on by itself.
 
 ## License
 
