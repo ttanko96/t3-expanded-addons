@@ -412,9 +412,13 @@ static void photo_prims(TmstPrims *k) {
  * and Tekken Force): the top HUD (life bars, names, timer, rounds, score) at
  * 1006, and the nearest ranks, 0..7 (Tekken Force's progress bar at the
  * bottom). The ranks around 1006 hold the fighters' shadows (1007..1009,
- * 1020, by stage): kept. */
+ * 1020, by stage): kept. Without the fighters (the stage alone, for the
+ * FIGHTERS blur) the top HUD goes further back, to 1009 where their shadows
+ * were (measured 2026-11-02, Arcade): there everything from 1006 to the
+ * stage's ranks (1017..) goes, the shadows with the fighters. */
 static int hud_node(uint32_t node, int rank) {
     (void)node;
+    if (ph.capture_stage && rank >= 1006 && rank <= 1016) return 1;
     return rank == 1006 || (rank >= 0 && rank <= 7);
 }
 

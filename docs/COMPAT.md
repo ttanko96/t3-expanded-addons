@@ -28,6 +28,10 @@
 | `tekken3_game_options_add()` | `src/compat/` (Jukebox, T2 option) | build |
 | setup internals: `tools()`, `kept_mods`, `build_game()` arguments | `dev/build.py` | `check_expanded.py` |
 | setup state: `ready()`, `digest()`, `.setup/ready.json` `exe_sha256` (our build writes the new exe's digest, else Tekken 3 Expanded.exe asks for an update); `launch_game()`, `easy_launcher.ProcessJob` | `dev/build.py`, `setup/tmst_gui.py` | – (failure: the launcher rebuilds once; Cancel stops only the step's process) |
+| setup state `.setup/last-inputs.json`: `ttt_disc` (the TTT PS2 disc the Expanded's setup was given: the PS2 pieces the `.ttp` leaves out); the folders of all its paths (where the Tekken 2 disc is looked for) | `tools/ttt_ps2_music.py`, `setup/tmst_setup.py` | – (missing: only the `.ttp`'s pieces; the Tekken 2 field empty) |
+| `mods/ttt-music/music.ttm` format (`'TTTM'`, u32 format 1, u32 inflated size, zlib: the pieces' C352 writes and the chip's samples; the Expanded's `tools/ttt_stages/music_install.py`) | `tools/ttt_arcade_music.py`, `tools/ttm_render.c` | magic, format number and inflated size (other: an error naming the file) |
+| `mods/ttt-ps2-music/ps2-music.ttp` format (`'TTP2'`, u32 format, u32 pieces, per piece 5 × u32: PS2 BGM number, first sector, sectors, loop sector, volume; 2 048-byte PS-ADPCM sectors, 1 024 bytes left then right; the Expanded's `tools/ttt_stages/ps2_music_install.py`) | `tools/ttt_ps2_music.py` | magic only (other: an error naming the file) |
+| the upstream author gives a heads-up when `.setup/ready.json`, `.setup/last-inputs.json`, `music.ttm` or `ps2-music.ttp` changes | – | – |
 | `git describe` of the Expanded folder | version guard (`tmst_guard`) | – |
 | symbols the Expanded wraps itself (we must not wrap them again) | `addon.cmake` `TMST_WRAPS` | build (duplicate `__wrap_` = link error) |
 | chained symbols: the Expanded's `__wrap_<sym>` renamed in its compiled object before the link | `addon.cmake` `TMST_CHAINS`, `dev/tmst_chain.py` | build (missing object = error naming the symbol); wrapped or not is read from psx-runtime's link options at configure time; not wrapped (another release, TTT1 Characters off): we wrap it and our file's `TMST_BRIDGE_<sym>` part calls `__real_<sym>` |
@@ -35,6 +39,8 @@
 | upper VRAM: `psx_mod_gpu_high_vram_*`, packet memory as trusted source; area x 0..511, y 768..1023 | `src/core/tmst_overlay.c` | `TMST_HAS_HIGH_VRAM_UPLOAD` |
 | `tekken3_stage_high_vram_used/generation()` (weak) | `src/compat/tmst_compat.c` | absent = nothing taken |
 | guest: 0x8006AE14 = play music (a0 = id) | `src/core/tmst_music.c` | retail, stable |
+| guest music state 0x800A05D8 (+0 state, 2/3 an XA playing; +0x44 1 audible; +0x48 the piece; +0x54/+0x58 the resume point; +0xB0/+0xB2/+0xB4 master, piece volume, level), the music table 0x80024FD0 (byte 1: bit 7 loops, low 7 the volume), the round's music 0x800ADD08 | `src/jukebox/tmst_jukebox.c` (the stand-in piece it follows) | retail, stable |
+| the Expanded's TTT stage music plays only over the round's own piece (`cur == 0x800ADD08`, `src/tekken3_ttt_music.c`) | `src/jukebox/tmst_jukebox.c` (a stand-in, never the round's piece) | in game |
 | main menu: the working list's address in the menu's LUI/ORI (0x800DB5D0/D8, patched by the Expanded), its layout (count +4, rows of 8 from +16), the Expanded's menu code in its `__wrap_func_80028CD4` (seen only with its own rows: ours are in the list in phase 1 only) | `src/core/tmst_menu.c` | retail + the Expanded's patch, checked by the menu entry's first word |
 | `tekken3_outfits_input` (every pad read, main.cpp), chained | `src/core/tmst_input.c` | build |
 | `spu_render`, `spu_set_host_mix_volume` (the Expanded's TTT1 voices wrap both), chained; `__real_spu_set_host_mix_volume` to mute the game's music | `src/core/tmst_spu.c` | build |

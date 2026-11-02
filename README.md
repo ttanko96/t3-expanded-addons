@@ -13,7 +13,8 @@ Choose the music of every fighter.
 - **Grid:** ✕ a fighter's music list · L2/R2 switch the character panel (with TTT1 characters) · □ reset every
   fighter to their own music · ○ exit (asks to save changes).
 - **List:** L2/R2 category · △ preview / stop · ✕ give the track to the fighter · □ reset this fighter · ○ back.
-- In a fight the fighters' chosen music plays (P2's first), whatever stage is picked.
+- In a fight the opponent's (P2's) chosen music plays, whatever stage is picked; without a choice, the game's own.
+  It starts, fades and stops with the game's music (the match's end, the pause, the BGM SELECT's silence).
 - The choices are saved beside the memory card (`saves\jukebox.txt`). The track titles are plain text lists in
   `addons\tmst\workspace\jukebox\` (`file = title` per line; `--disable` in a title leaves the track out).
 
@@ -25,7 +26,7 @@ A free camera in any paused fight, and photos of it.
   stops at the edge of the stage.
 - **Panel (START):** ZOOM, FOCUS and BLUR (depth of field: the fighters sharp, or a sharp band), FILTER (14: black &
   white, sepia, noir, vintage, high contrast, cold, warm, teal & orange, duotone, poster, night vision, scanlines,
-  negative), FRAME (8: letterbox, polaroid, film strip, vignette, Tekken, CRT TV, comic), RESET.
+  negative), FRAME (8: letterbox, polaroid, film strip, vignette, T3E, CRT TV, comic), RESET.
 - ✕ take a photo · △ hide the HUD · ○ back to the pause menu, the fight exactly as it was.
 - Photos are saved as PNG at the renderer's resolution (16:9 with its sides) in `addons\tmst\screenshots\`
   (`photo_YYYYMMDD_HHMMSS.png`).
@@ -56,7 +57,8 @@ The King of Iron Fist Tournament, as a mode of its own.
 ## Installation
 
 You need Windows 10/11, a Tekken 3 Expanded that has been set up once with its own `Setup Tekken 3.cmd` (the game
-starts), access to this repository and about 750 MB of free space. Below, `C:\Games\tekken3-expanded` is the
+starts), access to this repository and about 750 MB of free space: the Jukebox's decoded TTT music alone takes about
+470 MB in `addons\tmst\workspace\`. Below, `C:\Games\tekken3-expanded` is the
 Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
@@ -98,4 +100,6 @@ default). Restart the game after switching a mod.
 
 ## License
 
-PolyForm Noncommercial 1.0.0.
+[PolyForm Noncommercial 1.0.0](LICENSE). `tools/ttm_render.c` adapts the C352 replay of
+[Tekken 3 Expanded](https://github.com/omarma/tekken3-expanded) by Matthew Stan (PolyForm Noncommercial 1.0.0), itself
+an adaptation of MAME's C352 by R. Belmont and superctr (BSD-3-Clause, [licenses/MAME-BSD-3-Clause.txt](licenses/MAME-BSD-3-Clause.txt)).
