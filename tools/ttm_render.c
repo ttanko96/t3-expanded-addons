@@ -11,7 +11,12 @@
  * <out>/piece-NN.bgm (NN its number, hex): 'T3BGM001', u32 44 100, u32
  * frames, u32 loop frame, then s16 left and right at gain percent, the
  * frames from `loop frame` the same stream as from `frames` on. Prints
- * "NN frames loop" per piece. */
+ * "NN frames loop" per piece.
+ *
+ * Credits: the C352 replay is Matthew Stan's, from Tekken 3 Expanded
+ * (src/tekken3_ttt_music.c, PolyForm Noncommercial 1.0.0), which adapts
+ * MAME's C352 (src/devices/sound/c352.cpp), copyright R. Belmont and
+ * superctr, BSD-3-Clause: licenses/MAME-BSD-3-Clause.txt. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -28,12 +28,13 @@
  * Titles: addons/tmst/workspace/jukebox/<category>.txt ("file = title"; the setup
  * writes the defaults, the player may edit them; "--disable" in a title
  * leaves that piece out), else the file's name. Choices: jukebox.txt beside
- * the memory card ("key = category/file"). A fighter with a choice whose
- * music is there plays it in its fights instead of the game's piece: when
- * the game starts the music of a fighter's record (0x8006AE14, chained), that
- * piece is skipped and ours streams, mixed after the game's sound at the
- * player's music volume (src/core/tmst_spu.c). While the Jukebox is open the
- * game's music is silent and the preview plays.
+ * the memory card ("key = category/file"). An opponent (P2) with a choice
+ * whose music is there plays it in its fights instead of the game's piece:
+ * when the game starts the fight's music (0x8006AE14, chained), it plays a
+ * muted stand-in instead and ours streams as long as that one plays, at its
+ * level (fades, the pause), mixed after the game's sound at the player's
+ * music volume (src/core/tmst_spu.c). While the Jukebox is open the game's
+ * music is silent and the preview plays.
  *
  * The list is a picture of our own over the lower part of the grid screen
  * (src/core/tmst_overlay.c), in the add-on's font; the pads go through our
@@ -1190,55 +1191,105 @@ static void show_picture(void) {
 }
 
 /* ---- sound -------------------------------------------------------------------- */
-/* The fight's choice: armed when the game starts the music of a fighter's
- * record, streamed from its start, closed when the fight's screens end. */
+/* The fight's choice: armed when the game starts the opponent's music, it
+ * goes as the game's own music goes. The game starts a stand-in piece in its
+ * place (fight_id, muted): its music state, 0x800A05D8 (state 2 / 3 while an
+ * XA plays, +0x48 the piece, +0x44 1 once audible, +0x54 / +0x58 a resume
+ * point, +0xB4 the level its fades ramp, of 127 x the piece's +0xB2 x the
+ * master +0xB0 / 16129), starts, fades, pauses and stops ours. A stand-in,
+ * not the fight's own piece: the Expanded plays a TTT stage's music over
+ * that one (src/tekken3_ttt_music.c). */
+enum { M_STATE = 0x800a05d8, M_AUDIBLE = 0x800a061c, M_CUR = 0x800a0620, M_RESUME_AT = 0x800a062c,
+       M_RESUME = 0x800a0630, M_MASTER = 0x800a0688, M_VOLUME = 0x800a068a, M_LEVEL = 0x800a068c,
+       ROUND_MUSIC = 0x800add08 };
 static Choice fight_choice;
-static int fight_armed;
-static void fight_stop(void) { stream_close(&fight); fight_armed = 0; }
+static int fight_armed, fight_id = -1, fight_seen, fight_paused, fight_waiting;
+static void fight_stop(void) {
+    stream_close(&fight); fight_armed = 0; fight_id = -1;
+    if (!jb.active) tmst_spu_mute_game_music(0);
+}
+/* A piece the game loops from the XA in both music modes, not the fight's
+ * own or the one asked for: the stand-in. -1 none. */
+static int stand_in(int id) {
+    unsigned round = psx_mod_read_byte(ROUND_MUSIC);
+    for (unsigned k = 0; k < MUSIC_IDS; k++) {
+        if ((int)k == id || k == round) continue;
+        int ok = 1;
+        for (unsigned m = 0; m < 2 && ok; m++) {
+            unsigned b = psx_mod_read_byte(MUSIC_TABLE + k * 4 + m * 2), v = psx_mod_read_byte(MUSIC_TABLE + k * 4 + m * 2 + 1);
+            XaEntry e;
+            ok = !(b & 0x80) && b < XA_COUNT && (v & 0x80) && (v & 0x7f) && xa_entry(b, &e);
+        }
+        if (ok) return (int)k;
+    }
+    return -1;
+}
 
 static void mix(int16_t *out, int frames, int audible, int gain) {
     if (!on) return;
     if (jb.active) { stream_mix(&preview, out, frames, audible, gain); return; }
     if (!fight_armed) return;
+    int cur = (int16_t)psx_mod_read_half(M_CUR), state = psx_mod_read_half(M_STATE);
+    if (cur != fight_id || (state != 2 && state != 3)) {
+        if (!fight_seen) return;                          /* not started yet */
+        /* Stopped keeping a resume point (0x8006B54C(1)): ours waits with it. */
+        int kept = cur < 0 && (int32_t)psx_mod_read_word(M_RESUME) == fight_id && (int32_t)psx_mod_read_word(M_RESUME_AT) > 0;
+        if (kept) { if (!fight_paused) { fight_paused = 1; tmst_log("jukebox: %s paused with the game's music", fight.what); } return; }
+        tmst_log("jukebox: %s stops with the game's music", fight.what[0] ? fight.what : fight_choice.key);
+        fight_stop();
+        return;
+    }
     if (!fight.kind) {
         Track t;
-        if (!resolve(&fight_choice, &t) || !stream_open(&fight, fight_choice.cat, &t)) { fight_armed = 0; return; }
+        if (!resolve(&fight_choice, &t) || !stream_open(&fight, fight_choice.cat, &t)) { fight_stop(); return; }
+        fight_waiting = 1;
         tmst_log("jukebox: %s plays %s", fight_choice.key, fight.what);
     }
-    stream_mix(&fight, out, frames, audible, gain);
+    if (fight_paused) fight_waiting = 1;                  /* resumed: audible again with the game's */
+    fight_seen = 1; fight_paused = 0;
+    if (fight_waiting) {
+        if ((int16_t)psx_mod_read_half(M_AUDIBLE) != 1) return;   /* the game's not audible yet */
+        fight_waiting = 0;
+    }
+    /* The game's level now of the piece's full: its fades and the pause's dip. */
+    int full = psx_mod_read_half(M_VOLUME) * psx_mod_read_half(M_MASTER) / 127, level = (int16_t)psx_mod_read_half(M_LEVEL);
+    int fade = full > 0 && level > 0 ? (level >= full ? 100 : level * 100 / full) : 0;
+    stream_mix(&fight, out, frames, audible, gain * fade / 100);
 }
 
-/* The game starts a piece: in a fight, a fighter's own (its record's music)
- * with a Jukebox choice plays that choice instead. P2 first: Arcade's CPU,
- * whose stage it is. */
+/* The game starts a piece: in a fight, the opponent's (P2's: Arcade's CPU,
+ * whose stage it is) with a Jukebox choice plays that choice instead, as the
+ * fight's music (0x800ADD08: the game's choice, or the one the Expanded's
+ * stage select gave the chosen stage) or the opponent's record piece. The
+ * Jukebox follows the opponent, never the stage; without a choice the
+ * game's own piece plays. */
 static int music(int id) {
     if (!on) return id;
     if (jb.active) return -1;                             /* the preview only, while open */
     unsigned screen = psx_mod_read_word(SCREEN);
     if (screen != FIGHT && screen != LOADING) { if (fight_armed) fight_stop(); return id; }
-    /* The fight's own music (0x800ADD08: the game's choice, or the one the
-     * Expanded's stage select gave the chosen stage) or a fighter's record
-     * piece: the Jukebox follows the fighters, never the stage. P2 first. */
-    int fight_music = id == (int)psx_mod_read_byte(0x800add08u);
-    for (int p = 1; p >= 0; p--) {
-        unsigned fid = psx_mod_read_half(p ? P2_ID : P1_ID), costume = psx_mod_read_byte(p ? P2_COSTUME : P1_COSTUME);
-        if (!fight_music && record_music(fid, costume) != id) continue;
+    unsigned fid = psx_mod_read_half(P2_ID), costume = psx_mod_read_byte(P2_COSTUME);
+    Choice *c = NULL;
+    const char *key = NULL;
+    if (id == (int)psx_mod_read_byte(ROUND_MUSIC) || record_music(fid, costume) == id) {
         /* Kuma's second costume is Panda, Eddy's third Tiger: their own
          * choice first, then their fighter's. */
-        const char *key = NULL;
-        Choice *c = NULL;
         if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) key = "panda";
         else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) key = "tiger";
         else if ((key = fighter_key(fid))) c = heard_choice(key);
-        if (!c) { if (fight_music) continue; break; }
-        if (!fight_armed || strcmp(fight_choice.key, c->key) || fight_choice.cat != c->cat || strcmp(fight_choice.name, c->name)) {
-            fight_stop(); fight_choice = *c; fight_armed = 1;
-            tmst_log("jukebox: %s's music is %s/%s", key, cats[c->cat].id, c->name);
-        }
-        return -1;
     }
-    if (fight_armed) fight_stop();
-    return id;
+    if (!c) { if (fight_armed) fight_stop(); return id; }
+    /* The same choice again (the next round's setup): the game keeps its
+     * piece playing, and so do we. */
+    if (fight_armed && !strcmp(fight_choice.key, c->key) && fight_choice.cat == c->cat && !strcmp(fight_choice.name, c->name))
+        return fight_id;
+    int stand = stand_in(id);
+    if (stand < 0) { tmst_log("jukebox: no stand-in piece, the game's plays"); if (fight_armed) fight_stop(); return id; }
+    fight_stop();
+    fight_choice = *c; fight_id = stand; fight_seen = fight_paused = fight_waiting = 0; fight_armed = 1;
+    tmst_spu_mute_game_music(1);
+    tmst_log("jukebox: %s's music is %s/%s (the game plays %d for it, muted)", key, cats[c->cat].id, c->name, stand);
+    return stand;
 }
 
 /* ---- the frame ------------------------------------------------------------------ */

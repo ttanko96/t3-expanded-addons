@@ -46,6 +46,9 @@ extern void __real_spu_render(int16_t *out, int frames);
 void __tmst_chain_spu_render(int16_t *out, int frames) { __real_spu_render(out, frames); }
 #endif
 void __wrap_spu_render(int16_t *out, int frames) {
+    /* Muted again before each render: the Expanded sets the music volume
+     * back itself when its own music ends (src/tekken3_ttt1_voices.c). */
+    if (muted) __real_spu_set_host_mix_volume(sfx_gain, 0);
     __tmst_chain_spu_render(out, frames);
     if (!out || frames <= 0 || !mixer_count) return;
     SpuGlobalState g;

@@ -12,7 +12,7 @@
 const char *const tmst_photo_filter_names[FX_FILTERS] = {
     "NONE", "BLACK & WHITE", "SEPIA", "NOIR", "VINTAGE", "HIGH CONTRAST", "COLD", "WARM", "TEAL & ORANGE",
     "DUOTONE", "POSTER", "NIGHT VISION", "SCANLINES", "NEGATIVE"};
-const char *const tmst_photo_frame_names[FR_FRAMES] = {"NONE", "LETTERBOX", "POLAROID", "FILM STRIP", "VIGNETTE", "TEKKEN",
+const char *const tmst_photo_frame_names[FR_FRAMES] = {"NONE", "LETTERBOX", "POLAROID", "FILM STRIP", "VIGNETTE", "T3E",
                                                        "CRT TV", "COMIC"};
 
 int tmst_photo_filter_cpu(int f) {
@@ -344,7 +344,7 @@ static void tekken(Canvas *c) {
     rect(c, x0, y1 - T, ARM_X, T, GOLD, OPAQUE);       rect(c, x0, y1 - ARM_Y, T, ARM_Y, GOLD, OPAQUE);
     rect(c, x1 - ARM_X, y1 - T, ARM_X, T, GOLD, OPAQUE); rect(c, x1 - T, y1 - ARM_Y, T, ARM_Y, GOLD, OPAQUE);
     /* the name in the bottom bar, gold, with red marks either side */
-    static const char name[] = "TEKKEN 3";
+    static const char name[] = "TEKKEN 3 EXPANDED";
     int cw = 8, w = (int)(sizeof name - 1) * cw, tx = (l + r) / 2 - w / 2, ty = H - BOTTOM + 7;
     rect(c, tx - 22, ty + 6, 12, 4, 0x2020c0, OPAQUE);
     rect(c, tx + w + 10, ty + 6, 12, 4, 0x2020c0, OPAQUE);
