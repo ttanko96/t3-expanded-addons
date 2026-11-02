@@ -1,6 +1,7 @@
 /* TMST core: log and the version guard (tmst_core.h). */
 #include "tmst_core.h"
 #include "tmst_compat.h"
+#include "psx_sdl.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +16,22 @@
 #define TMST_TESTED_WITH ""
 #endif
 
+/* Also into tmst.log beside the game (new each start): the launcher keeps
+ * none of the game's output. */
+static FILE *log_file(void) {
+    static FILE *f;
+    static int tried;
+    if (tried) return f;
+    tried = 1;
+    const char *base = SDL_GetBasePath();
+    char path[4200];
+    snprintf(path, sizeof path, "%stmst.log", base ? base : "./");
+#if !defined(PSX_SDL3)
+    if (base) SDL_free((void *)base);
+#endif
+    f = fopen(path, "w");
+    return f;
+}
 void tmst_log(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -22,6 +39,14 @@ void tmst_log(const char *fmt, ...) {
     vfprintf(stderr, fmt, args);
     fputc('\n', stderr);
     va_end(args);
+    FILE *f = log_file();
+    if (f) {
+        va_start(args, fmt);
+        vfprintf(f, fmt, args);
+        fputc('\n', f);
+        fflush(f);
+        va_end(args);
+    }
 }
 
 const char *tmst_upstream_rev(void) { return TMST_UPSTREAM_REV; }

@@ -25,6 +25,11 @@ int tmst_guard(const char *mod, unsigned needs);
  * exists: nonzero while its single grid is on. Other mods declare it weak and
  * read it only when it is linked (the Jukebox hides its L2 / R2 hint then). */
 int tmst_unified_select_active(void) __attribute__((weak));
+/* Defined by Unified Character Select too: while `allowed` is set, its grid
+ * greys and refuses every fighter (character ID, costume) for which it
+ * returns 0, as the Team Battle grid does a fighter already in the team
+ * (Tournament Mode's pools). NULL lifts it. */
+void tmst_unified_select_set_allowed(int (*allowed)(unsigned id, unsigned costume)) __attribute__((weak));
 
 #ifdef __cplusplus
 }

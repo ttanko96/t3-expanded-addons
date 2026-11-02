@@ -38,6 +38,15 @@ int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out) {
     return 1;
 }
 
+/* The runtime's VRAM, the lower half (psxrecomp gpu_render.h; weak). */
+extern uint16_t gr_vram_read(int x, int y) __attribute__((weak));
+int tmst_compat_vram_read(int x, int y, int w, int h, uint16_t *out) {
+    if (!gr_vram_read || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 1024 || y + h > 512) return 0;
+    for (int row = 0; row < h; row++)
+        for (int col = 0; col < w; col++) out[(size_t)row * (size_t)w + (size_t)col] = gr_vram_read(x + col, y + row);
+    return 1;
+}
+
 extern int tekken3_arcade_stages_t3_stage(void) __attribute__((weak));
 int tmst_compat_arcade_stage(void) {
     int s = tekken3_arcade_stages_t3_stage ? tekken3_arcade_stages_t3_stage() : -1;

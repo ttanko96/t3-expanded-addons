@@ -31,6 +31,9 @@ unsigned tmst_compat_high_vram_generation(void);
 /* The upper half's pixels of a rectangle (y 512..1023) into `out` (w x h);
  * 0 when this runtime cannot read them back (gpu_high_vram_pixels). */
 int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out);
+/* The same for the lower half (the game's own: fonts, the selector's icons),
+ * through the runtime's gr_vram_read; 0 without it. */
+int tmst_compat_vram_read(int x, int y, int w, int h, uint16_t *out);
 
 /* The screen's extra width on each side in fights (the Expanded's true
  * widescreen, psx_mod_widescreen_x_margin), 0 without it: what a fill must

@@ -4,6 +4,16 @@
 #include <stdlib.h>
 
 int main(int argc, char **argv) {
+    if (argc == 4 && argv[1][0] == 'r') {              /* r in.png out.raw: the reader's ARGB, w and h first */
+        uint32_t *px; int w, h;
+        if (!tmst_png_read(argv[2], &px, &w, &h)) return 1;
+        FILE *f = fopen(argv[3], "wb");
+        if (!f) return 3;
+        uint32_t head[2] = {(uint32_t)w, (uint32_t)h};
+        fwrite(head, sizeof head, 1, f); fwrite(px, sizeof(uint32_t), (size_t)w * (size_t)h, f);
+        fclose(f); free(px);
+        return 0;
+    }
     if (argc != 5) return 2;
     int w = atoi(argv[2]), h = atoi(argv[3]), kind = atoi(argv[4]);
     uint32_t *px = malloc(sizeof(uint32_t) * (size_t)w * (size_t)h);

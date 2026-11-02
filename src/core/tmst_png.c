@@ -1,4 +1,4 @@
-/* TMST core: PNG writer (tmst_png.h). */
+/* TMST core: PNG writer and reader (tmst_png.h). */
 #include "tmst_png.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -183,5 +183,184 @@ int tmst_png_write(const char *path, const uint32_t *argb, int w, int h, int pit
     if (f && fclose(f)) ok = 0;
     free(data);
     if (!ok) remove(path);
+    return ok;
+}
+
+/* ---- the reader: inflate (stored, fixed and dynamic blocks) ---- */
+typedef struct { const uint8_t *p; size_t n, at; uint32_t bits; int count; int bad; } In;
+static int need(In *s, int n) {
+    while (s->count < n) {
+        if (s->at >= s->n) { s->bad = 1; return 0; }
+        s->bits |= (uint32_t)s->p[s->at++] << s->count; s->count += 8;
+    }
+    return 1;
+}
+static uint32_t take(In *s, int n) {
+    if (!n || !need(s, n)) return 0;
+    uint32_t v = s->bits & ((1u << n) - 1); s->bits >>= n; s->count -= n;
+    return v;
+}
+/* A canonical Huffman code: how many codes of each length, the symbols in order. */
+typedef struct { uint16_t count[16], symbol[320]; } Code;
+static void code_make(Code *c, const uint8_t *lengths, int n) {
+    uint16_t offs[16];
+    memset(c->count, 0, sizeof c->count);
+    for (int i = 0; i < n; i++) c->count[lengths[i]]++;
+    c->count[0] = 0;
+    offs[1] = 0;
+    for (int l = 1; l < 15; l++) offs[l + 1] = (uint16_t)(offs[l] + c->count[l]);
+    for (int i = 0; i < n; i++) if (lengths[i]) c->symbol[offs[lengths[i]]++] = (uint16_t)i;
+}
+static int decode_symbol(In *s, const Code *c) {
+    int code = 0, first = 0, index = 0;
+    for (int l = 1; l < 16; l++) {
+        code |= (int)take(s, 1);
+        if (s->bad) return -1;
+        int count = c->count[l];
+        if (code - count < first) return c->symbol[index + (code - first)];
+        index += count; first += count; first <<= 1; code <<= 1;
+    }
+    s->bad = 1;
+    return -1;
+}
+static int inflate_block(In *s, Buf *out, const Code *lit, const Code *dist) {
+    for (;;) {
+        int sym = decode_symbol(s, lit);
+        if (sym < 0) return 0;
+        if (sym < 256) { uint8_t c = (uint8_t)sym; put(out, &c, 1); continue; }
+        if (sym == 256) return !out->bad;
+        sym -= 257;
+        if (sym >= 29) return 0;
+        size_t len = len_base[sym] + take(s, len_extra[sym]);
+        int d = decode_symbol(s, dist);
+        if (d < 0 || d >= 30) return 0;
+        size_t back = dist_base[d] + take(s, d < 4 ? 0 : (d - 2) / 2);
+        if (s->bad || back > out->n) return 0;
+        for (size_t i = 0; i < len; i++) { uint8_t c = out->p[out->n - back]; put(out, &c, 1); }
+        if (out->bad) return 0;
+    }
+}
+static int inflate_all(const uint8_t *p, size_t n, Buf *out) {
+    In s = {p, n, 0, 0, 0, 0};
+    static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+    int last;
+    do {
+        last = (int)take(&s, 1);
+        int type = (int)take(&s, 2);
+        if (s.bad) return 0;
+        if (type == 0) {                                  /* stored: from the next byte */
+            s.bits = 0; s.count = 0;
+            if (s.at + 4 > s.n) return 0;
+            size_t len = s.p[s.at] | (size_t)s.p[s.at + 1] << 8;
+            s.at += 4;
+            if (s.at + len > s.n) return 0;
+            put(out, s.p + s.at, len); s.at += len;
+        } else if (type == 1) {
+            static Code lit, dist;
+            static int made;
+            if (!made) {
+                uint8_t l[288];
+                for (int i = 0; i < 288; i++) l[i] = i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8;
+                code_make(&lit, l, 288);
+                for (int i = 0; i < 30; i++) l[i] = 5;
+                code_make(&dist, l, 30);
+                made = 1;
+            }
+            if (!inflate_block(&s, out, &lit, &dist)) return 0;
+        } else if (type == 2) {
+            int nlen = (int)take(&s, 5) + 257, ndist = (int)take(&s, 5) + 1, ncode = (int)take(&s, 4) + 4;
+            uint8_t lengths[320] = {0};
+            for (int i = 0; i < ncode; i++) lengths[order[i]] = (uint8_t)take(&s, 3);
+            Code lc, lit, dist;
+            code_make(&lc, lengths, 19);
+            memset(lengths, 0, sizeof lengths);
+            int i = 0;
+            while (i < nlen + ndist) {
+                int sym = decode_symbol(&s, &lc), rep = 0, val = 0;
+                if (sym < 0) return 0;
+                if (sym < 16) { lengths[i++] = (uint8_t)sym; continue; }
+                if (sym == 16) { if (!i) return 0; val = lengths[i - 1]; rep = 3 + (int)take(&s, 2); }
+                else if (sym == 17) rep = 3 + (int)take(&s, 3);
+                else rep = 11 + (int)take(&s, 7);
+                if (i + rep > nlen + ndist) return 0;
+                while (rep--) lengths[i++] = (uint8_t)val;
+            }
+            code_make(&lit, lengths, nlen);
+            code_make(&dist, lengths + nlen, ndist);
+            if (!inflate_block(&s, out, &lit, &dist)) return 0;
+        } else return 0;
+    } while (!last);
+    return !out->bad;
+}
+
+static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
+int tmst_png_decode(const uint8_t *data, size_t size, uint32_t **argb, int *w, int *h) {
+    static const uint8_t signature[8] = {0x89, 'P', 'N', 'G', 13, 10, 26, 10};
+    *argb = NULL;
+    if (!data || size < 8 || memcmp(data, signature, 8)) return 0;
+    Buf idat = {0};
+    uint32_t pal[256];
+    for (int i = 0; i < 256; i++) pal[i] = 0xFF000000u;
+    int width = 0, height = 0, depth = 0, colour = -1, interlace = 0;
+    for (size_t at = 8; at + 12 <= size;) {
+        uint32_t n = be32(data + at);
+        const uint8_t *type = data + at + 4, *body = data + at + 8;
+        if (n > size - at - 12) break;
+        if (!memcmp(type, "IHDR", 4) && n >= 13) {
+            width = (int)be32(body); height = (int)be32(body + 4); depth = body[8]; colour = body[9]; interlace = body[12];
+        } else if (!memcmp(type, "PLTE", 4)) {
+            for (uint32_t i = 0; i < n / 3 && i < 256; i++)
+                pal[i] = 0xFF000000u | (uint32_t)body[i * 3] << 16 | (uint32_t)body[i * 3 + 1] << 8 | body[i * 3 + 2];
+        } else if (!memcmp(type, "tRNS", 4) && colour == 3) {
+            for (uint32_t i = 0; i < n && i < 256; i++) pal[i] = (pal[i] & 0xFFFFFFu) | (uint32_t)body[i] << 24;
+        } else if (!memcmp(type, "IDAT", 4)) put(&idat, body, n);
+        else if (!memcmp(type, "IEND", 4)) break;
+        at += 12 + n;
+    }
+    int channels = colour == 0 ? 1 : colour == 2 ? 3 : colour == 3 ? 1 : colour == 4 ? 2 : colour == 6 ? 4 : 0;
+    if (!channels || depth != 8 || interlace || width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+        idat.bad || idat.n < 6) { free(idat.p); return 0; }
+    Buf raw = {0};
+    size_t stride = (size_t)width * (size_t)channels;
+    int ok = inflate_all(idat.p + 2, idat.n - 2, &raw) && raw.n >= (stride + 1) * (size_t)height;   /* past the zlib header */
+    free(idat.p);
+    uint32_t *px = ok ? malloc(sizeof(uint32_t) * (size_t)width * (size_t)height) : NULL;
+    if (!px) { free(raw.p); return 0; }
+    for (int y = 0; y < height; y++) {
+        uint8_t *line = raw.p + (size_t)y * (stride + 1), f = line[0], *cur = line + 1;
+        const uint8_t *up = y ? raw.p + (size_t)(y - 1) * (stride + 1) + 1 : NULL;
+        for (size_t i = 0; i < stride; i++) {
+            int a = i >= (size_t)channels ? cur[i - channels] : 0, b = up ? up[i] : 0;
+            int c = up && i >= (size_t)channels ? up[i - channels] : 0;
+            int v = f == 1 ? a : f == 2 ? b : f == 3 ? (a + b) / 2 : f == 4 ? paeth(a, b, c) : 0;
+            cur[i] = (uint8_t)(cur[i] + v);
+        }
+        for (int x = 0; x < width; x++) {
+            const uint8_t *q = cur + (size_t)x * (size_t)channels;
+            uint32_t v;
+            if (colour == 0) v = 0xFF000000u | q[0] * 0x010101u;
+            else if (colour == 2) v = 0xFF000000u | (uint32_t)q[0] << 16 | (uint32_t)q[1] << 8 | q[2];
+            else if (colour == 3) v = pal[q[0]];
+            else if (colour == 4) v = (uint32_t)q[1] << 24 | q[0] * 0x010101u;
+            else v = (uint32_t)q[3] << 24 | (uint32_t)q[0] << 16 | (uint32_t)q[1] << 8 | q[2];
+            px[(size_t)y * (size_t)width + (size_t)x] = v;
+        }
+    }
+    free(raw.p);
+    *argb = px; *w = width; *h = height;
+    return 1;
+}
+int tmst_png_read(const char *path, uint32_t **argb, int *w, int *h) {
+    *argb = NULL;
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint8_t *data = n > 0 ? malloc((size_t)n) : NULL;
+    int ok = data && fread(data, 1, (size_t)n, f) == (size_t)n;
+    fclose(f);
+    ok = ok && tmst_png_decode(data, (size_t)n, argb, w, h);
+    free(data);
     return ok;
 }

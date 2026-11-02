@@ -93,6 +93,63 @@ class PngTest(unittest.TestCase):
     def test_one_pixel(self):
         self.roundtrip(0, 1, 1)
 
+    def read(self, data):
+        src, out = Path(self.tmp.name) / 'in.png', Path(self.tmp.name) / 'out.raw'
+        src.write_bytes(data)
+        r = subprocess.run([str(self.exe), 'r', str(src), str(out)])
+        if r.returncode: return None
+        raw = out.read_bytes()
+        w, h = struct.unpack('<II', raw[:8])
+        return w, h, list(struct.unpack('<%dI' % (w * h), raw[8:]))
+
+    def test_reader(self):
+        """Every colour type the reader takes, each filter, stored / fixed / dynamic deflate."""
+        w, h, seed = 37, 23, 7
+        argb = []
+        for i in range(w * h):
+            seed = (seed * 1103515245 + 12345) & 0xFFFFFFFF
+            v = seed >> 8 if i % 3 else (i * 977) & 0xFFFFFF
+            argb.append((((i * 13) & 255) << 24) | v)
+        def chunk(kind, body):
+            return struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body))
+        def png(colour, rows, level, extra=b''):
+            ihdr = struct.pack('>IIBBBBB', w, h, 8, colour, 0, 0, 0)
+            return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + extra +
+                    chunk(b'IDAT', zlib.compress(b''.join(rows), level)) + chunk(b'IEND', b''))
+        def filtered(lines, bpp):
+            out, up = [], bytes(len(lines[0]))
+            for y, line in enumerate(lines):
+                f, enc = y % 5, bytearray()
+                for i, x in enumerate(line):
+                    a = line[i - bpp] if i >= bpp else 0
+                    b, c = up[i], up[i - bpp] if i >= bpp else 0
+                    p = a + b - c; pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    pr = a if pa <= pb and pa <= pc else b if pb <= pc else c
+                    enc.append((x - (0, a, b, (a + b) // 2, pr)[f]) & 255)
+                out.append(bytes([f]) + bytes(enc)); up = line
+            return out
+        px = [argb[y * w:(y + 1) * w] for y in range(h)]
+        cases = {
+            6: ([b''.join(bytes((p >> 16 & 255, p >> 8 & 255, p & 255, p >> 24)) for p in r) for r in px], 4,
+                lambda p: p),
+            2: ([b''.join(bytes((p >> 16 & 255, p >> 8 & 255, p & 255)) for p in r) for r in px], 3,
+                lambda p: 0xFF000000 | p & 0xFFFFFF),
+            0: ([bytes(p & 255 for p in r) for r in px], 1, lambda p: 0xFF000000 | (p & 255) * 0x010101),
+            4: ([b''.join(bytes((p & 255, p >> 24)) for p in r) for r in px], 2,
+                lambda p: (p >> 24) << 24 | (p & 255) * 0x010101),
+        }
+        for colour, (lines, bpp, want) in cases.items():
+            for level in (0, 1, 9):
+                self.assertEqual(self.read(png(colour, filtered(lines, bpp), level)),
+                                 (w, h, [want(p) for p in argb]), (colour, level))
+        pal = bytes((i * 7) & 255 for i in range(768))
+        trns = bytes(255 - i for i in range(256))
+        idx = [bytes((p >> 8) & 255 for p in r) for r in px]
+        got = self.read(png(3, filtered(idx, 1), 6, chunk(b'PLTE', pal) + chunk(b'tRNS', trns)))
+        self.assertEqual(got, (w, h, [(255 - (p >> 8 & 255)) << 24 | pal[(p >> 8 & 255) * 3] << 16 |
+                                      pal[(p >> 8 & 255) * 3 + 1] << 8 | pal[(p >> 8 & 255) * 3 + 2] for p in argb]))
+        self.assertIsNone(self.read(b'not a png'))
+
 
 if __name__ == '__main__':
     unittest.main()

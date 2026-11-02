@@ -38,7 +38,13 @@ enum {
      * (menus, selectors). The area's pixels are always kept and given back. */
     TMST_OVERLAY_BORROW = 1,
     /* The picture under the builders' primitives (by default over them). */
-    TMST_OVERLAY_UNDER = 2
+    TMST_OVERLAY_UNDER = 2,
+    /* With BORROW: the moment the stage engine uploads (its generation
+     * changes) the area is theirs: the picture is no longer drawn nor
+     * uploaded, and what it kept is not given back, until it is hidden and
+     * shown again. For screens a stage may start loading under (a loading
+     * screen). */
+    TMST_OVERLAY_YIELD = 4
 };
 
 /* Shows `argb` (w x h texels, copied) from the next frame on, until hidden,
@@ -109,7 +115,8 @@ void tmst_overlay_set_prims(TmstPrimsBuilder builder);
  * the entry of `rank` (drawn after the ranks above it, before its own and
  * those below: rank 1006 = after the stage and the fighters' shadows,
  * before the top HUD and the fighters), for that drawing only, while the
- * primitives or the picture are shown. One at a time; NULL takes it away. */
+ * primitives or the picture are shown. Up to 2 (one per mod: Photo Mode's,
+ * the tournament's), each again to move it; a rank of -1 takes it away. */
 void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder builder);
 /* A visitor of each node of the game's lists (not ours), called while the
  * picture is shown, before the GPU draws the node: a mod may move the game's
@@ -124,6 +131,10 @@ int tmst_overlay_rank(void);
  * only (a VRAM copy copies onto its own source). Its words are given back before the next list is drawn, so a packet
  * the game builds once and keeps is never changed for good. */
 void tmst_overlay_hide_node(uint32_t node);
+/* For a visitor: one word of a node (a primitive's colour, its texture
+ * page or palette) changed for this drawing only, given back as
+ * tmst_overlay_hide_node's changes are. */
+void tmst_overlay_patch_word(uint32_t at, uint32_t word);
 
 #ifdef __cplusplus
 }

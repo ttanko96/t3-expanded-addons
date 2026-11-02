@@ -1,4 +1,4 @@
-/* TMST core: a small PNG writer (the runtime's png_write.h only stores, and
+/* TMST core: a small PNG writer and reader (the runtime's png_write.h only stores, and
  * is private to it).
  *
  * 8-bit RGB, one IDAT: each row filtered (None, Sub, Up or Paeth, whichever
@@ -19,6 +19,12 @@ extern "C" {
 int tmst_png_write(const char *path, const uint32_t *argb, int w, int h, int pitch);
 /* The same into memory: *out (malloc'd, the caller frees), its size. */
 int tmst_png_encode(const uint32_t *argb, int w, int h, int pitch, uint8_t **out, size_t *size);
+
+/* And a reader: 8-bit grey, grey + alpha, RGB, RGBA or palette (tRNS too),
+ * not interlaced, into *argb (malloc'd 0xAARRGGBB, the caller frees), w x h.
+ * Returns 1, or 0 (no file, another format, no memory). */
+int tmst_png_decode(const uint8_t *data, size_t size, uint32_t **argb, int *w, int *h);
+int tmst_png_read(const char *path, uint32_t **argb, int *w, int *h);
 
 #ifdef __cplusplus
 }

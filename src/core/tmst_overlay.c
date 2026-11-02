@@ -45,18 +45,29 @@ static int shown, prims_shown, sx, sy, sw, sh, pw, ph, vx, vy;
 static unsigned show_flags;
 static uint16_t pixels[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
 static int dirty;
+static int yielded;                     /* TMST_OVERLAY_YIELD: the stage engine took the area */
 static unsigned vram_generation;        /* the stage engine's, at our upload */
 static uint16_t kept[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
+/* Every upload of ours into the upper half; TMST_OVERLAY_VRAM_LOG=1 logs
+ * each with the game's screen and the stage engine's generation. */
+static void vram_up(const char *what, int x, int y, int w, int h, const uint16_t *px) {
+    static int logging = -1; static unsigned n; n++;
+    if (logging < 0) { const char *e = getenv("TMST_OVERLAY_VRAM_LOG"); logging = e && *e == '1'; }
+    if (logging) tmst_log("overlay: upload %s %d,%d %dx%d screen %u gen %u (%u)", what, x, y, w, h,
+                          psx_mod_read_word(0x800ae204), tmst_compat_high_vram_generation(), n);
+    psx_mod_gpu_high_vram_upload(x, y, w, h, px);
+}
 static int kept_x, kept_y, kept_w, kept_h;
 static unsigned frame, linked_frame = ~0u, uploaded_frame;
 enum { MAX_CLIENTS = 4 };
 static TmstPrimsBuilder builders[MAX_CLIENTS];
 static TmstNodeVisitor visitors[MAX_CLIENTS];
 static int builder_count, visitor_count;
-static TmstPrimsBuilder rank_builder;   /* tmst_overlay_set_rank_prims */
-static int rank_target;
-static uint32_t rank_packet;
-enum { RANK_BYTES = 16384 };
+enum { RANK_BYTES = 16384, RANKS = 2 };
+static struct {                         /* tmst_overlay_set_rank_prims */
+    TmstPrimsBuilder builder; int target; uint32_t packet;
+    uint32_t entry, e1;                 /* this walk: the entry's node, the drawing mode there */
+} ranks[RANKS];
 /* The drawing mode as the GPU will have it: E1, which textured polygons set
  * too (their texture page word: bits 0-8 and 11), the drawing offset (E5)
  * and the mask setting (E6), followed through every list drawn (the drawing
@@ -100,7 +111,7 @@ static uint16_t texel(uint32_t argb) {
 
 static void give_back(void) {
     if (!kept_w) return;
-    psx_mod_gpu_high_vram_upload(kept_x, kept_y, kept_w, kept_h, kept);
+    vram_up("give back", kept_x, kept_y, kept_w, kept_h, kept);
     kept_w = 0;
 }
 
@@ -158,22 +169,32 @@ int tmst_overlay_show(const uint32_t *argb, int w, int h, int x, int y) {
 
 void tmst_overlay_move(int x, int y) { sx = x; sy = y; }
 void tmst_overlay_hide_picture(void) {
+    yielded = 0;
     if (!shown) return;
     shown = 0;
     give_back();
     dirty = 1;
 }
 void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder b) {
-    if (b && !rank_packet && setup()) rank_packet = psx_mod_alloc_gpu_dma_memory(RANK_BYTES, 16);
-    rank_builder = b && rank_packet && rank >= 0 && rank < 1024 ? b : NULL;
-    rank_target = rank;
+    if (!b) return;
+    int i = 0;
+    while (i < RANKS && ranks[i].builder != b) i++;
+    if (i == RANKS) {                                   /* a new one: a free slot */
+        if (rank < 0 || rank >= 1024) return;
+        for (i = 0; i < RANKS && ranks[i].builder; i++) {}
+        if (i == RANKS) return;
+        if (!ranks[i].packet && setup()) ranks[i].packet = psx_mod_alloc_gpu_dma_memory(RANK_BYTES, 16);
+        if (!ranks[i].packet) return;
+    }
+    if (rank < 0 || rank >= 1024) { ranks[i].builder = NULL; return; }
+    ranks[i].builder = b; ranks[i].target = rank;
 }
 /* The area goes back to what it held: our pixels are no longer there, so
  * the next show uploads them again. */
 static void atlas_give_back(void);
 void tmst_overlay_show_prims(void) { if (setup()) prims_shown = 1; }
 void tmst_overlay_backdrop(int on, uint32_t bgr) { backdrop_on = on; backdrop_bgr = bgr & 0xFFFFFFu; }
-void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; give_back(); atlas_give_back(); dirty = 1; }
+void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; yielded = 0; give_back(); atlas_give_back(); dirty = 1; }
 int tmst_overlay_visible(void) { return shown; }
 static int drawing(void) { return shown || prims_shown; }
 
@@ -202,7 +223,7 @@ static void prims_finish(TmstPrims *k) { prims_finish_to(k, 0x00FFFFFFu); }
  * stage packs leave room; its 8 glyph rows within one row of pages. */
 enum { ATLAS_PER_PAGE = 42, ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 9, CELL_W = 6, CELL_H = 8 };
 static uint16_t atlas[ATLAS_W * ATLAS_H], atlas_kept[ATLAS_W * ATLAS_H];
-static int atlas_built, atlas_x = -1, atlas_y, atlas_has_kept, atlas_dirty = 1, text_wanted, text_ready, atlas_said;
+static int atlas_built, atlas_x = -1, atlas_y, atlas_has_kept, atlas_dirty = 1, text_wanted, text_last, text_ready, atlas_said;
 static unsigned atlas_generation, atlas_frame;
 
 static void build_atlas(void) {
@@ -221,7 +242,7 @@ static void build_atlas(void) {
     atlas_built = 1;
 }
 static void atlas_give_back(void) {
-    if (atlas_x >= 0 && atlas_has_kept) psx_mod_gpu_high_vram_upload(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas_kept);
+    if (atlas_x >= 0 && atlas_has_kept) vram_up("font back", atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas_kept);
     atlas_x = -1; atlas_has_kept = 0; atlas_dirty = 1;
 }
 static int atlas_fits(int x, int y) {
@@ -244,7 +265,7 @@ static int place_atlas(void) {
     if (atlas_dirty || gen != atlas_generation || frame - atlas_frame >= 30) {
         if (!atlas_has_kept || gen != atlas_generation)
             atlas_has_kept = tmst_compat_high_vram_read(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas_kept);
-        psx_mod_gpu_high_vram_upload(atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas);
+        vram_up("font", atlas_x, atlas_y, ATLAS_W, ATLAS_H, atlas);
         atlas_dirty = 0; atlas_generation = gen; atlas_frame = frame;
     }
     return 1;
@@ -383,9 +404,18 @@ static int find_place(void) {
 static void write_chain(uint32_t e1_before) {
     TmstPrims k; prims_begin(&k);
     if (drawing()) {
-        text_ready = text_wanted && place_atlas();
+        /* The font's sheet only while text is drawn: asked for in the last
+         * frame (the rank builder's, the builders') or this one's rank
+         * builder, else its place given back (the stage engine's floor
+         * textures were found where it stayed, through the fights). */
+        text_ready = (text_wanted || text_last) && place_atlas();
         int borrow = (show_flags & TMST_OVERLAY_BORROW) != 0;
-        int placed = shown && (borrow || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
+        if (shown && borrow && (show_flags & TMST_OVERLAY_YIELD) && kept_w && !yielded &&
+            tmst_compat_high_vram_generation() != vram_generation) {
+            kept_w = 0; yielded = 1;                   /* theirs now: nothing of ours given back over it */
+            tmst_log("overlay: the stage engine took the borrowed area, the picture yields");
+        }
+        int placed = shown && !yielded && (borrow || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
         int under = (show_flags & TMST_OVERLAY_UNDER) != 0;
         if (placed) {
             unsigned gen = tmst_compat_high_vram_generation();
@@ -400,12 +430,14 @@ static void write_chain(uint32_t e1_before) {
             int contested = borrow && tmst_compat_high_vram_effects(vx, vy, pw, ph);
             if (dirty || contested || gen != vram_generation || frame - uploaded_frame >= 30) {
                 if (!kept_w || (gen != vram_generation && !borrow)) keep(vx, vy, pw, ph);
-                psx_mod_gpu_high_vram_upload(vx, vy, pw, ph, pixels);
+                vram_up("picture", vx, vy, pw, ph, pixels);
                 dirty = 0; vram_generation = gen; uploaded_frame = frame;
             }
             if (under) picture_prims(&k);
         }
         for (int i = 0; i < builder_count; i++) builders[i](&k);
+        if (!text_wanted && atlas_x >= 0) atlas_give_back();
+        text_last = text_wanted; text_wanted = 0;
         if (placed && !under) picture_prims(&k);
         tmst_prim_room(&k, 1);
         tmst_prim_word(&k, e1_before);
@@ -484,6 +516,7 @@ static void undo_write(uint32_t at, uint32_t word) {
     psx_mod_write_word(at, word);
 }
 static void hide_vertex(uint32_t at) { undo_write(at, tmst_xy(-1024, -1024)); }
+void tmst_overlay_patch_word(uint32_t at, uint32_t word) { undo_write(at, word); }
 void tmst_overlay_hide_node(uint32_t node) {
     unsigned n = psx_mod_read_word(node) >> 24;
     for (unsigned i = 0; i < n;) {
@@ -525,7 +558,7 @@ void tmst_overlay_hide_node(uint32_t node) {
  * the table's first entry, a rectangle past the screen's edges (the wide
  * screen's sides too); the rank builder's primitives after the entry of its
  * rank, ending with the drawing mode the game had there. */
-static void link_extras(uint32_t rank_entry, uint32_t rank_e1) {
+static void link_extras(void) {
     if (backdrop_on && backdrop_node && ot_top) {
         uint32_t first = psx_mod_read_word(ot_top);
         psx_mod_write_word(backdrop_node, 3u << 24 | (first & 0x00FFFFFFu));
@@ -534,11 +567,13 @@ static void link_extras(uint32_t rank_entry, uint32_t rank_e1) {
         psx_mod_write_word(backdrop_node + 12, tmst_xy(368 + 512, 512));
         undo_write(ot_top, (first & 0xFF000000u) | (backdrop_node & 0x00FFFFFFu));
     }
-    if (rank_entry && rank_builder) {
+    for (int r = 0; r < RANKS; r++) {
+        if (!ranks[r].entry || !ranks[r].builder) continue;
+        uint32_t rank_entry = ranks[r].entry, rank_e1 = ranks[r].e1, rank_packet = ranks[r].packet;
         uint32_t entry = psx_mod_read_word(rank_entry);
         TmstPrims k; prims_begin_at(&k, rank_packet, RANK_BYTES);
-        rank_builder(&k);
-        if (k.at == rank_packet + 4 && k.head == rank_packet) return;     /* nothing to draw: not linked */
+        ranks[r].builder(&k);
+        if (k.at == rank_packet + 4 && k.head == rank_packet) continue;   /* nothing to draw: not linked */
         /* The drawing mode back, without the upper half's bit (the stage
          * engine's polygons leave it in what we follow, but this packet is
          * not one the runtime lets read the half: on a PS1 E1 it is the
@@ -560,8 +595,11 @@ static void link_into(uint32_t start) {
     unsigned n = 0;
     ot_top = (psx_mod_read_word(0x80000000u | at) >> 24) == 0 ? 0x80000000u | at : 0;
     rank = -1;
-    uint32_t rank_entry = 0, rank_e1 = 0;
-    uint32_t rank_at = ot_top && rank_builder ? ot_top - 4u * (uint32_t)(OT_SIZE - 1 - rank_target) : 0;
+    uint32_t rank_at[RANKS];
+    for (int r = 0; r < RANKS; r++) {
+        ranks[r].entry = 0;
+        rank_at[r] = ot_top && ranks[r].builder ? ot_top - 4u * (uint32_t)(OT_SIZE - 1 - ranks[r].target) : 0;
+    }
     while (at != 0x00FFFFFFu && n < MAX_WALK) {
         uint32_t node = 0x80000000u | at;
         note_rank(node, psx_mod_read_word(node));
@@ -574,12 +612,12 @@ static void link_into(uint32_t start) {
                 psx_mod_write_word(packet, 0x00FFFFFFu);
             } else if (linked_frame != frame) {
                 linked_frame = frame;
-                link_extras(rank_entry, rank_e1);
+                link_extras();
                 write_chain(gpu_e1);
             }
             return;
         }
-        if (node == rank_at) { rank_entry = node; rank_e1 = gpu_e1; }
+        for (int r = 0; r < RANKS; r++) if (node == rank_at[r]) { ranks[r].entry = node; ranks[r].e1 = gpu_e1; }
         if (drawing()) for (int i = 0; i < visitor_count; i++) visitors[i](node);
         follow(node);
         last = at;
@@ -588,7 +626,7 @@ static void link_into(uint32_t start) {
     }
     if (!drawing() || n < LONG_LIST || n >= MAX_WALK || linked_frame == frame) return;
     linked_frame = frame;
-    link_extras(rank_entry, rank_e1);
+    link_extras();
     write_chain(gpu_e1);
     uint32_t tag = psx_mod_read_word(0x80000000u | last);
     psx_mod_write_word(0x80000000u | last, (tag & 0xFF000000u) | (packet & 0x00FFFFFFu));

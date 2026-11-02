@@ -28,10 +28,17 @@ set(TMST_SOURCES
     src/jukebox/tmst_jukebox.c
     src/photo/tmst_photo.c
     src/photo/tmst_photo_fx.c
+    src/tournament/tmst_tournament_pools.c
+    src/tournament/tmst_bracket.c
+    src/tournament/tmst_tournament_progress.c
+    src/tournament/tmst_tournament_art.c
+    src/tournament/tmst_tournament_screens.c
+    src/tournament/tmst_tournament.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
     src/compat
+    src/tournament
 )
 
 # Symbols wrapped with -Wl,--wrap, each "symbol|file defining __wrap_symbol".
@@ -57,12 +64,15 @@ set(TMST_CHAINS
     "func_80048240|src/core/tmst_camera.c"
     "func_8004A6BC|src/core/tmst_camera.c"
     "func_8003A818|src/core/tmst_camera.c"
+    "func_8004F0E4|src/tournament/tmst_tournament.c"
+    "func_8004439C|src/tournament/tmst_tournament.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
 set(TMST_PACKAGES
     tmst.jukebox
     tmst.photo-mode
+    tmst.tournament
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).
