@@ -4,8 +4,9 @@ add-on's mods need. Nothing it makes is ever committed.
 
 Each step is a function in STEPS: it checks whether its output is current
 (a version stamp under addons/tmst/workspace/) and does its work only when not.
-Steps: the Tekken 2 disc (checked and remembered: nothing taken from it yet),
-the Jukebox's TTT console and arcade music, then its title lists.
+Steps: the Tekken 2 disc (checked and remembered), the Jukebox's Tekken 2
+(and Tekken 1) music from it, its TTT console and arcade music, then its
+title lists.
 
     tmst_setup.py                    the steps, asking nothing (the Expanded's hook)
     tmst_setup.py --interactive      asks for the Tekken 2 disc in a window when
@@ -111,7 +112,7 @@ def ask_t2_disc() -> Path | None:
 
 def tekken2_disc() -> None:
     """The player's Tekken 2 disc (tools/tekken2_disc.py), checked and kept in
-    workspace/tekken2-disc.json for the imports to come. Optional: without it
+    workspace/tekken2-disc.json for the steps after it. Optional: without it
     the setup goes on; a disc given on the command line that is not Tekken 2
     stops it."""
     sys.path.insert(0, str(ADDON / 'tools'))
@@ -170,6 +171,35 @@ def tekken2_disc() -> None:
             log(f'Tekken 2 disc: {error}')
 
 
+def tekken2_music() -> None:
+    """The Jukebox's Tekken 2 (and with it Tekken 1) music (tools/tekken2_music.py),
+    from the Tekken 2 disc the step before kept: again when the disc or the
+    tool's VERSION changed or a file is gone; nothing without a disc."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    from disc_image import DiscError
+    try:
+        import tekken2_music as music
+    except ImportError as error:                    # numpy: the Expanded's setup installs it
+        log(f'Tekken 2 music: {error}, skipped')
+        return
+    disc = music.find_disc(STATE)
+    if not disc:
+        log('Tekken 2 music: no Tekken 2 disc, skipped')
+        return
+    want = {'version': music.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}}
+    have = stamp('tekken2-music')
+    out = ROOT / music.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 2 music: taking it from the disc (a minute or two)')
+    try:
+        names = music.convert(disc, out, say=log)
+    except (DiscError, OSError) as error:
+        log(f'Tekken 2 music: {error}; left out')
+        return
+    save_stamp('tekken2-music', {'stamp': want, 'files': names})
+
+
 def ttt_ps2_music() -> None:
     """The Jukebox's TTT console music (tools/ttt_ps2_music.py), from the
     Expanded's PS2 stage music pack and the TTT PS2 disc it was made from."""
@@ -217,7 +247,8 @@ def jukebox_titles() -> None:
     titles.update(ROOT)
 
 
-STEPS: list = [tekken2_disc, ttt_ps2_music, ttt_arcade_music, jukebox_titles]   # the music first: the titles list it
+STEPS: list = [tekken2_disc, tekken2_music, ttt_ps2_music, ttt_arcade_music,
+               jukebox_titles]   # the music first: the titles list it
 
 
 def main() -> int:

@@ -30,5 +30,3 @@ bruce.bgm = Bruce Irvin (T2 Console) --disable
 t2-anna.bgm = Anna Williams (T2 Console) --disable
 t2-armor-king.bgm = Armor King I (T2 Console) --disable
 t2-ganryu.bgm = Ganryu (T2 Console) --disable
-ganryu.bgm = Kyoto, Japan (T1 Console) --disable
-roger.bgm = Fiji (T1 Console) --disable

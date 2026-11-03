@@ -21,6 +21,10 @@ int tmst_upstream_tested(void);
  * switches the mod off (logged, never a crash). Returns 1 to go on. */
 int tmst_guard(const char *mod, unsigned needs);
 
+/* Tekken 2 Content (tmst.tekken2, src/tekken2/tmst_tekken2.c): nonzero when
+ * its Music part is on (the package's switch too; their activations have run). */
+int tmst_tekken2_music_active(void);
+
 /* Defined by Unified Character Select (tmst.ui.unified-select) once it
  * exists: nonzero while its single grid is on. Other mods declare it weak and
  * read it only when it is linked (the Jukebox hides its L2 / R2 hint then). */

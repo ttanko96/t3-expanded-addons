@@ -71,6 +71,54 @@ class DiscImageTest(unittest.TestCase):
         self.make('SLUS_002.13', single=False)
         self.assertEqual([p.name for p in tekken2_disc.search([self.dir])], ['Tekken 2 (USA).cue'])
 
+    def test_audio_track_from_its_index_01(self):
+        cue = self.make('SLUS_002.13', single=True)
+        with disc_image.open_disc(cue) as disc:
+            self.assertEqual(len(disc.audio(2)), 8 * 2352)                  # 10 sectors, 2 of them the pregap
+            with self.assertRaises(disc_image.DiscError):
+                disc.audio(3)
+
+    def test_flac_frames(self):
+        """Two frames of our own: a fixed-order-2 subframe (Rice coded, one partition
+        escaped) beside a constant one, then left/side verbatim and a wasted bit."""
+        bits = []
+
+        def put(value, n):
+            bits.extend((value >> (n - 1 - i)) & 1 for i in range(n))
+
+        def rice(v, k):
+            u = v * 2 if v >= 0 else -v * 2 - 1
+            put(0, u >> k); put(1, 1); put(u & ((1 << k) - 1), k)
+
+        def header(n, chan):
+            put(0x7FFC, 15); put(0, 1); put(7, 4); put(9, 4); put(chan, 4); put(4, 3); put(0, 1)
+            put(0, 8); put(n - 1, 16); put(0, 8)                           # frame 0, block size, CRC-8
+
+        def footer():
+            put(0, -len(bits) % 8); put(0, 16)                             # byte boundary, CRC-16
+
+        left = [10, 12, 15, 17, 16, 14, 11, 9]
+        header(8, 1)
+        put(0, 1); put(8 + 2, 6); put(0, 1); put(10, 16); put(12, 16)      # fixed order 2: warm-up
+        put(0, 2); put(1, 4)                                               # Rice, 2 partitions
+        put(2, 4)
+        for i in (2, 3):
+            rice(left[i] - (2 * left[i - 1] - left[i - 2]), 2)
+        put(15, 4); put(4, 5)                                              # escaped: 4-bit samples
+        for i in range(4, 8):
+            put((left[i] - (2 * left[i - 1] - left[i - 2])) & 15, 4)
+        put(0, 1); put(0, 6); put(0, 1); put(-300 & 0xFFFF, 16)            # constant -300
+        footer()
+        header(2, 8)                                                       # left, side
+        put(0, 1); put(1, 6); put(1, 1); put(1, 1); put(500 >> 1, 15); put(-4 >> 1 & 0x7FFF, 15)
+        put(0, 1); put(1, 6); put(0, 1); put(100, 17); put(-200 & 0x1FFFF, 17)
+        footer()
+        data = bytes(int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)) + b'rest'
+        pcm, used = disc_image.flac_decode(data, 10)
+        self.assertEqual(list(pcm[0::2]), left + [500, -4])
+        self.assertEqual(list(pcm[1::2]), [-300] * 8 + [400, 196])
+        self.assertEqual(data[used:], b'rest')
+
     def test_bits_past_the_end_are_zero(self):
         bits = disc_image.Bits(b'\xa5')
         self.assertEqual((bits.read(4), bits.peek(8), bits.read(6)), (0xA, 0x50, 0x14))

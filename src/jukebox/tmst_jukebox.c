@@ -8,11 +8,13 @@
  * leaves to the menu, asking SAVE? first when a choice is not saved yet.
  * Categories, each there when it has music now:
  *
+ *   (TEKKEN 1 and 2 only while Tekken 2 Content's Music, tmst.tekken2, is on too)
  *   TEKKEN 1 CONSOLE / ARCADE  the Tekken 1 pieces the Tekken 2 disc plays
  *                      again: the T2 folders' files that the TEKKEN 1 list
- *                      names, only those (the Tekken 2 Stages Remake's data)
+ *                      names, only those
  *   TEKKEN 2 CONSOLE / ARCADE  addons/tmst/workspace/t2-music/{console,arcade}/*.bgm,
  *                      made by the add-on's setup from the player's T2 disc
+ *                      (tools/tekken2_music.py)
  *   TEKKEN 3 CONSOLE / ARCADE  the Tekken 3 disc itself: TEKKEN3.XAS, the XA
  *                      the executable's music table (0x80024FD0) names per
  *                      music id and Options music mode (0 arranged, 1
@@ -166,6 +168,10 @@ static Category cats[CATS] = {
     {"ttt-console", "TEKKEN TAG TOURNAMENT CONSOLE", "ttt-console.txt", {TTT_CONSOLE, NULL}, -1, 0},
     {"ttt-arcade", "TEKKEN TAG TOURNAMENT ARCADE", "ttt-arcade.txt", {TTT_ARCADE, NULL}, -1, 0},
 };
+/* TEKKEN 1 and 2 are Tekken 2 Content's Music (tmst.tekken2): only while it is on. */
+static int category_on(const Category *c) {
+    return (strncmp(c->id, "t1-", 3) && strncmp(c->id, "t2-", 3)) || tmst_tekken2_music_active();
+}
 static int category_of(const char *id) {
     for (int c = 0; c < CATS; c++) if (!strcmp(cats[c].id, id)) return c;
     return -1;
@@ -377,6 +383,7 @@ static void sort_tracks(Category *c) {
 static void scan(void) {
     for (int ci = 0; ci < CATS; ci++) {
         Category *c = &cats[ci]; c->count = 0;
+        if (!category_on(c)) continue;
         if (c->disc_mode >= 0) scan_disc(c);
         for (unsigned d = 0; d < 2; d++) {
             char dir[4200];
@@ -623,6 +630,7 @@ static void stream_mix(Stream *s, int16_t *out, int frames, int audible, int gai
 static int resolve(const Choice *c, Track *out) {
     const Category *cat = &cats[c->cat];
     memset(out, 0, sizeof *out); snprintf(out->name, NAME, "%s", c->name);
+    if (!category_on(cat)) return 0;
     if (cat->disc_mode >= 0) {
         unsigned i; int t;
         if (sscanf(c->name, "xa-%u", &i) == 1) { XaEntry e; out->src = SRC_XA; out->index = (int16_t)i; return disc_ready() && xa_entry(i, &e); }
