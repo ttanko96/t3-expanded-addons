@@ -13,6 +13,9 @@ Choose the music of every fighter.
 - **Grid:** ✕ a fighter's music list · L2/R2 switch the character panel (with TTT1 characters) · □ reset every
   fighter to their own music · ○ exit (asks to save changes).
 - **List:** L2/R2 category · △ preview / stop · ✕ give the track to the fighter · □ reset this fighter · ○ back.
+- **Categories** (console and arcade each): Tekken 1 and Tekken 2 (with **Tekken 2 Content**'s Music on, from your Tekken 2
+  disc: it plays ten Tekken 1 stage themes again), Tekken 3 (the game's disc), Tekken Tag Tournament (the TTT music
+  the Expanded imported).
 - In a fight the opponent's (P2's) chosen music plays, whatever stage is picked; without a choice, the game's own.
   It starts, fades and stops with the game's music (the match's end, the pause, the BGM SELECT's silence).
 - The choices are saved beside the memory card (`saves\jukebox.txt`). The track titles are plain text lists in
@@ -54,11 +57,20 @@ The King of Iron Fist Tournament, as a mode of its own.
 - The screens' backgrounds are PNG files you may redraw: `addons\tmst\data\tournament\` (`progress`, `match`,
   `champion`, `over`, 854×480); `data\tournament\guides\` shows where the mod draws on each.
 
+### Tekken 2 Content
+What the add-on takes from your own Tekken 2 disc (given to `Setup TMST.cmd`), in one package.
+- **Switches:** **Tekken 2 Content** in the TMST group switches it all; its parts are in the group right below it,
+  **TMST / Tekken 2 Content**, each on its own. Off, none of them runs; switching a part on switches it on too.
+- **Music:** Tekken 2's and the ten Tekken 1 stage themes it plays again, Console and Arcade, as the Jukebox's
+  TEKKEN 1 and TEKKEN 2 categories (switch the Jukebox on too). Off: those categories are hidden; a fighter given
+  such music plays the game's own until it is on again (the choice stays saved).
+- The setup makes everything whether it is switched on or not, so switching it on needs only a restart.
+
 ## Installation
 
 You need Windows 10/11, a Tekken 3 Expanded that has been set up once with its own `Setup Tekken 3.cmd` (the game
-starts), access to this repository and about 750 MB of free space: the Jukebox's decoded TTT music alone takes about
-470 MB in `addons\tmst\workspace\`. Below, `C:\Games\tekken3-expanded` is the
+starts), access to this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in
+`addons\tmst\workspace\` (Tekken 1 and 2 about 1.3 GB, TTT about 470 MB). Below, `C:\Games\tekken3-expanded` is the
 Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
@@ -69,13 +81,14 @@ Expanded's folder: change it if yours is elsewhere.
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
    progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
-   - takes your **Tekken 2** disc (optional; nothing is taken from it yet): the window fills it in when it finds one
+   - takes your **Tekken 2** disc (optional; the Jukebox's Tekken 1 and 2 music): the window fills it in when it finds one
      beside the discs the Expanded's setup was given; **Browse** for another, or clear the field to go on without it. USA
      (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`. A disc dropped on
      `Setup TMST.cmd` is filled in too;
-   - makes what the mods need on your machine: the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and
-     tektagt.zip's music the Expanded's setup imported) and its title lists;
-   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode), as the Expanded's setup builds it: your mod
+   - makes what the mods need on your machine: the Jukebox's Tekken 1 and 2 music (from the Tekken 2 disc, a minute or
+     two the first time), its TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the
+     Expanded's setup imported) and its title lists;
+   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, Tekken 2 Content), as the Expanded's setup builds it: your mod
      settings and game data stay.
 
    The window says so if the Expanded has not been set up yet or the game is running. When it reads

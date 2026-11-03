@@ -70,6 +70,14 @@ def main() -> int:
         features = {f.get('id') for f in data.get('feature', [])}
         for plugin in data.get('plugin', []):
             if plugin.get('feature') not in features: errors.append(f'{pkg}: plugin of unknown feature {plugin.get("feature")}')
+        # A part requiring another feature: both known, and the defaults keep to it (else the Expanded refuses the package).
+        default = {f.get('id'): f.get('default_enabled', False) for f in data.get('feature', [])}
+        for c in data.get('constraint', []):
+            if c.get('kind') != 'requires_feature': continue
+            if c.get('feature') not in features or c.get('requires_feature') not in features:
+                errors.append(f'{pkg}: constraint of unknown feature {c.get("feature")} / {c.get("requires_feature")}')
+            elif default[c['feature']] and not default[c['requires_feature']]:
+                errors.append(f'{pkg}: {c["feature"]} is on by default, {c["requires_feature"]} it requires is not')
     if listed != found:
         errors.append(f'addon.cmake TMST_PACKAGES {sorted(listed)} != mods/ {sorted(found)}')
 

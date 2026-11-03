@@ -1,5 +1,5 @@
-"""The player's Tekken 2 PlayStation disc, for what the add-on will import from
-it (nothing yet: the setup only checks it and remembers it).
+"""The player's Tekken 2 PlayStation disc, for what the add-on imports from it
+(the setup checks it and remembers it; tools/tekken2_music.py takes its music).
 
 Supported: Tekken 2 USA (SLUS-00213, every version) and Europe (SCES-00255),
 as a .cue with its .bin files, a .bin (with its .cue beside it, or a

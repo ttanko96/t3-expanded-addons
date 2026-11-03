@@ -21,11 +21,12 @@ sys.path.insert(0, str(ADDON / 'tools'))
 sys.path.insert(0, str(ROOT / 'launcher'))
 
 FONT = 'Segoe UI' if os.name == 'nt' else 'Helvetica Neue' if sys.platform == 'darwin' else 'DejaVu Sans'
-MODS = 'Jukebox · Photo Mode · Tournament Mode'
+MODS = 'Jukebox · Photo Mode · Tournament Mode · Tekken 2 Content'
 # Where each part of the work sits on the progress bar.
 SETUP_SHARE, CONFIGURE_SHARE = 0.30, 0.08
 STEP_TEXT = {
-    'tekken2_disc': ('Checking your Tekken 2 disc', 'Nothing is taken from it yet.'),
+    'tekken2_disc': ('Checking your Tekken 2 disc', ''),
+    'tekken2_music': ('Making the Jukebox’s Tekken 1 and 2 music', 'From your Tekken 2 disc. The first time takes a minute or two.'),
     'ttt_ps2_music': ('Making the Jukebox’s TTT console music', 'From the TTT PS2 music the Expanded’s setup imported. The first time takes a minute.'),
     'ttt_arcade_music': ('Making the Jukebox’s TTT arcade music', 'Rendered from tektagt.zip’s music with the Expanded’s compiler.'),
     'jukebox_titles': ('Updating the Jukebox’s title lists', ''),

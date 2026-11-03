@@ -34,6 +34,7 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament.c
+    src/tekken2/tmst_tekken2.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -73,6 +74,7 @@ set(TMST_PACKAGES
     tmst.jukebox
     tmst.photo-mode
     tmst.tournament
+    tmst.tekken2
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).
