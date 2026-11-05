@@ -256,7 +256,7 @@ static int place_atlas(void) {
         atlas_give_back();
         for (int y = 1024 - ATLAS_H; y >= 512 && atlas_x < 0; y -= 8)
             for (int x = 1024 - ATLAS_W; x >= 0; x -= 64)
-                if (atlas_fits(x, y)) { atlas_x = x; atlas_y = y; break; }
+                if (atlas_fits(x, y)) { atlas_x = x; atlas_y = y; tmst_log("overlay: the font at x %d y %d", x, y); break; }
         if (atlas_x < 0) {
             if (!atlas_said) { atlas_said = 1; tmst_log("overlay: no room for the font in the upper VRAM half"); }
             return 0;

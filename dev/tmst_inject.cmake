@@ -48,6 +48,15 @@ function(tmst_setup)
         string(REPLACE "|" ";" _parts "${_w}")
         list(GET _parts 0 _sym)
         list(GET _parts 1 _file)
+        # A third field: the TMST_HAS_ feature the wrap needs (absent: left out).
+        list(LENGTH _parts _n)
+        if(_n GREATER 2)
+            list(GET _parts 2 _need)
+            if(NOT "TMST_HAS_${_need}=1" IN_LIST _features)
+                message(STATUS "TMST: no ${_need} in this Expanded, ${_sym} not wrapped")
+                continue()
+            endif()
+        endif()
         if(COMMAND tekken3_wrap_symbol)
             # The Expanded's own helper: the same --wrap, emulated on macOS.
             tekken3_wrap_symbol(${_sym} WRAPPER "${TMST_DIR}/${_file}")
@@ -107,6 +116,18 @@ function(tmst_setup)
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${TMST_DIR}/mods/${_p}"
                 "$<TARGET_FILE_DIR:psx-runtime>/mods/packages/${_p}"
             COMMENT "TMST: staging ${_p}"
+            VERBATIM)
+    endforeach()
+    # Folders the setup made (workspace/), copied beside the game; a folder
+    # not made yet leaves nothing there (dev/tmst_stage_dir.cmake).
+    foreach(_s IN LISTS TMST_STAGED)
+        string(REPLACE "|" ";" _parts "${_s}")
+        list(GET _parts 0 _from)
+        list(GET _parts 1 _to)
+        add_custom_command(TARGET psx-runtime POST_BUILD
+            COMMAND ${CMAKE_COMMAND} "-DSRC=${TMST_DIR}/${_from}" "-DDST=$<TARGET_FILE_DIR:psx-runtime>/${_to}"
+                -P "${TMST_DIR}/dev/tmst_stage_dir.cmake"
+            COMMENT "TMST: staging ${_to}"
             VERBATIM)
     endforeach()
     message(STATUS "TMST ${TMST_VERSION}: ${CMAKE_SOURCE_DIR} at ${_rev}; features: ${_features}")
