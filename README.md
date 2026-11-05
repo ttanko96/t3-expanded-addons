@@ -58,27 +58,52 @@ The King of Iron Fist Tournament, as a mode of its own.
   `champion`, `over`, 854×480); `data\tournament\guides\` shows where the mod draws on each.
 
 ### Tekken 2 Content
-What the add-on takes from your own Tekken 2 disc (given to `Setup TMST.cmd`), in one package.
-- **Switches:** **Tekken 2 Content** in the TMST group switches it all; its parts are in the group right below it,
-  **TMST / Tekken 2 Content**, each on its own. Off, none of them runs; switching a part on switches it on too.
-- **Music:** Tekken 2's and the ten Tekken 1 stage themes it plays again, Console and Arcade, as the Jukebox's
-  TEKKEN 1 and TEKKEN 2 categories (switch the Jukebox on too). Off: those categories are hidden; a fighter given
-  such music plays the game's own until it is on again (the choice stays saved).
-- **Stages:** Tekken 2's 23 stages (Classic: its panorama and floor; the dark stages lit round the fighters, Mirror
-  Darkness with its mirror, Hong Kong's running lights), drawn by the game's stage engine as Tekken 3 arcade's are
-  (keep **Arcade Stages** on; tekken3.zip is not needed). In VS and Practice (Stage Select on), **TEKKEN 2** is a game
-  on the STAGE line, after the others: **Down** to its stages (RANDOM, then the 23). GAME OPTION's **TEKKEN 2
-  STAGES** row picks the version. **REMAKE**: 18 of them remade (scenery, animations and new painted backgrounds:
-  the backgrounds opened from patches that only your Tekken 2 disc opens, the stages built with the Expanded
-  setup's tekken3.zip;
-  without it, the Classic), with dust where a fighter falls, butterflies, fireflies and dragonflies, falling petals,
-  leaves and feathers, newspapers in the wind, the Taj Mahal's rain and oil lamps, lit windows and candles, grass on
-  the ground, birds, Grand Canyon's eagle, crabs, rabbits and pigeons, Akihabara's ship and Hong Kong's helicopter,
-  and lightning over the Taj Mahal and at the Church's windows (its flashes and thunder from TTT1 Stages' storm: the
-  Expanded's TTT stage packs; without them, none). On both versions the fighters are lit by daylight, dimmed only on the dark
-  stages (Church, Pagoda, Serene Forest, Taj Mahal, Mirror and Eternal Darkness); the signs are written in each country's language. Cambodian Wetlands, Athens, Nowhere Desert, Hills and Eternal Darkness are the Classic's
-  there for now.
-- The setup makes everything whether it is switched on or not, so switching it on needs only a restart.
+What the add-on takes from your own Tekken 2 disc (given to `Setup TMST.cmd`), in one package. The setup makes
+everything whether it is switched on or not, so switching it on needs only a restart.
+
+#### Switches
+- **Tekken 2 Content** in the TMST group switches the whole package.
+- Its parts are in the group right below it, **TMST / Tekken 2 Content**, each on its own.
+- With the package off, none of its parts runs; switching a part on switches the package on too.
+
+#### Music
+- Tekken 2's music and the ten Tekken 1 stage themes it plays again, Console and Arcade.
+- They are the Jukebox's **TEKKEN 1** and **TEKKEN 2** categories (switch the Jukebox on too).
+- **Off:** those categories are hidden; a fighter given such music plays the game's own until it is on again (the
+  choice stays saved).
+
+#### Stages
+Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
+- **Needs:** **Arcade Stages** switched on.
+- **Picking one:** in VS and Practice (Stage Select on), **TEKKEN 2** is a game on the STAGE line, after the others;
+  press **Down** for its stages (RANDOM, then the 23).
+- **Version:** GAME OPTION's **TEKKEN 2 STAGES** row, **CLASSIC** or **REMAKE**.
+- **Light:** on both versions the fighters are lit by daylight, dimmed only on the dark stages (Church, Pagoda,
+  Serene Forest, Taj Mahal, Mirror and Eternal Darkness).
+
+**Classic**
+- Tekken 2's own panorama and floor; tekken3.zip is not needed.
+- The dark stages lit round the fighters, Mirror Darkness with its mirror, Hong Kong's running lights.
+
+**Remake**
+- **18 stages remade:** scenery, animations and new painted backgrounds.
+- **Not remade yet:** Cambodian Wetlands, Athens, Nowhere Desert, Hills and Eternal Darkness are the Classic's for
+  now.
+- **What it is built from:**
+  - the backgrounds open from patches that only your Tekken 2 disc opens;
+  - the stages are built with the Expanded setup's tekken3.zip; without it, every stage is the Classic.
+- **Life on the stages:**
+  - dust where a fighter falls;
+  - butterflies, fireflies and dragonflies;
+  - falling petals, leaves and feathers, newspapers in the wind;
+  - grass on the ground, lit windows and candles, the Taj Mahal's rain and oil lamps;
+  - birds, Grand Canyon's eagle, crabs, rabbits and pigeons;
+  - Akihabara's ship and Hong Kong's helicopter.
+- **Lightning:** over the Taj Mahal and at the Church's windows. Its flashes and thunder come from TTT1 Stages'
+  storm (the Expanded's TTT stage packs); without them, there is no lightning.
+- **Writing:** the signs are written in each country's language.
+- **Unknown:** Szechwan, Hong Kong, Akihabara, the Great Wall, Launch Pad, Kyoto and Arizona have the top of their
+  background trimmed, so that Unknown's wolf and the add-on's letters keep their room in the video memory.
 
 ## Installation
 
@@ -95,15 +120,17 @@ Expanded's folder: change it if yours is elsewhere.
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
    progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
-   - takes your **Tekken 2** disc (optional; the Jukebox's Tekken 1 and 2 music, the Tekken 2 stages): the window fills it in when it finds one
-     beside the discs the Expanded's setup was given; **Browse** for another, or clear the field to go on without it. USA
-     (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`. A disc dropped on
-     `Setup TMST.cmd` is filled in too;
-   - makes what the mods need on your machine: the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages (from the
-     Tekken 2 disc; the Remake's stages a few minutes the first time), its TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the
-     Expanded's setup imported) and its title lists;
-   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, Tekken 2 Content), as the Expanded's setup builds it: your mod
-     settings and game data stay.
+   - takes your **Tekken 2** disc (optional; it gives the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages):
+     - the window fills it in when it finds one beside the discs the Expanded's setup was given; **Browse** for
+       another, or clear the field to go on without it; a disc dropped on `Setup TMST.cmd` is filled in too;
+     - USA (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`;
+   - makes what the mods need on your machine:
+     - from the Tekken 2 disc: the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages (the Remake's stages take a
+       few minutes the first time);
+     - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
+       setup imported) and its title lists;
+   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, Tekken 2 Content), as the
+     Expanded's setup builds it: your mod settings and game data stay.
 
    The window says so if the Expanded has not been set up yet or the game is running. When it reads
    `The TMST add-on is installed`, **Play** opens the game's launcher. Once the Expanded runs add-on setups itself, its
