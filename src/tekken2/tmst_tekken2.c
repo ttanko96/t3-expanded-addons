@@ -13,7 +13,9 @@
  *          asked when it reads its lists, so the order of the activations
  *          does not matter). The setup makes the music whether it is on or
  *          not: it cannot know, and the music is there as soon as it is on.
- * The Tekken 2 stages are to come as a part too. */
+ *   Stages src/tekken2/tmst_tekken2_stages.c: Tekken 2's stages, drawn by
+ *          the Expanded's stage engine, picked on the STAGE line of VS and
+ *          Practice (tmst_tekken2_on: this switch, for that part). */
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "mod_plugins.h"
@@ -21,6 +23,7 @@
 static int on, music;                  /* the features, at activation */
 
 int tmst_tekken2_music_active(void) { return on && music; }
+int tmst_tekken2_on(void) { return on; }
 
 static void activate(void) {
     on = tmst_guard("tmst.tekken2", TMST_NEED_ACTIVATION);

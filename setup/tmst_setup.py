@@ -4,18 +4,24 @@ add-on's mods need. Nothing it makes is ever committed.
 
 Each step is a function in STEPS: it checks whether its output is current
 (a version stamp under addons/tmst/workspace/) and does its work only when not.
-Steps: the Tekken 2 disc (checked and remembered), the Jukebox's Tekken 2
-(and Tekken 1) music from it, its TTT console and arcade music, then its
-title lists.
+Steps: the Python modules the tools need (numpy, Pillow), the Tekken 2 disc
+(checked and remembered), the Jukebox's Tekken 2 (and Tekken 1) music from it,
+the Tekken 2 stages from it (the Classic's packs, the Remake's pictures and packs), the
+Jukebox's TTT console and arcade music, then its title lists. Then the game is built again with the add-on (dev/build.py).
 
-    tmst_setup.py                    the steps, asking nothing (the Expanded's hook)
+It always runs with the Expanded's own Python (.setup/venv, which its setup
+gives numpy): started with another one, it starts itself again with that one.
+
+    tmst_setup.py                    the steps, asking nothing, then the build
     tmst_setup.py --interactive      asks for the Tekken 2 disc in a window when
                                      none is known (without setup/tmst_gui.py)
     tmst_setup.py --t2-disc <file>   that Tekken 2 disc (.cue, .bin or .chd)
     tmst_setup.py --no-t2-disc       no Tekken 2 disc (forgets the one known)
+    tmst_setup.py --no-build         the steps only (setup/tmst_gui.py builds on
+                                     its own, with its progress; the Expanded's hook)
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, os, subprocess, sys
 from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
@@ -23,7 +29,11 @@ ROOT = ADDON.parents[1]                     # <expanded>/addons/tmst/setup
 # The add-on's own data: in its folder, which the Expanded's setup (its
 # free-space step deletes workspace/) never touches.
 STATE = ADDON / 'workspace'
-OPTIONS = argparse.Namespace(interactive=False, t2_disc=None, no_t2_disc=False)
+OPTIONS = argparse.Namespace(interactive=False, t2_disc=None, no_t2_disc=False, no_build=False)
+# Python modules the setup installs itself when the Python running it has
+# none (pip install --target): the tools' processes find them on sys.path.
+PACKAGES = STATE / 'python'
+VENV = ROOT / '.setup/venv'
 
 
 class SetupFailed(Exception):
@@ -108,6 +118,79 @@ def ask_t2_disc() -> Path | None:
         log(f'Tekken 2 disc: cannot open a window ({error})')
         return None
     return Path(chosen) if chosen else None
+
+
+def venv_python() -> Path:
+    return VENV / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+
+
+def in_venv() -> bool:
+    try:
+        return Path(sys.prefix).resolve() == VENV.resolve()
+    except OSError:
+        return False
+
+
+def pinned(name: str, requirements: Path) -> str:
+    """The lines of a module in a pip requirements file with hashes (the
+    Expanded's tools/requirements-import.txt): each of its versions (the
+    markers choose) and their hashes; '' when it has none."""
+    try:
+        lines = requirements.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return ''
+    out, inside = [], False
+    for line in lines:
+        if not line.startswith((' ', '\t')):
+            inside = line.split('==')[0].strip().lower() == name.lower()
+        if inside:
+            out.append(line)
+    return '\n'.join(out) + '\n' if out else ''
+
+
+def python_packages() -> None:
+    """numpy and Pillow, for tools/tekken2_music.py, tekken2_stages.py and
+    t2_remake_stages.py: the Expanded's setup puts them in its .setup/venv,
+    which runs this. For those it has not, the Expanded's own pinned versions
+    (tools/requirements-import.txt, by their hashes, wheels only) into
+    workspace/python; none of the Expanded's files change. Without them the
+    Tekken 2 music and stages are left out (their steps say so)."""
+    import importlib, importlib.util
+    missing = [(module, name) for module, name in (('numpy', 'numpy'), ('PIL', 'pillow'))
+               if importlib.util.find_spec(module) is None]
+    if not missing:
+        return
+    names = ', '.join(name for _, name in missing)
+    requirement = ''.join(pinned(name, ROOT / 'tools/requirements-import.txt') for _, name in missing)
+    if not requirement:
+        log(f'{names}: missing, and the Expanded pins no version of them; the Tekken 2 music and stages are left out')
+        return
+    STATE.mkdir(parents=True, exist_ok=True)
+    listing = STATE / 'python-requirements.txt'
+    listing.write_text(requirement, encoding='utf-8')
+    log(f'{names}: installing the Expanded’s versions into {PACKAGES}')
+    result = subprocess.run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', '--no-input',
+                             '--require-hashes', '--only-binary=:all:', '--upgrade', '--target', str(PACKAGES),
+                             '-r', str(listing)])
+    listing.unlink(missing_ok=True)
+    if result.returncode:
+        log(f'{names}: could not be installed; the Tekken 2 music and stages are left out')
+        return
+    if str(PACKAGES) not in sys.path:
+        sys.path.insert(0, str(PACKAGES))
+    importlib.invalidate_caches()
+    for module, name in missing:
+        try:
+            loaded = importlib.import_module(module)
+            log(f'{name}: {getattr(loaded, "__version__", "installed")}')
+        except ImportError as error:
+            log(f'{name}: installed but cannot be loaded ({error}); the Tekken 2 music and stages are left out')
+
+
+def build() -> int:
+    """The game built again with the add-on (dev/build.py, as Setup TMST.cmd does)."""
+    log('building the game with the add-on (dev/build.py)')
+    return subprocess.call([sys.executable, '-u', str(ADDON / 'dev/build.py')], cwd=ADDON)
 
 
 def tekken2_disc() -> None:
@@ -200,6 +283,122 @@ def tekken2_music() -> None:
     save_stamp('tekken2-music', {'stamp': want, 'files': names})
 
 
+def tekken2_stages() -> None:
+    """Tekken 2 Content's Stages, Classic (tools/tekken2_stages.py), from the
+    Tekken 2 disc the first step kept: again when the disc or the tool's
+    VERSION changed or a pack is gone; nothing without a disc. No pictures
+    (the tool makes them when run by hand)."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    from disc_image import DiscError
+    import tekken2_stages as stages
+    disc = stages.find_disc(STATE)
+    if not disc:
+        log('Tekken 2 stages: no Tekken 2 disc, skipped')
+        return
+    want = {'version': stages.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}}
+    have = stamp('tekken2-stages')
+    out = ROOT / stages.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 2 stages: taking them from the disc (a minute or two)')
+    try:
+        names = stages.convert(disc, out, say=log, previews=False)
+    except ImportError as error:                    # numpy (the floor's halves): python_packages
+        log(f'Tekken 2 stages: {error}; left out')
+        return
+    except (DiscError, OSError, ValueError) as error:
+        log(f'Tekken 2 stages: {error}; left out')
+        return
+    save_stamp('tekken2-stages', {'stamp': want, 'files': names})
+
+
+def tekken2_remake_pictures() -> None:
+    """Tekken 2 Content's Stages, Remake: the user's backgrounds, from the
+    patches in tools/data/t2-remake-patches (tools/t2_remake_patch.py),
+    which only the Tekken 2 disc opens: again when the disc, the tool's
+    VERSION or a patch changed or a picture is gone. A picture that does not
+    open: that stage's Remake on Tekken 2's own panorama (said)."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import hashlib
+    from disc_image import DiscError
+    import t2_remake_patch as patch
+    import tekken2_stages as stages
+    disc = stages.find_disc(STATE)
+    if not disc:
+        log('Tekken 2 Remake pictures: no Tekken 2 disc, skipped')
+        return
+    patches = hashlib.sha256()
+    for f in patch.patch_files():
+        patches.update(f.name.encode('utf-8') + f.read_bytes())
+    want = {'version': patch.VERSION, 'patches': patches.hexdigest()[:16],
+            'disc': {'path': str(disc), **file_stamp(disc)}}
+    have = stamp('tekken2-remake-pictures')
+    out = ROOT / stages.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 2 Remake pictures: opening them with your Tekken 2 disc')
+    try:
+        names = patch.apply(disc, out, say=log)
+    except ImportError as error:                    # numpy, Pillow: python_packages
+        log(f'Tekken 2 Remake pictures: {error}; left out')
+        return
+    except (DiscError, OSError, ValueError) as error:
+        log(f'Tekken 2 Remake pictures: {error}; left out')
+        return
+    if len(names) < len(patch.patch_files()):
+        log(f'Tekken 2 Remake pictures: {len(names)} of {len(patch.patch_files())}; '
+            'the others’ stages on Tekken 2’s own panorama')
+    save_stamp('tekken2-remake-pictures', {'stamp': want, 'files': names})
+
+
+def tekken2_remake_stages() -> None:
+    """Tekken 2 Content's Stages, Remake: the 23 packs (tools/t2_remake_stages.py)
+    from the disc, tekken3.zip (the Expanded setup's) and the pictures: again
+    when any of them, the generator or its recipes changed or a pack is gone.
+    Without tekken3.zip every stage is the Classic's pack (no Remake)."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import hashlib
+    from disc_image import DiscError
+    import t2_remake_stages as remake
+    import tekken2_stages as stages
+    disc = stages.find_disc(STATE)
+    if not disc:
+        log('Tekken 2 Remake stages: no Tekken 2 disc, skipped')
+        return
+    out = ROOT / stages.OUT
+    if not all((out / n).is_file() for n in stamp('tekken2-stages').get('files', [])):
+        log('Tekken 2 Remake stages: no Classic packs, skipped')
+        return
+    tekken3 = remake.tekken3_zip()
+    storm = remake.storm_pack(ROOT)          # the lightning's flashes and thunder (TTT1 Stages' stage 4)
+    code = hashlib.sha256()
+    for f in ('tools/t2_remake_stages.py', 'tools/t2_remake_stage.py', 'tools/t2_remake_disc.py',
+              'tools/data/t2_remake_stages.json'):
+        code.update((ADDON / f).read_bytes())
+    want = {'version': remake.VERSION, 'code': code.hexdigest()[:16],
+            'pictures': stamp('tekken2-remake-pictures').get('stamp'), 'classic': stamp('tekken2-stages').get('stamp'),
+            'tekken3': {'path': str(tekken3), **file_stamp(tekken3)} if tekken3 else None,
+            # its content, not its time: each build copies the TTT packs again
+            'storm': hashlib.sha256(storm.read_bytes()).hexdigest()[:16] if storm else None}
+    have = stamp('tekken2-remake-stages')
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    if not tekken3:
+        log('Tekken 2 Remake stages: no tekken3.zip (the Expanded setup’s), the Classic’s packs in their place')
+    if tekken3 and not storm:
+        log('Tekken 2 Remake stages: no TTT stage packs (TTT1 Stages), the lightning without flashes or thunder')
+    log('Tekken 2 Remake stages: building them (a few minutes)')
+    try:
+        names = remake.convert(disc, out, tekken3, say=log, storm=storm)
+    except ImportError as error:                    # numpy, Pillow: python_packages
+        log(f'Tekken 2 Remake stages: {error}; left out')
+        return
+    except (DiscError, OSError, ValueError, SystemExit) as error:     # the generator says SystemExit
+        log(f'Tekken 2 Remake stages: {error}; left out')
+        return
+    save_stamp('tekken2-remake-stages', {'stamp': want, 'files': names})
+
+
 def ttt_ps2_music() -> None:
     """The Jukebox's TTT console music (tools/ttt_ps2_music.py), from the
     Expanded's PS2 stage music pack and the TTT PS2 disc it was made from."""
@@ -247,8 +446,8 @@ def jukebox_titles() -> None:
     titles.update(ROOT)
 
 
-STEPS: list = [tekken2_disc, tekken2_music, ttt_ps2_music, ttt_arcade_music,
-               jukebox_titles]   # the music first: the titles list it
+STEPS: list = [python_packages, tekken2_disc, tekken2_music, tekken2_stages, tekken2_remake_pictures,
+               tekken2_remake_stages, ttt_ps2_music, ttt_arcade_music, jukebox_titles]   # the music first: the titles list it
 
 
 def main() -> int:
@@ -257,10 +456,17 @@ def main() -> int:
     choice = parser.add_mutually_exclusive_group()
     choice.add_argument('--t2-disc', metavar='FILE', help='the Tekken 2 disc (.cue, .bin or .chd)')
     choice.add_argument('--no-t2-disc', action='store_true', help='no Tekken 2 disc')
+    parser.add_argument('--no-build', action='store_true', help='the steps only, no build of the game')
     parser.parse_args(namespace=OPTIONS)
     if not (ROOT / 'game.toml').is_file():
         log(f'{ROOT} is not a Tekken 3 Expanded folder')
         return 1
+    if not in_venv() and venv_python().is_file() and not os.environ.get('TMST_SETUP_AGAIN'):
+        # The Expanded's Python (its numpy, its pip) for every step and the build.
+        return subprocess.call([str(venv_python()), '-u', str(Path(__file__).resolve()), *sys.argv[1:]],
+                               env=dict(os.environ, TMST_SETUP_AGAIN='1'))
+    if PACKAGES.is_dir() and str(PACKAGES) not in sys.path:
+        sys.path.insert(0, str(PACKAGES))
     try:
         for n, step in enumerate(STEPS, 1):
             print(f'TMST step {n}/{len(STEPS)}: {step.__name__}', flush=True)   # the setup window's progress
@@ -269,7 +475,7 @@ def main() -> int:
         log(str(error))
         return 1
     log('done' if STEPS else 'nothing to make yet')
-    return 0
+    return 0 if OPTIONS.no_build else build()
 
 
 if __name__ == '__main__':

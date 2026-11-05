@@ -30,5 +30,32 @@ function(tmst_detect_features out)
             list(APPEND _defs "TMST_HAS_GAME_OPTIONS=1")
         endif()
     endif()
+    # The stage engine and the STAGE line (Tekken 2 Content's Stages wraps
+    # these functions, called from other files of theirs).
+    set(_engine 1)
+    foreach(_pair
+            "tekken3_stage_source.h|tekken3_stage_source(void)"
+            "tekken3_stage_source.h|tekken3_stage_ttt_stage(void)"
+            "tekken3_stage_source.h|tekken3_arcade_stages_source_ready(int source)"
+            "tekken3_stage_select.h|tekken3_stage_select_fight(unsigned mode)"
+            "tekken3_stage_select.h|tekken3_stage_select_input(int player, uint16_t buttons)"
+            "tekken3_stage_select.h|tekken3_stage_select_line(const char **label"
+            "tekken3_stage_select.h|tekken3_stage_select_arena(void)"
+            "tekken3_stage_select.h|tekken3_stage_select_choice(unsigned mode, int *source")
+        string(REPLACE "|" ";" _p "${_pair}")
+        list(GET _p 0 _file)
+        list(GET _p 1 _decl)
+        set(_text "")
+        if(EXISTS "${CMAKE_SOURCE_DIR}/src/${_file}")
+            file(READ "${CMAKE_SOURCE_DIR}/src/${_file}" _text)
+        endif()
+        string(FIND "${_text}" "${_decl}" _at)
+        if(_at EQUAL -1)
+            set(_engine 0)
+        endif()
+    endforeach()
+    if(_engine)
+        list(APPEND _defs "TMST_HAS_STAGE_ENGINE=1")
+    endif()
     set(${out} "${_defs}" PARENT_SCOPE)
 endfunction()

@@ -35,6 +35,11 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament.c
     src/tekken2/tmst_tekken2.c
+    src/tekken2/tmst_tekken2_stages.c
+    src/tekken2/tmst_tekken2_mirror.c
+    src/tekken2/tmst_tekken2_extras.c
+    src/tekken2/tmst_tekken2_trace.c
+    src/tekken2/tmst_tekken2_anchor.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -42,11 +47,23 @@ set(TMST_INCLUDE_DIRS
     src/tournament
 )
 
-# Symbols wrapped with -Wl,--wrap, each "symbol|file defining __wrap_symbol".
-# Only symbols the Expanded does not wrap itself (docs/COMPAT.md).
+# Symbols wrapped with -Wl,--wrap, each "symbol|file defining __wrap_symbol",
+# optionally "|NAME": only when the build found TMST_HAS_NAME (the file then
+# defines the wrapper under it). Only symbols the Expanded does not wrap
+# itself (docs/COMPAT.md).
 set(TMST_WRAPS
     "gpu_ws_prepass_linked_list|src/core/tmst_overlay.c"
     "psx_sdl_audio_open|src/core/tmst_audio.c"
+    "fopen|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_source|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_ttt_stage|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_fight|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_input|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_line|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_arena|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_choice|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_arcade_stages_thunder_mix|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
+    "tekken3_arcade_stages_thunder_stop|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
 )
 
 # Symbols the Expanded may wrap itself (guest routines and runtime
@@ -67,6 +84,9 @@ set(TMST_CHAINS
     "func_8003A818|src/core/tmst_camera.c"
     "func_8004F0E4|src/tournament/tmst_tournament.c"
     "func_8004439C|src/tournament/tmst_tournament.c"
+    "func_800826E8|src/tekken2/tmst_tekken2_stages.c"
+    "func_8006D014|src/tekken2/tmst_tekken2_mirror.c"
+    "func_80036CAC|src/tekken2/tmst_tekken2_mirror.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
@@ -75,6 +95,13 @@ set(TMST_PACKAGES
     tmst.photo-mode
     tmst.tournament
     tmst.tekken2
+)
+
+# Folders the setup makes, staged beside the game at each build, each
+# "folder here|folder beside the game" (dev/tmst_stage_dir.cmake).
+set(TMST_STAGED
+    "workspace/t2-stages/classic|mods/t2-stages/classic"
+    "workspace/t2-stages/remake|mods/t2-stages/remake"
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).

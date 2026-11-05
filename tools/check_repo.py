@@ -4,7 +4,10 @@
   and version, and addon.cmake lists exactly those packages;
 - every source in addon.cmake exists, and every wrap names its file;
 - no retail-derived data: no disc images, executables or game archives, no
-  file over the size limit, nothing under folders that hold game data.
+  file over the size limit, nothing under folders that hold game data;
+- the Remake's picture patches (tools/data/t2-remake-patches/*.t2p, over
+  the size limit): only patches there, each mixed with its disc's key
+  (tools/t2_remake_patch.py check), within their own total.
 
     python tools/check_repo.py
 """
@@ -17,6 +20,7 @@ FORBIDDEN_SUFFIXES = {'.bin', '.cue', '.chd', '.iso', '.img', '.mdf', '.exe', '.
                       '.ast', '.bgm', '.xa', '.tim', '.tmd', '.vab', '.t3pv', '.cap', '.rgba'}
 MAX_BYTES = 512 * 1024
 ALLOWED_BIG = set()                   # paths (relative, posix) a reviewer has cleared
+PATCHES = 'tools/data/t2-remake-patches'    # the Remake's picture patches: checked apart
 
 
 def cmake_list(text: str, name: str) -> list[str]:
@@ -43,6 +47,7 @@ def main() -> int:
         if not (ADDON / src).is_file(): errors.append(f'addon.cmake: missing source {src}')
     for wrap in cmake_list(addon, 'TMST_WRAPS'):
         sym, _, file = wrap.partition('|')
+        file = file.partition('|')[0]           # "|NAME": a build feature it needs
         if not file or not (ADDON / file).is_file(): errors.append(f'addon.cmake: wrap {sym} without its file')
         elif f'__wrap_{sym}' not in (ADDON / file).read_text(encoding='utf-8', errors='replace'):
             errors.append(f'addon.cmake: {file} defines no __wrap_{sym}')
@@ -81,12 +86,25 @@ def main() -> int:
     if listed != found:
         errors.append(f'addon.cmake TMST_PACKAGES {sorted(listed)} != mods/ {sorted(found)}')
 
+    patches = []
     for path in tracked_files():
         rel = path.relative_to(ADDON).as_posix()
         if rel.startswith(('dev/build/', '.git/')): continue
+        if rel.startswith(PATCHES + '/'):
+            if path.suffix != '.t2p': errors.append(f'{rel}: not a picture patch')
+            else: patches.append(path)
+            continue
         if path.suffix.lower() in FORBIDDEN_SUFFIXES: errors.append(f'{rel}: game-data file type')
         if path.is_file() and path.stat().st_size > MAX_BYTES and rel not in ALLOWED_BIG:
             errors.append(f'{rel}: {path.stat().st_size} bytes (limit {MAX_BYTES}; game data?)')
+
+    if patches:
+        sys.path.insert(0, str(ADDON / 'tools'))
+        try:
+            import t2_remake_patch
+            errors += [f'{PATCHES}/{e}' for e in t2_remake_patch.check(patches)]
+        except ImportError as error:    # numpy (the disc reader's)
+            errors.append(f'{PATCHES}: cannot check ({error})')
 
     for e in errors: print('ERROR', e)
     print('check_repo:', 'OK' if not errors else f'{len(errors)} problem(s)')

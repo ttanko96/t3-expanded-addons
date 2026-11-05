@@ -25,8 +25,12 @@ MODS = 'Jukebox · Photo Mode · Tournament Mode · Tekken 2 Content'
 # Where each part of the work sits on the progress bar.
 SETUP_SHARE, CONFIGURE_SHARE = 0.30, 0.08
 STEP_TEXT = {
+    'python_packages': ('Checking the Python modules', 'numpy, from the Expanded’s Python (installed here when it has none).'),
     'tekken2_disc': ('Checking your Tekken 2 disc', ''),
     'tekken2_music': ('Making the Jukebox’s Tekken 1 and 2 music', 'From your Tekken 2 disc. The first time takes a minute or two.'),
+    'tekken2_stages': ('Making the Tekken 2 stages', 'From your Tekken 2 disc: its backgrounds and floors. A few seconds.'),
+    'tekken2_remake_pictures': ('Opening the Tekken 2 Remake backgrounds', 'With your Tekken 2 disc. A few seconds.'),
+    'tekken2_remake_stages': ('Building the Tekken 2 Remake stages', 'From your Tekken 2 disc and tekken3.zip: the remade stages. A few minutes.'),
     'ttt_ps2_music': ('Making the Jukebox’s TTT console music', 'From the TTT PS2 music the Expanded’s setup imported. The first time takes a minute.'),
     'ttt_arcade_music': ('Making the Jukebox’s TTT arcade music', 'Rendered from tektagt.zip’s music with the Expanded’s compiler.'),
     'jukebox_titles': ('Updating the Jukebox’s title lists', ''),
@@ -231,7 +235,7 @@ def gui(t2_arg: str | None, test_hook=None):
             self.status.set('Starting the add-on’s setup')
             LOG.parent.mkdir(parents=True, exist_ok=True)
             python = Path(sys.executable).with_name('python.exe') if os.name == 'nt' else Path(sys.executable)
-            steps = [[str(python), '-u', str(ADDON / 'setup/tmst_setup.py'), *args],
+            steps = [[str(python), '-u', str(ADDON / 'setup/tmst_setup.py'), '--no-build', *args],
                      [str(python), '-u', str(ADDON / 'dev/build.py')]]
             threading.Thread(target=self.work, args=(steps, self.epoch), daemon=True).start()
 

@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: numpy, Pillow (the setup's python_packages; the Expanded's pins for 3.12)
+        run: python -m pip install --disable-pip-version-check numpy==2.3.5 pillow==12.0.0
       - name: Manifests, sources, no game data
         run: python tools/check_repo.py
       - name: Unit tests
