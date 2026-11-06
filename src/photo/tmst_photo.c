@@ -1,11 +1,13 @@
 /* tmst.photo-mode: a free camera in a paused fight, and photos of it.
  *
  * Way in: PHOTO in the fight's pause menu, above RESET (src/core/tmst_pause.c:
- * Arcade, VS, Team Battle, Time Attack, Survival); in Practice,
+ * Arcade, VS, Team Battle, Time Attack, Survival, Tekken Ball); in Practice,
  * whose panels come from its overlay and have no room for a row, SELECT
- * while paused (a hint says so under the panel). Tekken Ball, Tekken Force
- * (its corridor stages make no picture), the menus, the selectors, the
- * loading screens and the Theater have none.
+ * while paused (a hint says so under the panel). Tekken Force (its corridor
+ * stages make no picture), the menus, the selectors, the loading screens
+ * and the Theater have none. In Tekken Ball the ball is drawn by its
+ * overlay, which the free camera's frame calls too (src/core/tmst_camera.c);
+ * TRIANGLE hides its HUD as well (the power bars, the floating numbers).
  *
  * While it is on the fight stays paused as the game paused it: the pause
  * menu is not run (tmst_pause_hold), every button is ours (src/core/
@@ -546,6 +548,7 @@ static void camera_frame(void) {
      * own draw with its 64 x 64 sizes); hidden, its ranks are (photo_visitor). */
     tmst_camera_free(&c, 1);
     tmst_camera_hide_fighters(ph.capture_stage);
+    tmst_camera_hide_ball_hud(ph.hud_hidden || ph.capture_stage);
     ph.cam = c;
     if (cam_log && ph.frames % 30 == 0) {
         int32_t hx, hz, cell;

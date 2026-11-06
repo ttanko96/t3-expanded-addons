@@ -107,6 +107,17 @@ int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch,
  * renderer samples the frame at the native resolution: copies over the
  * whole screen soften it. */
 void tmst_prim_screen_copy(TmstPrims *k, int x, int y, int w, int h, int dx, int dy, uint32_t tint, int blend);
+/* A mod's small image (ARGB, up to 64 x 128; alpha under 128 see-through,
+ * under 255 half see-through, as the picture's), kept in the upper VRAM half
+ * as the font's sheet is; tmst_prim_sheet draws it scaled to the screen
+ * rectangle (x, y, w, h). Nothing is drawn the first frame it is asked for,
+ * nor while no place is free (it returns 0 then). */
+int tmst_overlay_set_sheet(const uint32_t *argb, int w, int h);
+int tmst_prim_sheet(TmstPrims *k, int x, int y, int w, int h);
+/* Nonzero: what follows may draw on the screen's whole height (T3 draws
+ * only rows 20..467 of its 480, the rest stays black); zero: the game's
+ * drawing area again. */
+void tmst_prim_whole_height(TmstPrims *k, int on);
 /* A builder, run while the picture is shown (before the picture is drawn).
  * Up to 4 builders (one per mod), run in the order added. */
 typedef void (*TmstPrimsBuilder)(TmstPrims *k);

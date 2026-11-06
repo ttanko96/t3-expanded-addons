@@ -73,6 +73,7 @@ static struct {                         /* tmst_overlay_set_rank_prims */
  * and the mask setting (E6), followed through every list drawn (the drawing
  * environment comes in a short list of its own). */
 static uint32_t gpu_e1 = 0xE1000400u, gpu_e5 = 0xE5000000u, gpu_e6 = 0xE6000000u;
+static uint32_t gpu_e3 = 0xE3000000u, gpu_e4 = 0xE4000000u | 479u << 10 | 367u;   /* the drawing area */
 
 void tmst_overlay_set_prims(TmstPrimsBuilder b) {
     for (int i = 0; i < builder_count; i++) if (builders[i] == b) return;
@@ -194,7 +195,8 @@ void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder b) {
 static void atlas_give_back(void);
 void tmst_overlay_show_prims(void) { if (setup()) prims_shown = 1; }
 void tmst_overlay_backdrop(int on, uint32_t bgr) { backdrop_on = on; backdrop_bgr = bgr & 0xFFFFFFu; }
-void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; yielded = 0; give_back(); atlas_give_back(); dirty = 1; }
+static void sheet_give_back(void);
+void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; yielded = 0; give_back(); atlas_give_back(); sheet_give_back(); dirty = 1; }
 int tmst_overlay_visible(void) { return shown; }
 static int drawing(void) { return shown || prims_shown; }
 
@@ -294,10 +296,89 @@ int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch,
     return n * cw;
 }
 
+/* ---- a mod's small image (tmst_overlay_set_sheet) ----
+ * 15-bit texels (texel(): the half see-through ones with the STP bit), up to
+ * one texture page (64 x 256); placed as the font's sheet is, right of where
+ * the borrowed picture goes (x 832 and on, up to PREVIEW 800 wide) and clear
+ * of the font's sheet, kept and given back the same way. */
+enum { SHEET_MAX_W = 64, SHEET_MAX_H = 128, SHEET_X0 = 832 };
+static uint16_t sheet[SHEET_MAX_W * SHEET_MAX_H], sheet_kept[SHEET_MAX_W * SHEET_MAX_H];
+static int sheet_w, sheet_h, sheet_x = -1, sheet_y, sheet_has_kept, sheet_dirty = 1, sheet_wanted, sheet_last, sheet_ready, sheet_said;
+static unsigned sheet_generation, sheet_frame;
+
+int tmst_overlay_set_sheet(const uint32_t *argb, int w, int h) {
+    if (!argb || w <= 0 || h <= 0 || w > SHEET_MAX_W || h > SHEET_MAX_H) return 0;
+    if (w != sheet_w || h != sheet_h) {
+        if (sheet_x >= 0 && sheet_has_kept) vram_up("image back", sheet_x, sheet_y, sheet_w, sheet_h, sheet_kept);
+        sheet_x = -1; sheet_has_kept = 0;
+    }
+    for (int i = 0; i < w * h; i++) sheet[i] = texel(argb[i]);
+    sheet_w = w; sheet_h = h; sheet_dirty = 1;
+    return 1;
+}
+static void sheet_give_back(void) {
+    if (sheet_x >= 0 && sheet_has_kept) vram_up("image back", sheet_x, sheet_y, sheet_w, sheet_h, sheet_kept);
+    sheet_x = -1; sheet_has_kept = 0; sheet_dirty = 1;
+}
+static int sheet_fits(int x, int y) {
+    if ((y - 512) / 256 != (y + sheet_h - 1 - 512) / 256 || y + sheet_h > 1024) return 0;
+    if (atlas_x >= 0 && x < atlas_x + ATLAS_W && atlas_x < x + sheet_w && y < atlas_y + ATLAS_H && atlas_y < y + sheet_h)
+        return 0;
+    if (y + sheet_h > 1024 - ATLAS_H && x + sheet_w > 1024 - ATLAS_W) return 0;   /* where the font's sheet goes first */
+    return !tmst_compat_high_vram_taken(x, y, sheet_w, sheet_h);
+}
+static int place_sheet(void) {
+    if (!sheet_w) return 0;
+    unsigned gen = tmst_compat_high_vram_generation();
+    if (sheet_x < 0 || !sheet_fits(sheet_x, sheet_y)) {
+        sheet_give_back();
+        for (int y = 1024 - sheet_h; y >= 512 && sheet_x < 0; y -= 8)
+            for (int x = 1024 - 64; x >= SHEET_X0; x -= 64)
+                if (sheet_fits(x, y)) { sheet_x = x; sheet_y = y; tmst_log("overlay: the image at x %d y %d", x, y); break; }
+        if (sheet_x < 0) {
+            if (!sheet_said) { sheet_said = 1; tmst_log("overlay: no room for the image in the upper VRAM half"); }
+            return 0;
+        }
+    }
+    if (sheet_dirty || gen != sheet_generation || frame - sheet_frame >= 30) {
+        if (!sheet_has_kept || gen != sheet_generation)
+            sheet_has_kept = tmst_compat_high_vram_read(sheet_x, sheet_y, sheet_w, sheet_h, sheet_kept);
+        vram_up("image", sheet_x, sheet_y, sheet_w, sheet_h, sheet);
+        sheet_dirty = 0; sheet_generation = gen; sheet_frame = frame;
+    }
+    return 1;
+}
+
+int tmst_prim_sheet(TmstPrims *k, int x, int y, int w, int h) {
+    sheet_wanted = 1;
+    if (!sheet_ready) return 0;
+    int base = sheet_y < 768 ? 512 : 768, v0 = sheet_y - base, v1 = v0 + sheet_h;
+    /* half see-through texels as B/2 + F/2; raw texture; the upper half */
+    uint32_t tpage = (uint32_t)(sheet_x / 64) | (uint32_t)(base - 512) / 256u << 4 | 2u << 7 | 1u << 11;
+    uint32_t u1 = (uint32_t)sheet_w;
+    tmst_prim_room(k, 9);
+    tmst_prim_word(k, 0x2F808080u);                     /* textured quad, semi-transparent, raw */
+    tmst_prim_word(k, tmst_xy(x, y));         tmst_prim_word(k, (uint32_t)v0 << 8);
+    tmst_prim_word(k, tmst_xy(x + w, y));     tmst_prim_word(k, tpage << 16 | (uint32_t)v0 << 8 | u1);
+    tmst_prim_word(k, tmst_xy(x, y + h));     tmst_prim_word(k, (uint32_t)v1 << 8);
+    tmst_prim_word(k, tmst_xy(x + w, y + h)); tmst_prim_word(k, (uint32_t)v1 << 8 | u1);
+    return 1;
+}
+
 /* The drawing offset (E5: x in bits 0-10, y in 11-21, both signed): the
  * screen's (0, 0) in VRAM, so the frame being drawn is a texture there. */
 static int e5_x(void) { return (int)((gpu_e5 & 0x7FFu) ^ 0x400u) - 0x400; }
 static int e5_y(void) { return (int)((gpu_e5 >> 11 & 0x7FFu) ^ 0x400u) - 0x400; }
+
+/* The drawing area (E3 / E4: x in bits 0-9, y from bit 10) the screen's
+ * whole height, its x as the game's; or the game's again. */
+void tmst_prim_whole_height(TmstPrims *k, int on) {
+    tmst_prim_room(k, 2);
+    if (!on) { tmst_prim_word(k, gpu_e3); tmst_prim_word(k, gpu_e4); return; }
+    int y0 = e5_y() < 0 ? 0 : e5_y(), y1 = e5_y() + 479;
+    tmst_prim_word(k, (gpu_e3 & 0xFF0003FFu) | (uint32_t)y0 << 10);
+    tmst_prim_word(k, (gpu_e4 & 0xFF0003FFu) | (uint32_t)y1 << 10);
+}
 
 void tmst_prim_screen_copy(TmstPrims *k, int x, int y, int w, int h, int dx, int dy, uint32_t tint, int blend) {
     int ox = e5_x(), oy = e5_y();
@@ -409,6 +490,7 @@ static void write_chain(uint32_t e1_before) {
          * builder, else its place given back (the stage engine's floor
          * textures were found where it stayed, through the fights). */
         text_ready = (text_wanted || text_last) && place_atlas();
+        sheet_ready = (sheet_wanted || sheet_last) && place_sheet();
         int borrow = (show_flags & TMST_OVERLAY_BORROW) != 0;
         if (shown && borrow && (show_flags & TMST_OVERLAY_YIELD) && kept_w && !yielded &&
             tmst_compat_high_vram_generation() != vram_generation) {
@@ -438,6 +520,8 @@ static void write_chain(uint32_t e1_before) {
         for (int i = 0; i < builder_count; i++) builders[i](&k);
         if (!text_wanted && atlas_x >= 0) atlas_give_back();
         text_last = text_wanted; text_wanted = 0;
+        if (!sheet_wanted && sheet_x >= 0) sheet_give_back();
+        sheet_last = sheet_wanted; sheet_wanted = 0;
         if (placed && !under) picture_prims(&k);
         tmst_prim_room(&k, 1);
         tmst_prim_word(&k, e1_before);
@@ -477,6 +561,8 @@ static unsigned command_words(uint32_t node, unsigned i, unsigned n) {
     if (op >= 0xC0 && op < 0xE0) return 3;
     if (op == 0x02) return 3;
     if (op == 0xE1) gpu_e1 = w;
+    if (op == 0xE3) gpu_e3 = w;
+    if (op == 0xE4) gpu_e4 = w;
     if (op == 0xE5) gpu_e5 = w;
     if (op == 0xE6) gpu_e6 = w;
     return 1;

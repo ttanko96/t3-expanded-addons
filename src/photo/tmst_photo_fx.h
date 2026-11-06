@@ -13,7 +13,14 @@
  * colour from all three channels (BLACK & WHITE, SEPIA, NOIR, DUOTONE,
  * TEAL & ORANGE, POSTER, NIGHT VISION, NEGATIVE): the CPU's, on a frame read
  * back while the camera stands (shown as the overlay's picture), a close
- * look of the GPU's while it moves (none for NEGATIVE and POSTER). */
+ * look of the GPU's while it moves (none for NEGATIVE and POSTER).
+ *
+ * The frames are drawn on the screen's whole height (tmst_prim_whole_height:
+ * live as on the photo). T3E RED and T3E BLACK (one frame, two colourings)
+ * write their name in Tekken 3's own big letters, read from the fight's VRAM
+ * (the core's font where they are not there), and carry the T3E logo
+ * (data/photo/t3e_logo.png: live from the upper VRAM half, tmst_overlay_set_
+ * sheet; on the photo from the PNG, its soft edge whole). */
 #ifndef TMST_PHOTO_FX_H
 #define TMST_PHOTO_FX_H
 #include "tmst_overlay.h"
@@ -21,7 +28,7 @@
 
 enum { FX_NONE, FX_BW, FX_SEPIA, FX_NOIR, FX_VINTAGE, FX_CONTRAST, FX_COLD, FX_WARM, FX_TEAL_ORANGE, FX_DUOTONE,
        FX_POSTER, FX_NIGHT, FX_SCANLINES, FX_NEGATIVE, FX_FILTERS };
-enum { FR_NONE, FR_LETTERBOX, FR_POLAROID, FR_FILM, FR_VIGNETTE, FR_TEKKEN, FR_CRT, FR_COMIC, FR_FRAMES };
+enum { FR_NONE, FR_LETTERBOX, FR_POLAROID, FR_FILM, FR_VIGNETTE, FR_TEKKEN_RED, FR_TEKKEN_BLACK, FR_CRT, FR_COMIC, FR_FRAMES };
 
 extern const char *const tmst_photo_filter_names[FX_FILTERS];
 extern const char *const tmst_photo_frame_names[FR_FRAMES];
