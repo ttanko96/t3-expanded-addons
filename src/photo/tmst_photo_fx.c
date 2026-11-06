@@ -5,14 +5,18 @@
 #include "tmst_photo_fx.h"
 #include "tmst_compat.h"
 #include "tmst_font.h"
+#include "tmst_core.h"
+#include "tmst_files.h"
+#include "tmst_png.h"
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 const char *const tmst_photo_filter_names[FX_FILTERS] = {
     "NONE", "BLACK & WHITE", "SEPIA", "NOIR", "VINTAGE", "HIGH CONTRAST", "COLD", "WARM", "TEAL & ORANGE",
     "DUOTONE", "POSTER", "NIGHT VISION", "SCANLINES", "NEGATIVE"};
-const char *const tmst_photo_frame_names[FR_FRAMES] = {"NONE", "LETTERBOX", "POLAROID", "FILM STRIP", "VIGNETTE", "T3E",
+const char *const tmst_photo_frame_names[FR_FRAMES] = {"NONE", "LETTERBOX", "POLAROID", "FILM STRIP", "VIGNETTE", "T3E RED", "T3E BLACK",
                                                        "CRT TV", "COMIC"};
 
 int tmst_photo_filter_cpu(int f) {
@@ -326,28 +330,233 @@ static void film(Canvas *c) {
     }
 }
 
-static void tekken(Canvas *c) {
-    enum { SIDE = 10, TOP = 18, BOTTOM = 30, DARK = 0x180840, GOLD = 0x30a8d8, ARM_X = 28, ARM_Y = 44, T = 3 };
+/* Tekken 3's own big letters (its ROUND / FIGHT words), as the fight keeps
+ * them in VRAM, paused too (measured: Arcade, Tekken Ball): page (896, 0),
+ * 4 bpp, cells of 24 x 40 (the letter in rows 1..38), eight to a row: A..H,
+ * I..P, Q..X, Y Z ! ? . ' 1 2, 3..9 -; the palette at (384, 506) (0x7E98):
+ * silver, a dark red edge. Read back once in a while (the lower VRAM half,
+ * tmst_compat_vram_read) for each letter's width and for the photo's CPU,
+ * which draws them filtered at its scale; live, textured quads from the page
+ * itself. Not there (no read-back, or not these letters): the core's font. */
+enum { T3F_PAGE_X = 896, T3F_TW = 192, T3F_TH = 200, T3F_CW = 24, T3F_CH = 40, T3F_V0 = 1, T3F_V1 = 39,
+       T3F_CLUT_X = 384, T3F_CLUT_Y = 506, T3F_RECHECK = 60 };
+static const char t3f_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!?.'123456789-";
+static struct {
+    int ok, age;
+    uint16_t tex[T3F_TH][T3F_TW / 4], pal[16];
+    int x0[sizeof t3f_chars], x1[sizeof t3f_chars];       /* each letter's ink, from its cell's left */
+} t3f;
+static int t3f_index(char ch) {
+    const char *p = ch ? strchr(t3f_chars, ch) : NULL;
+    return p ? (int)(p - t3f_chars) : -1;
+}
+static int t3f_texel(int u, int v) { return t3f.tex[v][u / 4] >> (u % 4 * 4) & 15; }
+static int t3f_load(int force) {
+    if (!force && t3f.age && --t3f.age) return t3f.ok;
+    t3f.age = T3F_RECHECK; t3f.ok = 0;
+    if (!tmst_compat_vram_read(T3F_PAGE_X, 0, T3F_TW / 4, T3F_TH, &t3f.tex[0][0]) ||
+        !tmst_compat_vram_read(T3F_CLUT_X, T3F_CLUT_Y, 16, 1, t3f.pal))
+        return 0;
+    if (t3f.pal[0] || !t3f.pal[1]) return 0;
+    for (int i = 0; t3f_chars[i]; i++) {
+        int cu = i % 8 * T3F_CW, cv = i / 8 * T3F_CH, lo = T3F_CW, hi = -1, gap = 1;
+        for (int v = cv; v < cv + T3F_CH; v++)
+            for (int u = cu; u < cu + T3F_CW; u++)
+                if (t3f_texel(u, v)) {
+                    if (v == cv || v == cv + T3F_CH - 1) gap = 0;   /* the rows between the letters are clear */
+                    if (u - cu < lo) lo = u - cu;
+                    if (u - cu > hi) hi = u - cu;
+                }
+        if (!gap || hi - lo < 3) return 0;
+        t3f.x0[i] = lo; t3f.x1[i] = hi + 1;
+    }
+    t3f.ok = 1;
+    return 1;
+}
+/* A texel's colour (0xAARRGGBB, A 0 where see-through), the palette's
+ * 5-bit channels to 8. */
+static uint32_t t3f_argb(int u, int v) {
+    int i = t3f_texel(u, v);
+    if (!i) return 0;
+    uint16_t p = t3f.pal[i];
+    int r = (p & 31) * 255 / 31, g = (p >> 5 & 31) * 255 / 31, b = (p >> 10 & 31) * 255 / 31;
+    return 0xFF000000u | (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+}
+/* The text's width at letter height h (screen units: a letter (x1 - x0) / 2
+ * wide at h 19, the game's look halved), `gap` between letters. */
+static double t3f_scale(int h) { return h / (double)(T3F_V1 - T3F_V0); }
+static int t3f_width(const char *s, int h, int gap) {
+    double k = t3f_scale(h), w = 0;
+    for (; *s; s++) {
+        int i = t3f_index(*s);
+        w += i < 0 ? h * 0.3 : (t3f.x1[i] - t3f.x0[i]) * k + gap;
+    }
+    return (int)lround(w - gap);
+}
+static void t3f_letter(Canvas *c, double x, int y, int i, int h) {
+    double k = t3f_scale(h), w = (t3f.x1[i] - t3f.x0[i]) * k;
+    int u0 = i % 8 * T3F_CW + t3f.x0[i], u1 = i % 8 * T3F_CW + t3f.x1[i];
+    int v0 = i / 8 * T3F_CH + T3F_V0, v1 = i / 8 * T3F_CH + T3F_V1;
+    if (c->k) {
+        int xa = (int)lround(x), xb = (int)lround(x + w);
+        uint32_t clut = (uint32_t)T3F_CLUT_Y << 6 | T3F_CLUT_X / 16, tpage = T3F_PAGE_X / 64;
+        tmst_prim_room(c->k, 9);
+        tmst_prim_word(c->k, 0x2C808080u);
+        tmst_prim_word(c->k, tmst_xy(xa, y));     tmst_prim_word(c->k, clut << 16 | (uint32_t)v0 << 8 | (uint32_t)u0);
+        tmst_prim_word(c->k, tmst_xy(xb, y));     tmst_prim_word(c->k, tpage << 16 | (uint32_t)v0 << 8 | (uint32_t)u1);
+        tmst_prim_word(c->k, tmst_xy(xa, y + h)); tmst_prim_word(c->k, (uint32_t)v1 << 8 | (uint32_t)u0);
+        tmst_prim_word(c->k, tmst_xy(xb, y + h)); tmst_prim_word(c->k, (uint32_t)v1 << 8 | (uint32_t)u1);
+        return;
+    }
+    /* the photo: each pixel from the texels around its centre (bilinear,
+     * the colour weighted by the ink), over what is there */
+    int px0 = col(c, x), px1 = col(c, x + w), py0 = row(c, y), py1 = row(c, y + h);
+    double du = (u1 - u0) / ((x + w - x) * c->s), dv = (v1 - v0) / (h * c->s);
+    double ox = (x - c->left) * c->s, oy = y * c->s;
+    for (int py = py0; py < py1; py++)
+        for (int qx = px0; qx < px1; qx++) {
+            double u = u0 + (qx + 0.5 - ox) * du - 0.5, v = v0 + (py + 0.5 - oy) * dv - 0.5;
+            int iu = (int)floor(u), iv = (int)floor(v);
+            double fu = u - iu, fv = v - iv, a = 0, r = 0, g = 0, b = 0;
+            for (int n = 0; n < 4; n++) {
+                int tu = iu + (n & 1), tv = iv + (n >> 1);
+                if (tu < u0 || tu >= u1 || tv < v0 || tv >= v1) continue;
+                uint32_t t = t3f_argb(tu, tv);
+                if (!t) continue;
+                double wgt = (n & 1 ? fu : 1 - fu) * (n >> 1 ? fv : 1 - fv);
+                a += wgt; r += wgt * chan(t, 16); g += wgt * chan(t, 8); b += wgt * chan(t, 0);
+            }
+            if (a <= 0) continue;
+            uint32_t *p = c->px + (size_t)py * c->w + qx;
+            double keep = 1 - a;                               /* r g b: already times a */
+            *p = rgb((int)lround(chan(*p, 16) * keep + r), (int)lround(chan(*p, 8) * keep + g),
+                     (int)lround(chan(*p, 0) * keep + b));
+        }
+}
+static void t3f_text(Canvas *c, int x, int y, const char *s, int h, int gap) {
+    double k = t3f_scale(h), at = x;
+    for (; *s; s++) {
+        int i = t3f_index(*s);
+        if (i < 0) { at += h * 0.3; continue; }
+        t3f_letter(c, at, y, i, h);
+        at += (t3f.x1[i] - t3f.x0[i]) * k + gap;
+    }
+}
+
+/* The T3E logo (data/photo/t3e_logo.png, ARGB with soft edges), drawn
+ * LOGO_W x LOGO_H screen units (square to the eye: a unit about 1.74 times
+ * as wide as tall). Live: LIVE_W x LIVE_H texels in the upper VRAM half
+ * (tmst_overlay_set_sheet), averaged down, the soft edge in three steps (see-
+ * through, half, opaque: the GPU's own); the photo: from the PNG itself at
+ * the photo's scale, every edge as soft as drawn. */
+enum { LOGO_W = 69, LOGO_H = 120, LIVE_W = 64, LIVE_H = 112 };
+static struct {
+    int tried, ok, sheet_set;
+    uint32_t *px; int w, h;                            /* the PNG, alpha premultiplied */
+    uint32_t live[LIVE_W * LIVE_H];
+} logo;
+static int logo_load(void) {
+    if (logo.tried) return logo.ok;
+    logo.tried = 1;
+    char path[4200];
+    snprintf(path, sizeof path, "%s/addons/tmst/data/photo/t3e_logo.png", tmst_files_root());
+    if (!tmst_png_read(path, &logo.px, &logo.w, &logo.h)) { tmst_log("photo: no logo at %s", path); return 0; }
+    for (int i = 0; i < logo.w * logo.h; i++) {
+        uint32_t p = logo.px[i], a = p >> 24;
+        logo.px[i] = a << 24 | (chan(p, 16) * a / 255) << 16 | (chan(p, 8) * a / 255) << 8 | chan(p, 0) * a / 255;
+    }
+    /* the live sheet: each texel the average of its source box */
+    for (int ty = 0; ty < LIVE_H; ty++)
+        for (int tx = 0; tx < LIVE_W; tx++) {
+            int sx0 = tx * logo.w / LIVE_W, sx1 = (tx + 1) * logo.w / LIVE_W, sy0 = ty * logo.h / LIVE_H, sy1 = (ty + 1) * logo.h / LIVE_H;
+            unsigned a = 0, r = 0, g = 0, b = 0, n = 0;
+            for (int y = sy0; y < sy1; y++)
+                for (int x = sx0; x < sx1; x++, n++) {
+                    uint32_t p = logo.px[y * logo.w + x];
+                    a += p >> 24; r += chan(p, 16); g += chan(p, 8); b += chan(p, 0);
+                }
+            a /= n; r /= n; g /= n; b /= n;
+            uint32_t out = 0;
+            if (a >= 72) {                             /* the colour unpremultiplied; alpha in the sheet's steps */
+                unsigned sa = a >= 200 ? 255 : 160;
+                out = sa << 24 | (r * 255 / a) << 16 | (g * 255 / a) << 8 | b * 255 / a;
+            }
+            logo.live[ty * LIVE_W + tx] = out;
+        }
+    logo.ok = 1;
+    return 1;
+}
+static uint32_t logo_at(int x, int y) {
+    if (x < 0 || y < 0 || x >= logo.w || y >= logo.h) return 0;
+    return logo.px[y * logo.w + x];
+}
+static void logo_draw(Canvas *c, int x, int y) {
+    if (!logo_load()) return;
+    if (c->k) {
+        if (!logo.sheet_set) logo.sheet_set = tmst_overlay_set_sheet(logo.live, LIVE_W, LIVE_H);
+        tmst_prim_sheet(c->k, x, y, LOGO_W, LOGO_H);
+        return;
+    }
+    /* the photo: 2 x 2 bilinear samples a pixel from the premultiplied PNG, over */
+    int px0 = col(c, x), px1 = col(c, x + LOGO_W), py0 = row(c, y), py1 = row(c, y + LOGO_H);
+    double ox = (x - c->left) * c->s, oy = y * c->s;
+    double su = logo.w / (LOGO_W * c->s), sv = logo.h / (LOGO_H * c->s);
+    for (int py = py0; py < py1; py++)
+        for (int qx = px0; qx < px1; qx++) {
+            double a = 0, r = 0, g = 0, b = 0;
+            for (int s = 0; s < 4; s++) {
+                double u = (qx + 0.25 + 0.5 * (s & 1) - ox) * su - 0.5, v = (py + 0.25 + 0.5 * (s >> 1) - oy) * sv - 0.5;
+                int iu = (int)floor(u), iv = (int)floor(v);
+                double fu = u - iu, fv = v - iv;
+                for (int n = 0; n < 4; n++) {
+                    uint32_t t = logo_at(iu + (n & 1), iv + (n >> 1));
+                    double wgt = (n & 1 ? fu : 1 - fu) * (n >> 1 ? fv : 1 - fv) / 4;
+                    a += wgt * (t >> 24); r += wgt * chan(t, 16); g += wgt * chan(t, 8); b += wgt * chan(t, 0);
+                }
+            }
+            if (a <= 0.5) continue;
+            uint32_t *p = c->px + (size_t)py * c->w + qx;
+            double keep = 1 - a / 255;
+            *p = rgb((int)lround(chan(*p, 16) * keep + r), (int)lround(chan(*p, 8) * keep + g), (int)lround(chan(*p, 0) * keep + b));
+        }
+}
+
+static void tekken(Canvas *c, uint32_t base, uint32_t line, uint32_t marks) {
+    enum { SIDE = 10, TOP = 18, BOTTOM = 30, ARM_X = 28, ARM_Y = 44, T = 3 };
     int l = c->left, r = c->right;
-    rect(c, l - 8, 0, r - l + 16, TOP, DARK, OPAQUE);
-    rect(c, l - 8, H - BOTTOM, r - l + 16, BOTTOM, DARK, OPAQUE);
-    rect(c, l - 8, TOP, SIDE + 8, H - TOP - BOTTOM, DARK, OPAQUE);
-    rect(c, r - SIDE, TOP, SIDE + 8, H - TOP - BOTTOM, DARK, OPAQUE);
-    /* a gold line inside, and gold corners over it */
+    rect(c, l - 8, 0, r - l + 16, TOP, base, OPAQUE);
+    rect(c, l - 8, H - BOTTOM, r - l + 16, BOTTOM, base, OPAQUE);
+    rect(c, l - 8, TOP, SIDE + 8, H - TOP - BOTTOM, base, OPAQUE);
+    rect(c, r - SIDE, TOP, SIDE + 8, H - TOP - BOTTOM, base, OPAQUE);
+    /* a line inside, and corners over it */
     int x0 = l + SIDE, x1 = r - SIDE, y0 = TOP, y1 = H - BOTTOM;
-    rect(c, x0, y0, x1 - x0, 1, GOLD, OPAQUE);
-    rect(c, x0, y1 - 1, x1 - x0, 1, GOLD, OPAQUE);
-    rect(c, x0, y0, 1, y1 - y0, GOLD, OPAQUE);
-    rect(c, x1 - 1, y0, 1, y1 - y0, GOLD, OPAQUE);
-    rect(c, x0, y0, ARM_X, T, GOLD, OPAQUE);            rect(c, x0, y0, T, ARM_Y, GOLD, OPAQUE);
-    rect(c, x1 - ARM_X, y0, ARM_X, T, GOLD, OPAQUE);   rect(c, x1 - T, y0, T, ARM_Y, GOLD, OPAQUE);
-    rect(c, x0, y1 - T, ARM_X, T, GOLD, OPAQUE);       rect(c, x0, y1 - ARM_Y, T, ARM_Y, GOLD, OPAQUE);
-    rect(c, x1 - ARM_X, y1 - T, ARM_X, T, GOLD, OPAQUE); rect(c, x1 - T, y1 - ARM_Y, T, ARM_Y, GOLD, OPAQUE);
-    /* the name in the bottom bar, gold, with red marks either side */
+    rect(c, x0, y0, x1 - x0, 1, line, OPAQUE);
+    rect(c, x0, y1 - 1, x1 - x0, 1, line, OPAQUE);
+    rect(c, x0, y0, 1, y1 - y0, line, OPAQUE);
+    rect(c, x1 - 1, y0, 1, y1 - y0, line, OPAQUE);
+    rect(c, x0, y0, ARM_X, T, line, OPAQUE);            rect(c, x0, y0, T, ARM_Y, line, OPAQUE);
+    rect(c, x1 - ARM_X, y0, ARM_X, T, line, OPAQUE);   rect(c, x1 - T, y0, T, ARM_Y, line, OPAQUE);
+    rect(c, x0, y1 - T, ARM_X, T, line, OPAQUE);       rect(c, x0, y1 - ARM_Y, T, ARM_Y, line, OPAQUE);
+    rect(c, x1 - ARM_X, y1 - T, ARM_X, T, line, OPAQUE); rect(c, x1 - T, y1 - ARM_Y, T, ARM_Y, line, OPAQUE);
+    /* the logo over the bottom left corner, into the picture */
+    int lx = l + 2;
+    logo_draw(c, lx, H - LOGO_H - 4);
+    /* the name in the bottom bar, marks either side, centred right of the
+     * logo: Tekken 3's letters (the core's font, gold, where they are not
+     * there) */
     static const char name[] = "TEKKEN 3 EXPANDED";
-    int cw = 8, w = (int)(sizeof name - 1) * cw, tx = (l + r) / 2 - w / 2, ty = H - BOTTOM + 7;
-    rect(c, tx - 22, ty + 6, 12, 4, 0x2020c0, OPAQUE);
-    rect(c, tx + w + 10, ty + 6, 12, 4, 0x2020c0, OPAQUE);
+    enum { NAME_H = 19, NAME_GAP = 1 };
+    int mid = (lx + LOGO_W + r) / 2;
+    if (t3f_load(!c->k)) {
+        int w = t3f_width(name, NAME_H, NAME_GAP), tx = mid - w / 2, ty = H - BOTTOM + (BOTTOM - NAME_H) / 2 + 1;
+        rect(c, tx - 22, ty + NAME_H / 2 - 2, 12, 4, marks, OPAQUE);
+        rect(c, tx + w + 10, ty + NAME_H / 2 - 2, 12, 4, marks, OPAQUE);
+        t3f_text(c, tx, ty, name, NAME_H, NAME_GAP);
+        return;
+    }
+    int cw = 8, w = (int)(sizeof name - 1) * cw, tx = mid - w / 2, ty = H - BOTTOM + 7;
+    rect(c, tx - 22, ty + 6, 12, 4, marks, OPAQUE);
+    rect(c, tx + w + 10, ty + 6, 12, 4, marks, OPAQUE);
     text(c, tx, ty, name, cw, 16, 0x205878);
 }
 
@@ -445,7 +654,8 @@ static void frame_ops(Canvas *c, int f) {
     case FR_POLAROID: polaroid(c); break;
     case FR_FILM: film(c); break;
     case FR_VIGNETTE: vignette(c, 0x181818, 0x707070); break;
-    case FR_TEKKEN: tekken(c); break;
+    case FR_TEKKEN_RED: tekken(c, 0x1414c8, 0x080808, 0x080808); break;         /* red, black lines */
+    case FR_TEKKEN_BLACK: tekken(c, 0x080808, 0x1818d0, 0x1818d0); break;   /* black, red lines */
     case FR_CRT: crt(c); break;
     case FR_COMIC: comic(c); break;
     default: break;
@@ -454,7 +664,10 @@ static void frame_ops(Canvas *c, int f) {
 
 void tmst_photo_frame_prims(TmstPrims *k, int f) {
     Canvas c = live(k);
+    if (f == FR_NONE) return;
+    tmst_prim_whole_height(k, 1);      /* the frame's bars as the photo has them, the black rows too */
     frame_ops(&c, f);
+    tmst_prim_whole_height(k, 0);
 }
 
 void tmst_photo_look(uint32_t *px, int w, int h, int scale, int side, int f, unsigned seed) {

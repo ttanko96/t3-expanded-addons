@@ -11,13 +11,14 @@ enum { SLOT0 = 0x800a02a8u, VIEW = 0x800a85c0u, VIEW_PITCH = 0, VIEW_YAW = 4, VI
        FULL_DRAW = 0x800954a4u, FIGHTERS = 0x800adca8u, FIGHTER_BYTES = 16,
        P1 = 0x800a9228u, P2 = 0x800a9228u + 6284u, SHOW_HUD = 4816,
        HUD = 0x8003d6b0u, BEFORE_END = 0x8002b650u, END_RETURN = 0x8002b658u, GTE_H = 26,
+       MODE = 0x800afa88u, BALL = 7, BALL_DRAW = 0x800b094cu,   /* Tekken Ball's overlay: the ball, a0 / a1 the fighters */
        TILE = 0x8009e780u, TILES_X = 0x8009e824u, TILES_Z = 0x8009e828u, ARCADE_CELL = 2500, ARCADE_CELLS = 10 };
 
 static TmstCamera ours;
-static int free_on, hud_on, ending, fighters_hidden;          /* ending: frames still drawn the whole way, the game's view back */
+static int free_on, hud_on, ending, fighters_hidden, ball_hud_hidden;          /* ending: frames still drawn the whole way, the game's view back */
 static int saved;                            /* the game's values below are kept */
 static uint32_t game_view[8], game_flag, game_h;
-static int have_h, hud_done;
+static int have_h, hud_done, ball_done;
 
 void tmst_camera_game(TmstCamera *c) {
     int32_t *v = &c->x;
@@ -63,6 +64,29 @@ void tmst_camera_free(const TmstCamera *c, int hud) {
 }
 
 void tmst_camera_hide_fighters(int on) { fighters_hidden = on; }
+void tmst_camera_hide_ball_hud(int on) { ball_hud_hidden = on; }
+
+/* Tekken Ball's overlay (0x800B094C, paused): the power bars (0x800B38DC,
+ * 0x800B49A8) and the floating numbers (0x800B3E8C: its list at 0x800B6790,
+ * paused only drawn, through the text routine 0x8004CE74) are calls of their
+ * own; left out, while our call runs, by a nop in place of the jal (the
+ * overlay checked first: its words there). */
+static const struct { uint32_t at, jal; } ball_hud_calls[] = {
+    {0x800b0a4cu, 0x0c02ce37u},   /* jal 0x800B38DC */
+    {0x800b0abcu, 0x0c02d26au},   /* jal 0x800B49A8 */
+    {0x800b0af0u, 0x0c02cfa3u},   /* jal 0x800B3E8C: the numbers */
+};
+static int ball_hud_patched;
+static void ball_hud_patch(int on) {
+    if (on == ball_hud_patched) return;
+    for (size_t i = 0; i < sizeof ball_hud_calls / sizeof *ball_hud_calls; i++) {
+        uint32_t want = on ? ball_hud_calls[i].jal : 0;
+        if (psx_mod_read_word(ball_hud_calls[i].at) != want) return;   /* not the overlay we know */
+    }
+    for (size_t i = 0; i < sizeof ball_hud_calls / sizeof *ball_hud_calls; i++)
+        psx_mod_write_code_word(ball_hud_calls[i].at, on ? 0 : ball_hud_calls[i].jal);
+    ball_hud_patched = on;
+}
 
 void tmst_camera_restore(void) {
     if (!saved || !free_on) return;
@@ -143,7 +167,9 @@ void __wrap_func_8003A818(CPUState *cpu) {
 /* The end of the scene's drawing in the whole-screen pause frame (called
  * from 0x8002B650, returning to 0x8002B658): first the HUD routine, as the
  * plain pause frame calls it (both fighters' HUD flag set, a0 / a1 the
- * fighters), coming back to 0x8002B650, which calls this again. */
+ * fighters), coming back to 0x8002B650, which calls this again; then, in
+ * Tekken Ball, its overlay's ball (0x800B094C, a0 / a1 the fighters, as at
+ * 0x8002B6C8), the same way. */
 extern void __tmst_chain_func_8004A6BC(CPUState *cpu);
 #ifdef TMST_BRIDGE_func_8004A6BC
 extern void __real_func_8004A6BC(CPUState *cpu);
@@ -160,7 +186,16 @@ void __wrap_func_8004A6BC(CPUState *cpu) {
             cpu->pc = HUD;
             return;
         }
-        hud_done = 0;
+        if (!ball_done && psx_mod_read_word(MODE) == BALL) {
+            ball_done = 1;
+            ball_hud_patch(free_on && ball_hud_hidden);
+            cpu->gpr[4] = P1; cpu->gpr[5] = P2;
+            cpu->gpr[31] = BEFORE_END;
+            cpu->pc = BALL_DRAW;
+            return;
+        }
+        ball_hud_patch(0);
+        hud_done = ball_done = 0;
     }
     __tmst_chain_func_8004A6BC(cpu);
 }

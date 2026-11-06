@@ -23,14 +23,16 @@ Choose the music of every fighter.
 
 ### Photo Mode
 A free camera in any paused fight, and photos of it.
-- **Open:** pause a fight and choose **PHOTO** (Arcade, VS, Team Battle, Time Attack, Survival). In Practice, press
-  **SELECT** while paused. Not in Tekken Force or Tekken Ball.
+- **Open:** pause a fight and choose **PHOTO** (Arcade, VS, Team Battle, Time Attack, Survival, Tekken Ball). In
+  Practice, press **SELECT** while paused. Not in Tekken Force.
 - **Camera:** D-pad move · L1/R1 down/up · □ + D-pad turn and look · L2/R2 zoom · SELECT reset the camera. The camera
   stops at the edge of the stage.
 - **Panel (START):** ZOOM, FOCUS and BLUR (depth of field: the fighters sharp, or a sharp band), FILTER (14: black &
   white, sepia, noir, vintage, high contrast, cold, warm, teal & orange, duotone, poster, night vision, scanlines,
-  negative), FRAME (8: letterbox, polaroid, film strip, vignette, T3E, CRT TV, comic), RESET.
-- ✕ take a photo · △ hide the HUD · ○ back to the pause menu, the fight exactly as it was.
+  negative), FRAME (8: letterbox, polaroid, film strip, vignette, T3E Red, T3E Black, CRT TV, comic; the T3E frames
+  carry the T3E logo and Tekken 3's own letters), RESET.
+- ✕ take a photo · △ hide the HUD (Tekken Ball's power bars and numbers too) · ○ back to the pause menu, the fight
+  exactly as it was.
 - Photos are saved as PNG at the renderer's resolution (16:9 with its sides) in `addons\tmst\screenshots\`
   (`photo_YYYYMMDD_HHMMSS.png`).
 - Filters that need every pixel's colour (black & white, sepia, negative ...) and, in 16:9, the blur on the screen's
