@@ -90,6 +90,7 @@ set(TMST_CHAINS
     "func_8004439C|src/tournament/tmst_tournament.c"
     "func_800826E8|src/tekken2/tmst_tekken2_stages.c"
     "func_8006D014|src/tekken2/tmst_tekken2_mirror.c"
+    "func_80049848|src/tekken2/tmst_tekken2_stages.c"
     "func_80036CAC|src/tekken2/tmst_tekken2_mirror.c"
     "func_80064E10|src/tekken2/tmst_tekken2_wireframe.c"
 )

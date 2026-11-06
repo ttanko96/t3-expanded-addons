@@ -53,6 +53,15 @@
  * period, as the PS1's stage routine starts and not in the pause, its next
  * frame uploaded to its place, as the engine's ANIM does.
  *
+ * True Ogre's fight (P1's or the CPU's: the game's dark arena, 0x800AFAA0):
+ * no far background, the black, and only the Classic's floor, whether
+ * CLASSIC or REMAKE is chosen, lit round the fighters, its far edge into the
+ * black (the user's rule, 2026-11-06). The engine keeps the PS1's floor in
+ * the dark arena; our wrapper of the floor routine (0x80049848) clears that
+ * byte while the engine's runs, and the engine is handed the Classic's pack
+ * with its floor's kind made 1 (NIGHT, followed as a version). None of the
+ * stage's own there (drawn() says no): the game's light on the fighters.
+ *
  * GAME OPTION's TEKKEN 2 STAGES row: CLASSIC, REMAKE. REMAKE draws the
  * Classic's packs while mods/t2-stages/remake has none (the user's choice,
  * 2026-11-03). The choices are kept beside the memory card in t2-stages.txt
@@ -100,14 +109,19 @@ static const char *const names[STAGES] = {
 enum { SCREEN = 0x800ae204, MENU = 4, OPTIONS = 5, FIGHT = 8, MODE = 0x800afa88, ARENA = 0x800adc84,
        ARENA_COPY = 0x800afaa2, NO_STAGE = 0x800adca4, LAST_ARENA = 12, T2_ARENA = 9,
        PAUSED = 0x80095494,     /* 1 while the pause menu is open (the engine's anim_tick reads it) */
+       DARK_ARENA = 0x800afaa0, /* True Ogre's fight (0x80050F5C): the dark arena */
+       NIGHT_KIND = 1,          /* the dark arena's floor: FLOR kind 1, lit round each fighter */
        VS = 1, PRACTICE = 5, ROW_MODES = 1u << VS | 1u << PRACTICE };
 /* Pad bits, active low. */
 enum { PAD_SELECT = 0x0001, PAD_START = 0x0008, PAD_UP = 0x0010, PAD_RIGHT = 0x0020, PAD_DOWN = 0x0040,
        PAD_LEFT = 0x0080, PAD_CIRCLE = 0x2000, PAD_CROSS = 0x4000 };
 enum { LINE_VS, LINE_PRACTICE, LINES };
 static const char *const line_words[LINES] = { "vs", "practice" };
-enum { CLASSIC, REMAKE, VERSIONS };
+/* NIGHT: not a choice, what the engine holds in the dark arena (the Classic's
+ * pack, its floor lit round the fighters) */
+enum { CLASSIC, REMAKE, VERSIONS, NIGHT = VERSIONS };
 static const char *const version_words[VERSIONS] = { "classic", "remake" };
+static const char *const held_words[VERSIONS + 1] = { "classic", "remake", "night" };
 static const char *const version_labels[VERSIONS] = { "CLASSIC", "REMAKE" };
 /* What the engine holds for an arena: the game's own pack, the empty one, or
  * Tekken 2's stage n (0..22). */
@@ -138,6 +152,7 @@ static uint64_t draw = 0x9e3779b97f4a7c15u;
  * (the arena read meanwhile, the fight's) */
 static int held_arena = -1, held = HELD_NONE, held_version = CLASSIC, tried = -1;
 static int switch_want = -1, switch_to = -1, switch_back = -1, switch_frames, checked;
+static int dark_call;                    /* in the engine's floor, the dark arena's byte cleared meanwhile */
 /* src/tekken2/tmst_tekken2_extras.c: the Remake's extras (ANI2..4, DUST,
  * FFLY, FTHR, RAIN, DIYA) */
 void tmst_tekken2_extras_load(const uint8_t *pack, long size);
@@ -288,15 +303,22 @@ static const uint8_t *section(const uint8_t *b, long size, const char *id, uint3
 }
 
 /* Our pack of Tekken 2's stage as arena n's (loaded.ast): the engine checks
- * that the header's number is the arena it asked for. */
-static FILE *hand_over(int stage, int n, const char *mode) {
+ * that the header's number is the arena it asked for. NIGHT: the Classic's,
+ * its floor (FLOR's first halfword, the kind) lit round each fighter, as the
+ * PS1's dark arena lights its own; nothing else of it is drawn there (the
+ * PS1's stage routine, after which the engine draws the far background,
+ * never runs in the dark arena: its black TILE stays). */
+static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     char from[1100], to[1100];
     long size = 0;
-    pack_path(drawn_version(), stage, from, sizeof from);
+    pack_path(held_as == NIGHT ? CLASSIC : held_as, stage, from, sizeof from);
     uint8_t *b = read_all(from, &size);
     if (!b) return NULL;
     uint16_t number = (uint16_t)n;
     memcpy(b + 6, &number, 2);
+    uint32_t len = 0;
+    uint8_t *flor = held_as == NIGHT ? (uint8_t *)section(b, size, "FLOR", &len) : NULL;
+    if (flor && len >= 8) { int16_t kind = NIGHT_KIND; memcpy(flor, &kind, 2); }
     our_path("loaded.ast", to, sizeof to);
     FILE *f = __real_fopen(to, "wb");
     int ok = f && fwrite(b, 1, (size_t)size, f) == (size_t)size;
@@ -362,6 +384,7 @@ static int t3_pack(const char *path) {
 }
 
 static int our_fight(void);
+static int held_wanted(void);
 
 FILE *__wrap_fopen(const char *path, const char *mode) {
     int n = path && mode && mode[0] == 'r' ? t3_pack(path) : -1;
@@ -383,8 +406,10 @@ FILE *__wrap_fopen(const char *path, const char *mode) {
         psx_mod_write_half(ARENA, (uint16_t)switch_back);
         switch_to = -1;
     } else if (n == T2_ARENA && our_fight()) {
-        f = hand_over(fight, n, mode); what = fight;
-        if (f) held_version = drawn_version();
+        int as = held_wanted();
+        f = hand_over(fight, n, as, mode); what = fight;
+        if (f) held_version = as;
+        if (f && as == NIGHT) tmst_log("tekken2: True Ogre's dark arena: %s's Classic floor at night", names[fight]);
     } else {
         f = __real_fopen(path, mode); what = HELD_REAL;
     }
@@ -547,9 +572,18 @@ static void fight_extras(void) {
 static int our_fight(void) {
     return fight >= 0 && psx_mod_read_word(MODE) == (uint32_t)fight_mode && psx_mod_read_half(ARENA) == T2_ARENA;
 }
-/* Our pack drawn now: our fight, the engine holding it. */
+/* True Ogre's fight (P1's or the CPU's, 0x80050F5C): the dark arena, its
+ * byte cleared only while the engine draws our floor there (dark_floor). */
+static int dark(void) { return dark_call || psx_mod_read_byte(DARK_ARENA); }
+/* What the engine is to hold for our fight: NIGHT in the dark arena (the
+ * Classic's floor whichever version is chosen, the user's rule, 2026-11-06),
+ * else the version drawn. */
+static int held_wanted(void) { return dark() ? NIGHT : drawn_version(); }
+/* Our pack drawn now: our fight, the engine holding it. Not in the dark
+ * arena: there only its floor, none of the stage's own (the fighters' light,
+ * the mirror, the extras, the running lights, the walls). */
 static int drawn(void) {
-    return our_fight() && held_arena == T2_ARENA && held == fight && held_version == drawn_version() &&
+    return our_fight() && !dark() && held_arena == T2_ARENA && held == fight && held_version == drawn_version() &&
            !psx_mod_read_byte(NO_STAGE) &&
            psx_mod_read_word(SCREEN) == FIGHT;
 }
@@ -574,7 +608,10 @@ int tmst_tekken2_drawn(void) { return drawn(); }
 int tmst_tekken2_remake_drawn(void) { return drawn() && held_version == REMAKE; }
 int32_t tmst_tekken2_fixed_period(void) { return fixed_period; }
 /* ... and its walls: the shapes (6 halfwords each), their count, the fighters' radius (cm). */
-const int16_t *tmst_tekken2_walls(int *n, int *radius) { *n = coll_n; *radius = coll_radius; return coll_data; }
+const int16_t *tmst_tekken2_walls(int *n, int *radius) {
+    if (dark()) { *n = *radius = 0; return NULL; }
+    *n = coll_n; *radius = coll_radius; return coll_data;
+}
 /* ... and the colour under all of its stage (FARB's bottom colour), 0: none. */
 int tmst_tekken2_ground(uint8_t rgb[3]) {
     if (!ground_on || !drawn()) return 0;
@@ -739,8 +776,8 @@ static void menu(void) {
 static void fight_start(void) {
     int arena = psx_mod_read_half(ARENA);
     if (arena < 0 || arena > LAST_ARENA || psx_mod_read_byte(NO_STAGE)) return;
-    int want = our_fight() ? fight : HELD_REAL;
-    int stale = held_arena == arena && (held != want || (want >= 0 && held_version != drawn_version()));
+    int want = our_fight() ? fight : HELD_REAL, as = held_wanted();
+    int stale = held_arena == arena && (held != want || (want >= 0 && held_version != as));
     int refused = want >= 0 && tried == arena && held_arena != arena;
     if (!stale && !refused) return;
     /* an arena the engine will load: not this one, not the one it holds, not
@@ -752,11 +789,29 @@ static void fight_start(void) {
     if (to < 0) return;
     switch_back = arena;
     switch_want = to;
-    tmst_log("tekken2: the engine holds %s%s for arena %d, %s%s wanted: arena %d until it loads that one",
+    tmst_log("tekken2: the engine holds %s (%s) for arena %d, %s (%s) wanted: arena %d until it loads that one",
              held == HELD_REAL ? "the game's pack" : held == HELD_BLANK ? "the empty pack" : held >= 0 ? names[held]
-             : "nothing", held >= 0 ? (held_version == REMAKE ? " (remake)" : " (classic)") : "", arena,
-             want >= 0 ? names[want] : "the game's", want >= 0 ? (drawn_version() == REMAKE ? " (remake)" : " (classic)")
-             : "", switch_want);
+             : "nothing", held >= 0 ? held_words[held_version] : "-", arena,
+             want >= 0 ? names[want] : "the game's", want >= 0 ? held_words[as] : "-", switch_want);
+}
+
+/* The switch's arena, read by the engine this very frame: as the PS1's
+ * stage routine starts, or in the dark arena (where it never runs) as its
+ * floor routine does. */
+static void switch_now(void) {
+    /* the dark arena's byte may change after the fight's first frame (its
+     * check, fight_start): our pack held as the other kind (NIGHT or not),
+     * checked again, once a kind a fight */
+    static int again_for = -1;
+    if (psx_mod_read_word(SCREEN) != FIGHT) again_for = -1;
+    else if (switch_want < 0 && switch_to < 0 && our_fight() && held_arena == T2_ARENA && held == fight &&
+             (held_version == NIGHT) != (held_wanted() == NIGHT) && again_for != held_wanted()) {
+        again_for = held_wanted();
+        fight_start();
+    }
+    if (switch_want < 0 || psx_mod_read_word(SCREEN) != FIGHT) return;
+    switch_to = switch_want; switch_want = -1; switch_frames = 0;
+    psx_mod_write_half(ARENA, (uint16_t)switch_to);
 }
 
 /* From src/tekken2/tmst_tekken2_mirror.c, as the PS1's stage routine
@@ -774,15 +829,13 @@ void tmst_tekken2_stage_entry(void) {
         }
     /* the extras' palettes and rounds (not in the pause: theirs) */
     if (tmst_tekken2_extras_on() && drawn()) tmst_tekken2_extras_tick();
-    if (switch_want < 0 || psx_mod_read_word(SCREEN) != FIGHT) return;
-    switch_to = switch_want; switch_want = -1; switch_frames = 0;
-    psx_mod_write_half(ARENA, (uint16_t)switch_to);
+    switch_now();
 }
 
 /* T2LT: arena 9's light entry the named arena's while our fight is on (its
  * mode still), its own bytes back after. */
 static void light_tick(void) {
-    int want = light_from >= 0 && fight >= 0 && psx_mod_read_word(MODE) == (uint32_t)fight_mode;
+    int want = light_from >= 0 && fight >= 0 && psx_mod_read_word(MODE) == (uint32_t)fight_mode && !dark();
     uint32_t at = LIGHT_TABLE + LIGHT_ENTRY * T2_ARENA;
     if (want) {
         uint8_t e[LIGHT_BYTES];
@@ -899,4 +952,35 @@ void __wrap_func_800826E8(CPUState *cpu) {
         }
 #endif
     __tmst_chain_func_800826E8(cpu);
+}
+
+/* 0x80049848, the PS1's floor of kinds 1-3, the dark arena's (True Ogre's
+ * fight): the PS1 there calls only its black TILE and this, never the stage
+ * routine 0x8006D014, and the engine, wrapping it, keeps the PS1's floor in
+ * the dark arena unless a TTT stage is wanted (its active()). In our fight
+ * its byte reads 0 while the engine's wrapper runs inside ours: the engine
+ * draws our pack's floor (NIGHT: the Classic's, lit round the fighters, its
+ * far edge into the black), the PS1's TILE the rest. A switch of the pack
+ * (fight_start) is made here, as the PS1's stage routine would. Chained:
+ * the Expanded wraps it. */
+extern void __tmst_chain_func_80049848(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_80049848
+extern void __real_func_80049848(CPUState *cpu);
+void __tmst_chain_func_80049848(CPUState *cpu) { __real_func_80049848(cpu); }
+#endif
+void __wrap_func_80049848(CPUState *cpu) {
+#ifdef TMST_HAS_STAGE_ENGINE
+    uint8_t was = 0;
+    if ((cpu->pc == 0 || cpu->pc == 0x80049848u) && stages && (was = psx_mod_read_byte(DARK_ARENA)) != 0 &&
+        our_fight() && ready()) {
+        switch_now();
+        dark_call = 1;
+        psx_mod_write_byte(DARK_ARENA, 0);
+        __tmst_chain_func_80049848(cpu);
+        psx_mod_write_byte(DARK_ARENA, was);
+        dark_call = 0;
+        return;
+    }
+#endif
+    __tmst_chain_func_80049848(cpu);
 }
