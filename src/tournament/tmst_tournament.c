@@ -34,7 +34,7 @@
  * (src/tournament/tmst_tournament_progress.c). */
 #include "tmst_core.h"
 #include "tmst_compat.h"
-#include "tmst_font.h"
+#include "tmst_ui_font.h"
 #include "tmst_overlay.h"
 #include "tmst_menu.h"
 #include "tmst_music.h"
@@ -44,6 +44,7 @@
 #include "tmst_tournament_progress.h"
 #include "tmst_tournament_art.h"
 #include "tmst_tournament_screens.h"
+#include "tmst_tournament_options.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "memcard.h"
@@ -750,7 +751,7 @@ static uint16_t input(int player, uint16_t buttons) {
  * band over the Team Battle title, a half see-through dark panel over the
  * teams under the grid (the game's primitives there moved out of sight), and
  * a picture of 1024 x 392 texels on the screen's rows 284..480 in the
- * add-on's font. The title font: page (832,0) 4 bpp, palette (336,505), cells
+ * UI font (Fira Sans). The title font: page (832,0) 4 bpp, palette (336,505), cells
  * of 14 x 24 from u 172, six to a row: 1..9, A..Z, !. */
 enum { CENTRE_X = 184, FONT_PAGE = 832 / 64, FONT_CLUT = (505 << 6) | (336 / 16), FONT_U = 172,
        GLYPH_W = 14, GLYPH_H = 24, ADVANCE = 13, PANEL_TOP = 256, BANNER_TOP = 24, BANNER_H = 32,
@@ -805,21 +806,22 @@ static void shaded_band(TmstPrims *k, int x0, int x1, int y, int h, uint32_t a, 
 static int showing(void) { return tm.active && (tm.view == VIEW_LIST || tm.view == VIEW_GRID || tm.exiting); }
 static const char *boss_name(int t);
 static void hud_prims(TmstPrims *k);
-static void menu_colour(int last);
-/* Under the cover's picture: black, and the match in the add-on's font,
- * seen only where the picture is not (a screen without a list to draw on,
- * the picture given up to the stage engine). */
-enum { COVER_CW = 12, COVER_CH = 32, SMALL_CW = 8, SMALL_CH = 16, GOLD = 0x30a0c0, WHITE = 0x808080, GREY = 0x505050 };
-static void cover_line(TmstPrims *k, int y, const char *s, int cw, int ch, uint32_t tint) {
-    tmst_prim_text(k, CENTRE_X - (int)strlen(s) * cw / 2, y, s, cw, ch, tint);
+/* Under the cover's picture: black, and the match in the UI font (Fira
+ * Sans; scale 2: capitals 24 tall, 1: 12), seen only where the picture is
+ * not (a screen without a list to draw on, the picture given up to the
+ * stage engine). y: the line's top, the capitals 2 (1) below it, where the
+ * old font's were centred. */
+enum { BIG = 2, SMALL = 1, GOLD = 0x30a0c0, WHITE = 0x808080, GREY = 0x505050 };
+static void cover_line(TmstPrims *k, int y, const char *s, int scale, uint32_t tint) {
+    tmst_ui_prim_text(k, CENTRE_X - tmst_ui_prim_width(s, scale) / 2, y + scale, s, scale, tint);
 }
 static void cover_prims(TmstPrims *k) {
     flat(k, 0x000000, -128, 0, 624, 480);
     if (mt.flow == FLOW_MATCH || mt.outcome != NEXT_MATCH || mt.match < 0) return;   /* the fight just over: black */
-    cover_line(k, 100, round_names[tmst_bracket_round(mt.match)], COVER_CW, COVER_CH, GOLD);
-    cover_line(k, 170, fighter_name(bracket.player), COVER_CW, COVER_CH, WHITE);
-    cover_line(k, 215, "VS", SMALL_CW, SMALL_CH, GREY);
-    cover_line(k, 245, fighter_name(mt.opponent), COVER_CW, COVER_CH, WHITE);
+    cover_line(k, 100, round_names[tmst_bracket_round(mt.match)], BIG, GOLD);
+    cover_line(k, 170, fighter_name(bracket.player), BIG, WHITE);
+    cover_line(k, 215, "VS", SMALL, GREY);
+    cover_line(k, 245, fighter_name(mt.opponent), BIG, WHITE);
 }
 static void tournament_prims(TmstPrims *k) {
     /* The loading screen: for its first frames the grid goes on drawing its
@@ -875,8 +877,8 @@ static void tournament_prims(TmstPrims *k) {
         int ttt1 = mt.want_now ^ (mt.card_turns & 1), sway = (int)(tm.frames % 60 < 30 ? tm.frames % 60 : 60 - tm.frames % 60) / 8;
         font_line(k, "MOVESET", CENTRE_X, 266, 1, 3, 5, 0x30a0c0);
         font_line(k, ttt1 ? "TEKKEN TAG TOURNAMENT" : "TEKKEN 3", CENTRE_X, 300, 1, 1, 1, 0x808080);
-        tmst_prim_text(k, 14 - sway, 304, "<", 12, 16, 0x3040f0);
-        tmst_prim_text(k, 342 + sway, 304, ">", 12, 16, 0x3040f0);
+        tmst_ui_prim_text(k, 14 - sway, 300, "<", 2, 0x3040f0);        /* the UI font's, as tall as the title's line */
+        tmst_ui_prim_text(k, 342 + sway, 300, ">", 2, 0x3040f0);
     } else if (tm.view == VIEW_GRID) {
         font_line(k, tmst_tourney(tm.tourney)->name, CENTRE_X, 266, 1, 3, 5, 0x30a0c0);
         snprintf(line, sizeof line, "FINAL BOSS %s", boss_name(tm.tourney));
@@ -1286,55 +1288,9 @@ static void hud_prims(TmstPrims *k) {
     }
 }
 
-/* The main menu: its rows in the title font (14 x 24 sprites, every 13,
- * raw), each mode in a colour of its own (ARCADE orange, TIME ATTACK white,
- * SURVIVAL green, TEKKEN FORCE violet, OPTION cyan ...; ours, on Team
- * Battle's word, its orange), darker away from the chosen row. TOURNAMENT
- * MODE gets gold: the font's white palette (352, 505), tinted, as bright as
- * the row's distance from the chosen one. */
-enum { MENU_LETTERS = 64, MENU_TINT_R = 0xe8, MENU_TINT_G = 0xc8, MENU_TINT_B = 0x30 };
-static const unsigned char menu_fade[] = {255, 200, 150, 100, 60};    /* by rows from the chosen one */
-static struct { unsigned frame; int n; struct { int x, y; char c; uint32_t at, clut; } l[MENU_LETTERS]; } menu;
-static void menu_letter(uint32_t clut_at, int x, int y, int w, int h, unsigned op) {
-    if ((op & 0xfc) != 0x64 || w != GLYPH_W || h != GLYPH_H || (walk_tpage & 0x1f) != FONT_PAGE) return;
-    if (menu.frame != tm.frames) { menu.frame = tm.frames; menu.n = 0; }
-    if (menu.n >= MENU_LETTERS) return;
-    uint32_t uv = psx_mod_read_word(clut_at);
-    int u = (int)(uv & 255) - FONT_U, v = (int)(uv >> 8 & 255), i = u / GLYPH_W + v / GLYPH_H * 6;
-    char c = u < 0 || u % GLYPH_W ? '?' : i < 9 ? (char)('1' + i) : i < 35 ? (char)('A' + i - 9) : '!';
-    menu.l[menu.n].x = x; menu.l[menu.n].y = y; menu.l[menu.n].c = c; menu.l[menu.n].at = clut_at - 8;
-    menu.l[menu.n].clut = uv >> 16;
-    menu.n++;
-    menu_colour(menu.n - 1);
-}
-/* The menu's list is short: the core walks it (the visitor) but links
- * nothing of ours into it, so the letters are coloured in the walk, as the
- * row's last one comes (all before the list is drawn). A row: its letters on
- * one line in one palette (as it turns, two rows can share a line). */
-static void menu_colour(int last) {
-    static const char want[] = "TOURNAMENTMODE";
-    for (int a = last; a == last; a++) {
-        char word[MENU_LETTERS + 1]; int order[MENU_LETTERS], n = 0;
-        for (int i = 0; i < menu.n; i++)
-            if (menu.l[i].y == menu.l[a].y && menu.l[i].clut == menu.l[a].clut) order[n++] = i;
-        for (int i = 1; i < n; i++)
-            for (int j = i; j > 0 && menu.l[order[j]].x < menu.l[order[j - 1]].x; j--) { int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t; }
-        for (int i = 0; i < n; i++) word[i] = menu.l[order[i]].c;
-        word[n] = 0;
-        if (strcmp(word, want)) return;
-        int d = tmst_menu_distance(menu_row), k = d < 0 || d >= (int)sizeof menu_fade ? menu_fade[sizeof menu_fade - 1] : menu_fade[d];
-        uint32_t tint = (uint32_t)(MENU_TINT_B * k / 256) << 16 | (uint32_t)(MENU_TINT_G * k / 256) << 8 | (uint32_t)(MENU_TINT_R * k / 256);
-        for (int i = 0; i < n; i++) {
-            uint32_t at = menu.l[order[i]].at;
-            psx_mod_write_word(at, 0x64000000u | tint);                       /* modulated */
-            uint32_t uv = psx_mod_read_word(at + 8);
-            psx_mod_write_word(at + 8, (uv & 0xffffu) | (uint32_t)WHITE_CLUT << 16);
-        }
-        return;
-    }
-}
 static void grid_visitor(uint32_t node) {
-    if (psx_mod_read_word(SCREEN) == MENU) { each_textured(node, menu_letter); return; }
+    tmst_tournament_options_visit(node);                         /* GAME OPTION's mode box (its own screen) */
+    if (psx_mod_read_word(SCREEN) == MENU) return;               /* its colour: the core's (tmst_menu_set_colour) */
     if (mt.flow == FLOW_MATCH && psx_mod_read_word(SCREEN) == FIGHT) { each_textured(node, hud_title); return; }
     if (psx_mod_read_word(SCREEN) == LOADING_SCREEN) {
         if (prim_log < 0) each_textured(node, log_loading);
@@ -1351,51 +1307,43 @@ static void grid_visitor(uint32_t node) {
 }
 
 /* The panel's picture: 1024 x 392 texels for the screen's 368 x 196. */
-enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, FS = 2, HINT_UP = 50 };   /* the hint clear of the screen's edge */
+enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, HINT_UP = 50,   /* the hint clear of the screen's edge */
+       MATTE = 0xff805858u };      /* about the red-brown backdrop under the hint (measured headless, 128 88 88) */
 static uint32_t pic[PW * PH];
 static unsigned pic_version = ~0u;
 static int pic_on;
 static void fill(int x, int y, int w, int h, uint32_t c) { tmst_fill_argb(pic, PW, PH, x, y, w, h, c); }
-static void txt(int x, int y, const char *s, uint32_t c) {
-    tmst_text_argb(pic, PW, PH, x, y, s, FS, c);
-    tmst_text_argb(pic, PW, PH, x + 1, y, s, FS, c);
-}
-static int text_w(const char *s) { return tmst_text_width(s, FS); }
+/* The UI font (Fira Sans), y the capitals' top. */
+static void txt(int x, int y, const char *s, uint32_t c) { tmst_ui_text_argb(pic, PW, PH, x, y, &tmst_ui_face_list, s, c, MATTE); }
+static int text_w(const char *s) { return tmst_ui_width(&tmst_ui_face_list, s); }
 static void centred(int y, const char *s, uint32_t c) { txt((PW - text_w(s)) / 2, y, s, c); }
-/* A hint with the pad's buttons (ART_X, ART_O), centred: a dark round key,
- * its symbol in the PlayStation's colour. The picture's texels are 0.36
- * screen units wide, 0.5 high: a key 1.4 times as wide in texels. */
-enum { KEY_RY = 9, KEY_RX = KEY_RY * 14 / 10, KEY_GAP = 6 };
+/* A hint with the pad's buttons (ART_X, ART_O), centred: the symbol alone
+ * in the PlayStation's colour, 16 x 16 texels with 2-texel strokes, as the
+ * Jukebox's and Photo Mode's hints draw it. */
+enum { KEY_W = 18, KEY_GAP = 6 };
 static void key_px(int x, int y, uint32_t c) { if (x >= 0 && x < PW && y >= 0 && y < PH) pic[y * PW + x] = c; }
-static void pad_key(char b, int cx, int cy) {
-    for (int y = -KEY_RY; y <= KEY_RY; y++)
-        for (int x = -KEY_RX; x <= KEY_RX; x++) {
-            int d = x * x * KEY_RY * KEY_RY + y * y * KEY_RX * KEY_RX, R = KEY_RY * KEY_RY * KEY_RX * KEY_RX;
-            if (d <= R) key_px(cx + x, cy + y, d * 100 > R * 80 ? 0xff707070u : 0xff202024u);
-        }
-    int r = KEY_RY * 55 / 100, rx = r * 14 / 10;
-    if (b == ART_CROSS)
-        for (int i = -r; i <= r; i++)
-            for (int k = -1; k <= 1; k++) { key_px(cx + i * 14 / 10 + k, cy + i, 0xff7fa8ffu); key_px(cx - i * 14 / 10 + k, cy + i, 0xff7fa8ffu); }
-    else
-        for (int y = -r; y <= r; y++)
-            for (int x = -rx; x <= rx; x++) {
-                int d = x * x * r * r + y * y * rx * rx, R = r * r * rx * rx, ir = r - 2, irx = ir * 14 / 10;
-                int in = x * x * ir * ir + y * y * irx * irx < ir * ir * irx * irx;
-                if (d <= R && !in) key_px(cx + x, cy + y, 0xffff6a6au);
-            }
+static void key_line(int x0, int y0, int x1, int y1, uint32_t c) {
+    int n = abs(x1 - x0) > abs(y1 - y0) ? abs(x1 - x0) : abs(y1 - y0);
+    for (int i = 0; i <= n; i++)
+        for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++)
+            key_px(x0 + (x1 - x0) * i / (n ? n : 1) - 1 + dx, y0 + (y1 - y0) * i / (n ? n : 1) - 1 + dy, c);
+}
+static void pad_key(char b, int x, int y) {
+    if (b == ART_CROSS) { key_line(x + 2, y + 2, x + 14, y + 14, 0xff7aa7ffu); key_line(x + 14, y + 2, x + 2, y + 14, 0xff7aa7ffu); return; }
+    for (int dy = -7; dy <= 7; dy++)                    /* a ring of radius 7, 2 thick */
+        for (int dx = -7; dx <= 7; dx++) { int d = dx * dx + dy * dy; if (d <= 49 && d >= 25) key_px(x + 8 + dx, y + 8 + dy, 0xffff6b6bu); }
 }
 static void hint(int y, const char *s, uint32_t c) {
     int width = 0;
     for (const char *p = s; *p;) {
-        if (*p == ART_CROSS || *p == ART_CIRCLE) { width += 2 * KEY_RX + KEY_GAP; p++; continue; }
+        if (*p == ART_CROSS || *p == ART_CIRCLE) { width += KEY_W + KEY_GAP; p++; continue; }
         char part[128]; int n = 0;
         while (p[n] && p[n] != ART_CROSS && p[n] != ART_CIRCLE && n < 127) { part[n] = p[n]; n++; }
         part[n] = 0; width += text_w(part); p += n;
     }
     int x = (PW - width) / 2;
     for (const char *p = s; *p;) {
-        if (*p == ART_CROSS || *p == ART_CIRCLE) { pad_key(*p, x + KEY_RX, y + 7); x += 2 * KEY_RX + KEY_GAP; p++; continue; }
+        if (*p == ART_CROSS || *p == ART_CIRCLE) { pad_key(*p, x, y); x += KEY_W + KEY_GAP; p++; continue; }
         char part[128]; int n = 0;
         while (p[n] && p[n] != ART_CROSS && p[n] != ART_CIRCLE && n < 127) { part[n] = p[n]; n++; }
         part[n] = 0; txt(x, y, part, c); x += text_w(part); p += n;
@@ -1410,12 +1358,12 @@ static const char *boss_name(int t) {
 static void draw(void) {
     fill(0, 0, PW, PH, 0);
     if (tm.view == VIEW_LIST || (tm.exiting && tm.view != VIEW_GRID)) {
-        hint(PH - HINT_UP, "UP / DOWN CHOOSE    " ART_X "CONFIRM    " ART_O "EXIT", 0xffd8d0c8u);
+        hint(PH - HINT_UP, "UP / DOWN  Choose     " ART_X "Confirm     " ART_O "Exit", 0xffd8d0c8u);
     } else {
         int pages = tekken3_ttt1_selector_page && tekken3_ttt1_selector_page() >= 0 && !unified();
-        if (card_open) hint(PH - HINT_UP, "LEFT/RIGHT CHANGE MOVESET    " ART_X "TAKE    " ART_O "BACK", 0xffd8d0c8u);
-        else hint(PH - HINT_UP, pages ? "L2/R2 SWITCH CHARACTER PANEL    " ART_X "SELECT    SELECT BACK"
-                                      : ART_X "SELECT    SELECT BACK", 0xffd8d0c8u);
+        if (card_open) hint(PH - HINT_UP, "LEFT/RIGHT  Change moveset     " ART_X "Take     " ART_O "Back", 0xffd8d0c8u);
+        else hint(PH - HINT_UP, pages ? "L2/R2  Switch character panel     " ART_X "Select     SELECT  Back"
+                                      : ART_X "Select     SELECT  Back", 0xffd8d0c8u);
     }
 }
 static void show_picture(void) {
@@ -1461,11 +1409,11 @@ static void cover_screen(unsigned screen) {
         break;
     }
     case SCR_WAIT:
-        s.prompt = ART_X " NEXT MATCH     " ART_O " QUIT";
+        s.prompt = ART_X "  NEXT MATCH     " ART_O "  QUIT";
         screen_progress(&s);
         break;
     case SCR_ASK:
-        s.prompt = "QUIT THE TOURNAMENT  " ART_X " YES  " ART_O " NO";
+        s.prompt = "QUIT THE TOURNAMENT   " ART_X "  YES   " ART_O "  NO";
         screen_progress(&s);
         break;
     case SCR_ZOOM: {
@@ -1484,7 +1432,7 @@ static void cover_screen(unsigned screen) {
         screen_match(&s, mt.match);
         break;
     case SCR_END:
-        s.next = -1; s.prompt = mt.confirmed ? NULL : ART_X " CONTINUE";
+        s.next = -1; s.prompt = mt.confirmed ? NULL : ART_X "  CONTINUE";
         if (mt.outcome == CHAMPION)
             screen_champion(&s, mt.unlocked >= 0 && mt.unlocked != tm.tourney ? tmst_tourney(mt.unlocked)->name : NULL);
         else screen_over(&s);
@@ -1518,6 +1466,7 @@ static void close_screen(void) {
 }
 static void tick(void) {
     if (!on) return;
+    tmst_tournament_options_tick();
     tmst_menu_vblank();
     tmst_overlay_vblank();
     tm.frames++;
@@ -1627,7 +1576,7 @@ static void tick(void) {
         /* The loading screen's VS portraits and the fight's HUD are read in
          * the visitor, which runs while something of ours is drawn. */
         static int watching_vs;
-        if ((mt.flow == FLOW_MATCH && (screen == LOADING || screen == FIGHT)) || screen == MENU) { tmst_overlay_show_prims(); watching_vs = 1; }
+        if (mt.flow == FLOW_MATCH && (screen == LOADING || screen == FIGHT)) { tmst_overlay_show_prims(); watching_vs = 1; }
         else if (watching_vs) { watching_vs = 0; if (!showing()) tmst_overlay_hide(); }
     }
     static int bench = -1;                    /* the grid's primitives, logged every n-th frame */
@@ -1652,6 +1601,7 @@ static void activate(void) {
     if (!on) return;
     menu_row = tmst_menu_add_row_after("TOURNAMENT MODE", TEAM_BATTLE, TEKKEN_FORCE, begin);
     if (menu_row < 0) tmst_log("tournament: no main-menu row (no room)");
+    tmst_menu_set_colour(menu_row, 0xE8C030);                  /* old gold */
     tmst_input_add_filter(input);
     tmst_music_add_hook(music);
     tmst_overlay_set_prims(tournament_prims);

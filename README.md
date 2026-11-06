@@ -55,6 +55,8 @@ The King of Iron Fist Tournament, as a mode of its own.
   Free a boss drawn at the start (three rounds). The bosses cannot be picked.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
+- **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the
+  option affects the tournament (as Team Battle's, but FIGHT COUNT: the tournament's rounds are its own).
 - The tournaments won are saved beside the memory card (`saves\tournament.txt`; deleting it locks them again).
 - The screens' backgrounds are PNG files you may redraw: `addons\tmst\data\tournament\` (`progress`, `match`,
   `champion`, `over`, 854×480); `data\tournament\guides\` shows where the mod draws on each.
@@ -173,5 +175,7 @@ default). Restart the game after switching a mod.
 [PolyForm Noncommercial 1.0.0](LICENSE). `tools/ttm_render.c` adapts the C352 replay of
 [Tekken 3 Expanded](https://github.com/omarma/tekken3-expanded) by Matthew Stan (PolyForm Noncommercial 1.0.0), itself
 an adaptation of MAME's C352 by R. Belmont and superctr (BSD-3-Clause, [licenses/MAME-BSD-3-Clause.txt](licenses/MAME-BSD-3-Clause.txt)).
+The add-on's lettering is Fira Sans Medium by The Mozilla Foundation and Telefonica S.A. (SIL Open Font License 1.1,
+[tools/data/fonts/OFL.txt](tools/data/fonts/OFL.txt)), drawn into `src/core/tmst_ui_font_data.c` by `tools/ui_font.py`.
 The Tekken 2 Remake's backgrounds (`tools/data/t2-remake-patches/`) are painted over Tekken 2's panoramas; they are
 kept as patches mixed with a key made from the Tekken 2 disc's own data, so they open only with your disc.

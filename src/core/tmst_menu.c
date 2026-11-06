@@ -1,6 +1,7 @@
 /* TMST core: our main-menu rows (tmst_menu.h). */
 #include "tmst_menu.h"
 #include "tmst_core.h"
+#include "tmst_overlay.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include <stdint.h>
@@ -10,7 +11,10 @@ enum { SCREEN = 0x800ae204u, PHASE = 0x800ae224u, SELECTION = 0x80097f40u, MENU 
        MENU_ENTRY = 0x800db5b4u, LIST_HI = 0x800db5d0u, LIST_LO = 0x800db5d8u,
        MAX_ROWS = 4, ROW_BYTES = 8, ROWS_AT = 16, MAX_COUNT = 16, AT_END = 0x100 };
 
-typedef struct { uint32_t label; unsigned like_mode, after_mode; TmstMenuChosen chosen; int index; } Row;
+typedef struct {
+    uint32_t label; unsigned like_mode, after_mode; TmstMenuChosen chosen; int index;
+    uint32_t rgb; int coloured, distance; char word[32];   /* the colour: the label without its spaces */
+} Row;
 static Row rows[MAX_ROWS];
 static int row_count;
 static int select_row = -1;           /* highlight this row when it comes back */
@@ -21,7 +25,9 @@ static int add_row(const char *label, unsigned like_mode, unsigned after_mode, T
     uint32_t text = psx_mod_alloc_guest_memory((uint32_t)((n + 3) & ~3u), 4);
     if (!text) return -1;
     for (size_t i = 0; i < n; i++) psx_mod_write_byte(text + (uint32_t)i, (uint8_t)label[i]);
-    rows[row_count] = (Row){ text, like_mode, after_mode, chosen, -1 };
+    rows[row_count] = (Row){ text, like_mode, after_mode, chosen, -1, 0, 0, -1, {0} };
+    for (size_t i = 0, k = 0; label[i] && k + 1 < sizeof rows[0].word; i++)
+        if (label[i] != ' ') rows[row_count].word[k++] = label[i];
     return row_count++;
 }
 int tmst_menu_add_row(const char *label, unsigned like_mode, TmstMenuChosen chosen) {
@@ -182,8 +188,122 @@ int tmst_menu_distance(int row) {
     return d * 2 > (int)count ? (int)count - d : d;
 }
 
+/* ---- a row's own colour ---------------------------------------------------------
+ * The rows are in the title font (14 x 24 sprites from the page at x 832,
+ * every 13 pixels), each mode's palette its colour, darker away from the
+ * highlighted row. A coloured row's letters get the font's white palette
+ * (352, 505), modulated (128 = as is): its white is about WHITE_LEVEL (measured),
+ * so the colour asked for is reached at rgb * 128 / WHITE_LEVEL. The list is
+ * the game's: our visitor colours the letters as the row's last one comes,
+ * for that drawing only. A row: its letters on one line in one palette (as
+ * the list turns, two rows can share a line). After a choice the menu is
+ * drawn on for some frames on the next screens (7, then 1): the same
+ * colour, as bright as on the menu's last frame. */
+enum { FONT_PAGE = 832 / 64, FONT_U = 172, GLYPH_W = 14, GLYPH_H = 24, WHITE_CLUT = (505 << 6) | (352 / 16),
+       AFTER_MENU = 7, AFTER_MENU_TOO = 1, LETTERS = 64, WHITE_LEVEL = 236 };
+static const unsigned char fade[] = {255, 200, 150, 100, 60};        /* by rows from the highlighted one */
+static struct { unsigned frame; int n; struct { int x, y; char c; uint32_t at, clut; } l[LETTERS]; } letters;
+static unsigned frames, page;             /* VBlanks seen; the texture page the walk has reached */
+static int coloured_rows, menu_drawn;     /* the menu drawn now (its screen, or right after it) */
+
+void tmst_menu_set_colour(int row, uint32_t rgb) {
+    if (row < 0 || row >= row_count) return;
+    if (!rows[row].coloured) coloured_rows++;
+    rows[row].coloured = 1; rows[row].rgb = rgb & 0xffffffu;
+}
+
+static void colour_row(int last) {
+    int order[LETTERS], n = 0;
+    char word[LETTERS + 1];
+    for (int i = 0; i < letters.n; i++)
+        if (letters.l[i].y == letters.l[last].y && letters.l[i].clut == letters.l[last].clut) order[n++] = i;
+    for (int i = 1; i < n; i++)
+        for (int j = i; j > 0 && letters.l[order[j]].x < letters.l[order[j - 1]].x; j--) { int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t; }
+    for (int i = 0; i < n; i++) word[i] = letters.l[order[i]].c;
+    word[n] = 0;
+    for (int r = 0; r < row_count; r++) {
+        if (!rows[r].coloured || strcmp(word, rows[r].word)) continue;
+        int d = rows[r].distance, k = d < 0 || d >= (int)sizeof fade ? fade[sizeof fade - 1] : fade[d];
+        uint32_t tint = 0;
+        for (int c = 0; c < 3; c++) {
+            unsigned v = (rows[r].rgb >> (8 * c) & 0xffu) * 128u / WHITE_LEVEL * (unsigned)k / 255u;
+            tint |= (v > 255 ? 255u : v) << (8 * (2 - c));     /* 0xRRGGBB -> the GPU's 0xBBGGRR */
+        }
+        for (int i = 0; i < n; i++) {
+            uint32_t at = letters.l[order[i]].at;
+            tmst_overlay_patch_word(at, 0x64000000u | tint);                 /* modulated */
+            tmst_overlay_patch_word(at + 8, (psx_mod_read_word(at + 8) & 0xffffu) | (uint32_t)WHITE_CLUT << 16);
+        }
+        return;
+    }
+}
+static void letter(uint32_t at, unsigned op, int x, int y, int w, int h) {
+    if ((op & 0xfc) != 0x64 || w != GLYPH_W || h != GLYPH_H || (page & 0x1f) != FONT_PAGE) return;
+    if (letters.frame != frames) { letters.frame = frames; letters.n = 0; }
+    if (letters.n >= LETTERS) return;
+    uint32_t uv = psx_mod_read_word(at + 8);
+    int u = (int)(uv & 255) - FONT_U, v = (int)(uv >> 8 & 255), i = u / GLYPH_W + v / GLYPH_H * 6;
+    char c = u < 0 || u % GLYPH_W ? '?' : i < 9 ? (char)('1' + i) : i < 35 ? (char)('A' + i - 9) : '!';
+    letters.l[letters.n].x = x; letters.l[letters.n].y = y; letters.l[letters.n].c = c;
+    letters.l[letters.n].at = at; letters.l[letters.n].clut = uv >> 16;
+    letters.n++;
+    colour_row(letters.n - 1);
+}
+/* Each primitive of a node: the texture page followed (E1, a textured
+ * polygon's), the sprites handed to letter(). */
+static void menu_visitor(uint32_t node) {
+    if (!menu_drawn) return;
+    unsigned words = psx_mod_read_word(node) >> 24;
+    for (unsigned i = 1; i <= words;) {
+        uint32_t a = node + i * 4, cmd = psx_mod_read_word(a) >> 24;
+        unsigned size = 1;
+        if (cmd == 0xe1) page = psx_mod_read_word(a) & 0x9ff;
+        else if (cmd >= 0x20 && cmd < 0x40) {
+            unsigned verts = cmd & 8 ? 4 : 3, per = 1 + ((cmd & 4) ? 1 : 0) + ((cmd & 0x10) ? 1 : 0);
+            size = 1 + verts * per - ((cmd & 0x10) ? 1 : 0);
+            if ((cmd & 4) && i + size - 1 <= words) page = psx_mod_read_word(a + ((cmd & 0x10) ? 20 : 16)) >> 16 & 0x9ff;
+        } else if (cmd >= 0x40 && cmd < 0x60) {
+            unsigned gouraud = (cmd & 0x10) != 0, w = 1;
+            for (unsigned v = 0; i + w <= words; v++) {
+                if (v && gouraud) w++;
+                if (i + w > words) break;
+                uint32_t xy = psx_mod_read_word(a + w * 4);
+                if (v >= 2 && (cmd & 8) && (xy & 0xf000f000u) == 0x50005000u) break;
+                w++;
+                if (v == 1 && !(cmd & 8)) break;
+            }
+            size = w + ((cmd & 8) ? 1 : 0);
+        } else if (cmd >= 0x60 && cmd < 0x80) {
+            size = 2 + ((cmd & 4) ? 1 : 0) + ((cmd & 0x18) == 0 ? 1 : 0);
+            if ((cmd & 0x18) == 0 && (cmd & 4) && i + size - 1 <= words) {
+                uint32_t xy = psx_mod_read_word(a + 4), wh = psx_mod_read_word(a + 12);
+                letter(a, cmd, (int16_t)(xy & 0xffff), (int16_t)(xy >> 16), (int)(wh & 0x3ff), (int)(wh >> 16 & 0x1ff));
+            }
+        }
+        i += size;
+    }
+}
+static void colour_vblank(void) {
+    if (!coloured_rows || !psx_mod_game_started()) return;
+    static int visiting;
+    if (!visiting) { visiting = 1; tmst_overlay_set_visitor(menu_visitor); }
+    frames++;
+    unsigned screen = psx_mod_read_half(SCREEN);
+    if (screen == MENU) {
+        for (int r = 0; r < row_count; r++) rows[r].distance = tmst_menu_distance(r);
+        menu_drawn = 1;
+        tmst_overlay_show_prims();
+    } else if (menu_drawn && (screen == AFTER_MENU || screen == AFTER_MENU_TOO)) {
+        tmst_overlay_show_prims();
+    } else if (menu_drawn) {
+        menu_drawn = 0;
+        if (!tmst_overlay_visible()) tmst_overlay_hide();   /* another mod's picture stays */
+    }
+}
+
 enum { HOST_QUIT_MODE = 0xff };
 void tmst_menu_vblank(void) {
+    colour_vblank();
     if (!row_count || !psx_mod_game_started() || psx_mod_read_half(SCREEN) == MENU) return;
     uint32_t list = list_address();
     if (!list) return;

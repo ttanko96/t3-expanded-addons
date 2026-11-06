@@ -89,15 +89,18 @@ typedef struct TmstPrims TmstPrims;
 void tmst_prim_room(TmstPrims *k, unsigned words);
 void tmst_prim_word(TmstPrims *k, uint32_t word);
 static inline uint32_t tmst_xy(int x, int y) { return ((uint32_t)(y & 0xffff) << 16) | (uint32_t)(x & 0xffff); }
-/* Text in the add-on's font (tmst_font.h) as textured quads, from a 4-bit
- * sheet of the font (192 x 9 halfwords, its palette in its last row) the
- * core keeps in the upper VRAM half, in a corner the stage engine leaves
- * free (placed, kept and given back as the picture is). Each character a
- * cell of cw x ch screen pixels from (x, y) (the font's 6 x 8: 6 x 16 looks
- * square on the 480-line screens), its colour `tint` (0x808080 = white;
- * 0xBBGGRR, the GPU's x/128). Nothing is drawn the first frame, nor while no
- * place is free. Returns the text's width. */
-int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch, uint32_t tint);
+/* Text in the UI font (tmst_ui_font.h, its SCREEN face: ASCII, Fira Sans)
+ * as textured quads, from a 4-bit sheet of its glyphs (192 x 77 halfwords:
+ * three texture pages, its palette in its last row) the core keeps in the
+ * upper VRAM half, in a corner the stage engine leaves free (placed, kept
+ * and given back as the picture is). (x, y): the capitals' top, screen
+ * units of the 368 x 480 screen; scale 1: two texels to a unit (capitals
+ * 12 tall), 2: one (24). The glyphs' faint edges blend half (B/2 + F/2),
+ * the rest opaque; colour `tint` (0x808080 = white; 0xBBGGRR, the GPU's
+ * x/128). Nothing is drawn the first frame, nor while no place is free.
+ * Returns the text's width (screen units). */
+int tmst_ui_prim_text(TmstPrims *k, int x, int y, const char *text, int scale, uint32_t tint);
+int tmst_ui_prim_width(const char *text, int scale);
 /* The frame being drawn as a texture: the screen rectangle (x, y, w, h)
  * drawn again from the frame's own pixels (dx, dy) away, each texel times
  * `tint` / 128 (0xBBGGRR, 0x808080 = as it is); `blend` -1 opaque, 0..3

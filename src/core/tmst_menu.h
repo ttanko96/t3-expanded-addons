@@ -12,6 +12,7 @@
  * and put back after it, for the native menu that runs next. */
 #ifndef TMST_MENU_H
 #define TMST_MENU_H
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,6 +36,11 @@ int tmst_menu_highlighted(int row);
 /* On the menu: how many rows this row is from the highlighted one (the list
  * turns round: the shorter way), -1 when it is not in the list. */
 int tmst_menu_distance(int row);
+/* The row's letters in a colour of its own instead of its native row's:
+ * `rgb` (0xRRGGBB) as it shows on the screen on the highlighted row, darker
+ * away from it as the native rows are, and in the frames the menu goes on
+ * being drawn after a choice (the screen already the next one). */
+void tmst_menu_set_colour(int row, uint32_t rgb);
 /* Every VBlank, from the VBlank plugin of the mod that owns a row. */
 void tmst_menu_vblank(void);
 
