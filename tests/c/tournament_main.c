@@ -3,10 +3,12 @@
  *   bracket <seed> <player> <boss> <n> <results>
  *                                       roster 0..n-1; results: W / L per player match, then the rest finished.
  *                                       Prints "slots ...", "step <mask> <winners...>" per step, "out|champion ..."
- *   progress <path> load|win:<t>        prints "won <mask> open <t...> [opens <t>]" */
+ *   progress <path> load|win:<t>        prints "won <mask> open <t...> [opens <t>]"
+ *   stage <t> <school> <key...>         prints "<key> <kind> <stage> <cat>/<music>" per key */
 #include "tmst_bracket.h"
 #include "tmst_tournament_pools.h"
 #include "tmst_tournament_progress.h"
+#include "tmst_tournament_stages.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +65,14 @@ int main(int argc, char **argv) {
         for (int t = 0; t < TMST_TOURNEYS; t++) if (tmst_progress_open(&p, t)) printf(" %d", t);
         if (opens != -2) printf(" opens %d", opens);
         printf("\n");
+        return 0;
+    }
+    if (argc >= 5 && !strcmp(argv[1], "stage")) {
+        for (int i = 4; i < argc; i++) {
+            int stage, kind = tmst_tourney_stage(atoi(argv[2]), argv[i], atoi(argv[3]), &stage);
+            const char *cat, *music = tmst_tourney_music(atoi(argv[2]), argv[i], kind, stage, &cat);
+            printf("%s %d %d %s/%s\n", argv[i], kind, stage, cat ? cat : "-", music ? music : "-");
+        }
         return 0;
     }
     return 2;

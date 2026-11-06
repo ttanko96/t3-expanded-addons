@@ -35,7 +35,9 @@
  * when the game starts the fight's music (0x8006AE14, chained), it plays a
  * muted stand-in instead and ours streams as long as that one plays, at its
  * level (fades, the pause), mixed after the game's sound at the player's
- * music volume (src/core/tmst_spu.c). While the Jukebox is open the game's
+ * music volume (src/core/tmst_spu.c). In a Tournament Mode match, an
+ * opponent without the player's own choice plays the tournament's piece
+ * (tmst_tournament_fight_music). While the Jukebox is open the game's
  * music is silent and the preview plays.
  *
  * The list is a picture of our own over the lower part of the grid screen
@@ -1267,6 +1269,20 @@ static int music(int id) {
         if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) key = "panda";
         else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) key = "tiger";
         else if ((key = fighter_key(fid))) c = heard_choice(key);
+        /* Tournament Mode's match (src/tournament/tmst_tournament.c): its
+         * piece, unless the player chose one for this opponent. */
+        const char *t_key, *t_cat, *t_name;
+        static Choice tournament;
+        if (!(c && key && c == choice_of(key)) && tmst_tournament_fight_music(&t_key, &t_cat, &t_name)) {
+            Track t;
+            memset(&tournament, 0, sizeof tournament);
+            snprintf(tournament.key, KEY, "%s", t_key);
+            snprintf(tournament.name, NAME, "%s", t_name);
+            tournament.cat = category_of(t_cat);
+            if (tournament.cat >= 0 && resolve(&tournament, &t)) { c = &tournament; key = tournament.key; }
+            else tmst_log("jukebox: the tournament's %s/%s is not there, %s", t_cat, t_name,
+                          c ? "the default choice plays" : "the game's piece plays");
+        }
     }
     if (!c) { if (fight_armed) fight_stop(); return id; }
     /* The same choice again (the next round's setup): the game keeps its

@@ -4,7 +4,7 @@ import os, shutil, subprocess, tempfile, unittest
 from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
-SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c']
+SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c']
 # The roster keys the Expanded has today: the stock fighters, Panda and Tiger, its guests.
 STOCK = ['paul', 'law', 'lei', 'king', 'yoshimitsu', 'nina', 'hwoarang', 'xiaoyu', 'eddy', 'jin', 'julia', 'kuma',
          'bryan', 'heihachi', 'ogre', 'mokujin', 'gunjack', 'gon', 'anna', 'drb', 'trueogre', 'panda', 'tiger']
@@ -173,6 +173,82 @@ class TournamentTest(unittest.TestCase):
         path = Path(self.tmp.name) / 'hand.txt'
         path.write_text('# edited\n  won =  t2 ,ttt, bogus\n')
         self.assertEqual(self.run_exe('progress', path, 'load', exe=self.locked), ['won 10 open 0 1 2 3 4'])
+
+    # ---- stages ------------------------------------------------------------------
+    NONE, T2, T3, TTT = range(4)
+
+    def stages(self, t, keys, school=0):
+        return {k: (int(a), int(b)) for k, a, b, _ in
+                (l.split() for l in self.run_exe('stage', t, school, *keys))}
+
+    def music(self, t, keys, school=0):
+        return {k: m for k, _, _, m in (l.split() for l in self.run_exe('stage', t, school, *keys))}
+
+    def test_music(self):
+        lists = {}
+        for cat, files in (('t2-console', ['tekken1-console', 'tekken2-console']), ('t3-console', ['tekken3-console']),
+                           ('ttt-console', ['ttt-console'])):
+            lists[cat] = {l.split('=')[0].strip() for f in files
+                          for l in (ADDON / 'data/jukebox' / (f + '.txt')).read_text().splitlines()
+                          if '=' in l and not l.startswith('#')}
+        p = self.pools(); everyone = STOCK + GUESTS
+        for t, cat in ((0, 't2-console'), (1, 't2-console'), (2, 't3-console'), (3, 'ttt-console')):
+            tid = ['t1', 't2', 't3', 'ttt'][t]
+            keys = p[tid][1] or [k for k in everyone if k not in self.out[tid]]
+            for school in (0, 1):
+                for k, m in self.music(t, keys, school).items():
+                    c, name = m.split('/')
+                    self.assertEqual(c, cat, (tid, k)); self.assertIn(name, lists[cat], (tid, k))
+        self.assertEqual(set(self.music(4, everyone).values()), {'-/-'})
+        self.assertEqual(self.music(0, ['paul', 'wang']), {'paul': 't2-console/t2-paul.bgm', 'wang': 't2-console/t2-wang.bgm'})
+        self.assertEqual(self.music(1, ['alex', 'angel', 'kazuya', 'devil']),
+                         {'alex': 't2-console/t2-roger.bgm', 'angel': 't2-console/devil.bgm',
+                          'kazuya': 't2-console/t2-kazuya.bgm', 'devil': 't2-console/devil.bgm'})
+        self.assertEqual(self.music(2, ['anna', 'gunjack', 'nina', 'panda', 'trueogre']),
+                         {'anna': 't3-console/xa-21', 'gunjack': 't3-console/xa-27', 'nina': 't3-console/xa-38',
+                          'panda': 't3-console/xa-34', 'trueogre': 't3-console/xa-41'})
+        self.assertEqual(self.music(3, ['bryan', 'unknown', 'xiaoyu']),
+                         {'bryan': 'ttt-console/ps2-paul.bgm', 'unknown': 'ttt-console/ps2-unknown.bgm',
+                          'xiaoyu': 'ttt-console/ps2-xiaoyu.bgm'})
+        self.assertEqual(self.music(3, ['xiaoyu'], 1), {'xiaoyu': 'ttt-console/ps2-school.bgm'})
+
+    def test_stages_cover_pools(self):
+        p = self.pools()
+        everyone = STOCK + GUESTS
+        for t, kind, top in ((0, self.T2, 22), (1, self.T2, 22), (2, self.T3, 14), (3, self.TTT, 14)):
+            tid = ['t1', 't2', 't3', 'ttt'][t]
+            keys = p[tid][1] or [k for k in everyone if k not in self.out[tid]]
+            for school in (0, 1):
+                for k, (got, stage) in self.stages(t, keys, school).items():
+                    self.assertEqual(got, kind, (tid, k))
+                    self.assertTrue(0 <= stage <= top, (tid, k, stage))
+        self.assertEqual(set(self.stages(4, everyone).values()), {(self.NONE, -1)})   # Free: the system's
+
+    def test_stages_lists(self):
+        self.assertEqual(self.stages(0, ['heihachi', 'kazuya', 'lei', 'bruce']),
+                         {'heihachi': (self.T2, 6), 'kazuya': (self.T2, 21), 'lei': (self.NONE, -1),
+                          'bruce': (self.NONE, -1)})
+        self.assertEqual(self.stages(1, ['devil', 'angel', 'roger', 'alex', 'bruce', 'lei']),
+                         {'devil': (self.T2, 22), 'angel': (self.T2, 22), 'roger': (self.T2, 17),
+                          'alex': (self.T2, 17), 'bruce': (self.T2, 0), 'lei': (self.T2, 5)})
+        # T1's stages are T2's, for its own fighters
+        t1, t2 = self.stages(0, GUESTS + STOCK), self.stages(1, GUESTS + STOCK)
+        for k, v in t1.items():
+            if v[0] != self.NONE: self.assertEqual(v, t2[k], k)
+        self.assertEqual(self.stages(2, ['trueogre', 'gon', 'drb', 'tiger', 'panda', 'heihachi']),
+                         {'trueogre': (self.T3, 6), 'gon': (self.T3, 13), 'drb': (self.T3, 14),
+                          'tiger': (self.T3, 10), 'panda': (self.T3, 1), 'heihachi': (self.T3, 12)})
+        self.assertEqual(self.stages(3, ['unknown', 'tetsujin', 'kazuya', 'jun']),
+                         {'unknown': (self.TTT, 14), 'tetsujin': (self.TTT, 2), 'kazuya': (self.TTT, 12),
+                          'jun': (self.TTT, 8)})
+
+    def test_stages_school(self):
+        for t, kind in ((2, self.T3), (3, self.TTT)):
+            self.assertEqual(self.stages(t, ['xiaoyu', 'jin', 'paul']),
+                             {'xiaoyu': (kind, 3), 'jin': (kind, 8), 'paul': (kind, 0)})
+            self.assertEqual(self.stages(t, ['xiaoyu', 'jin', 'paul'], 1),
+                             {'xiaoyu': (kind, 7), 'jin': (kind, 7), 'paul': (kind, 0)})
+        self.assertEqual(self.stages(1, ['jun'], 1), {'jun': (self.T2, 2)})   # T2: no school stage
 
 
 if __name__ == '__main__':

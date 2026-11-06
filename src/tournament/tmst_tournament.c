@@ -42,6 +42,7 @@
 #include "tmst_bracket.h"
 #include "tmst_tournament_pools.h"
 #include "tmst_tournament_progress.h"
+#include "tmst_tournament_stages.h"
 #include "tmst_tournament_art.h"
 #include "tmst_tournament_screens.h"
 #include "tmst_tournament_options.h"
@@ -395,6 +396,47 @@ static unsigned match_rounds(void) {
     return 1;
 }
 static const Fighter *member_fighter(int i) { return &roster[i && mt.second >= 0 ? mt.second : mt.opponent]; }
+/* The member due: the first, or (a team of two) the next once one is lost. */
+static int member_due(void) {
+    int due = psx_mod_read_byte(TEAMS + TEAM_STRIDE + T_LOST);
+    return due >= team_size() ? team_size() - 1 : due;
+}
+/* The fight's stage (tmst_core.h): the CPU's member due, its home in this
+ * tournament (src/tournament/tmst_tournament_stages.c). School: the game's
+ * own record for its ID and costume names the school arena (Xiaoyu's,
+ * Jin's school outfit; 0x80097D40 + (ID * 4 + costume) * 4, arena at +10). */
+enum { RECORDS = 0x80097d40, RECORD_ARENA = 10, SCHOOL_ARENA = 7, ARENA = 0x800adc84, ARENA_COPY = 0x800afaa2 };
+static int due_stage(const Fighter *f, int *stage, int *school) {
+    *school = 0;
+    if (f->id < STOCK) {
+        uint32_t record = psx_mod_read_word(RECORDS + (f->id * 4 + f->costume) * 4);
+        *school = record >> 24 == 0x80 && psx_mod_read_byte(record + RECORD_ARENA) == SCHOOL_ARENA;
+    }
+    return tmst_tourney_stage(tm.tourney, f->key, *school, stage);
+}
+static int in_match(void) {
+    return on && mt.flow == FLOW_MATCH && mt.opponent >= 0 && psx_mod_read_word(MODE) == TEAM_BATTLE;
+}
+/* The fight's music (tmst_core.h): the CPU's member due, its piece in this
+ * tournament (src/tournament/tmst_tournament_stages.c); the Jukebox plays it. */
+int tmst_tournament_fight_music(const char **key, const char **cat, const char **name) {
+    if (!in_match()) return 0;
+    const Fighter *f = member_fighter(member_due());
+    int stage, school, kind = due_stage(f, &stage, &school);
+    *key = f->key;
+    *name = tmst_tourney_music(tm.tourney, f->key, kind, stage, cat);
+    return *name != NULL;
+}
+int tmst_tournament_fight_stage(unsigned mode, int *stage) {
+    *stage = -1;
+    if (!in_match() || mode != TEAM_BATTLE) return TMST_TSTAGE_NONE;
+    const Fighter *f = member_fighter(member_due());
+    int school, kind = due_stage(f, stage, &school);
+    static const char *const kinds[] = {"none", "Tekken 2", "Tekken 3", "Tekken Tag"};
+    tmst_log("tournament: %s's stage in %s: %s %d%s", f->name, tmst_tourney(tm.tourney)->name, kinds[kind], *stage,
+             school ? " (school)" : "");
+    return kind;
+}
 /* Member i on: in the fighters' IDs and costumes, its moves (a native's,
  * the CPU MOVESET row's). */
 static void member_on(int i) {
@@ -474,9 +516,14 @@ void __wrap_func_8004439C(CPUState *cpu) {
 /* A match under way: the opponent kept through the loading screen, the
  * result at the results. */
 static void match_tick(unsigned screen) {
-    /* The member due: the first, or (a team of two) the next once one is lost. */
-    int due = psx_mod_read_byte(TEAMS + TEAM_STRIDE + T_LOST);
-    if (due >= team_size()) due = team_size() - 1;
+    /* The CPU's Tekken 3 arena (TTT stage's arena), every VBlank until the
+     * fight: the game's Team Battle loading writes its chooser's again. */
+    int arena = tmst_stage_forced_arena();
+    if (arena >= 0 && psx_mod_read_half(ARENA) != (uint16_t)arena) {
+        psx_mod_write_half(ARENA, (uint16_t)arena);
+        psx_mod_write_byte(ARENA_COPY, (uint8_t)arena);
+    }
+    int due = member_due();
     const Fighter *f = member_fighter(due);
     if (screen == LOADING && (psx_mod_read_half(FIGHTERS + 2) != f->id || mt.member != due)) {
         if (mt.member == due) tmst_log("tournament: the CPU's member was changed (ID %u), %s again", psx_mod_read_half(FIGHTERS + 2), f->name);

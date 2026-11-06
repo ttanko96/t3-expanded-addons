@@ -27,6 +27,21 @@ int tmst_tekken2_music_active(void);
 /* Its switch (tmst.tekken2), for its parts: nonzero when on. */
 int tmst_tekken2_on(void);
 
+/* Tournament Mode (src/tournament/tmst_tournament.c): the stage of the fight
+ * in `mode` being loaded, when it is a tournament's match whose stage is the
+ * CPU's (TMST_TSTAGE_T2 | _T3 | _TTT of src/tournament/tmst_tournament_stages.h,
+ * its number in *stage); TMST_TSTAGE_NONE (0) for every other fight, the
+ * Free Tournament's too. Asked from src/tekken2/tmst_tekken2_stages.c. */
+int tmst_tournament_fight_stage(unsigned mode, int *stage);
+/* ... and its music, when it is a tournament's match with one: the CPU's
+ * key, the Jukebox category ("t2-console" ...) and piece ("t2-paul.bgm",
+ * "xa-42"); 0 none. Asked from src/jukebox/tmst_jukebox.c. */
+int tmst_tournament_fight_music(const char **key, const char **cat, const char **name);
+/* src/tekken2/tmst_tekken2_stages.c: a tournament's Tekken 3 arena (or TTT
+ * stage's arena) to hold until its fight, -1 none; the tournament's VBlank
+ * writes it. */
+int tmst_stage_forced_arena(void);
+
 /* Defined by Unified Character Select (tmst.ui.unified-select) once it
  * exists: nonzero while its single grid is on. Other mods declare it weak and
  * read it only when it is linked (the Jukebox hides its L2 / R2 hint then). */
