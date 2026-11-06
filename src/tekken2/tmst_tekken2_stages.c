@@ -58,10 +58,20 @@
  * 2026-11-03). The choices are kept beside the memory card in t2-stages.txt
  * ("vs on 13", "practice off random", "version classic").
  *
+ * Tournament Mode (src/tournament/tmst_tournament.c, its matches only): the
+ * CPU's stage (tmst_tournament_fight_stage). Tekken 1's and 2's tournaments
+ * a Tekken 2 stage, drawn as the STAGE line's (this part on, else the
+ * system's settings); Tekken 3's an arena, Tekken Tag's a TTT stage (Tekken
+ * 3's arena of that number without TTT's packs), whether this part is on or
+ * not: these wrappers are the only ones, so the decision is said here, its
+ * arena held until the fight by the tournament's VBlank
+ * (tmst_stage_forced_arena; ours runs only with this part on).
+ *
  * Benches: TMST_T2_STAGE=N gives every fight Tekken 2's stage N (0..22),
  * TMST_T2_STAGES_DIR the folder holding classic/ and remake/. */
 #include "tmst_core.h"
 #include "tmst_compat.h"
+#include "tmst_tournament_stages.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include <math.h>
@@ -574,28 +584,63 @@ int tmst_tekken2_ground(uint8_t rgb[3]) {
 int __wrap_tekken3_stage_source(void) { return our_fight() ? TEKKEN3_STAGE_T3 : __real_tekken3_stage_source(); }
 int __wrap_tekken3_stage_ttt_stage(void) { return our_fight() ? -1 : __real_tekken3_stage_ttt_stage(); }
 
+/* A tournament's Tekken 3 arena or TTT stage for this fight (its mode, -1
+ * none): the source, the TTT stage (-1), the arena loaded; held until the
+ * fight. */
+enum { TTT_UNKNOWN = 14, TTT_LAST_ARENA = 12, OGRE_ARENA = 6 };
+static int forced_mode = -1, forced_source, forced_ttt, forced_arena, forced_held;
+static void force(unsigned mode, int kind, int stage) {
+    int ttt = kind == TMST_TSTAGE_TTT && tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_TTT);
+    forced_mode = (int)mode; forced_held = 1;
+    forced_source = ttt ? TEKKEN3_STAGE_TTT : TEKKEN3_STAGE_T3;
+    forced_ttt = ttt ? stage : -1;
+    /* TTT's Unknown stage is drawn in Ogre's arena (the Expanded's arena_of_stage) */
+    forced_arena = ttt && stage > TTT_LAST_ARENA ? (stage == TTT_UNKNOWN ? OGRE_ARENA : stage) : stage;
+    tmst_log("tekken2: tournament fight on %s %d (arena %d)%s", ttt ? "TTT's stage" : "Tekken 3's arena",
+             ttt ? stage : forced_arena, forced_arena,
+             kind == TMST_TSTAGE_TTT && !ttt ? ", no TTT stage packs: Tekken 3's" : "");
+}
+/* For the tournament's VBlank: the arena to hold until the fight, -1 none. */
+int tmst_stage_forced_arena(void) {
+    unsigned screen = psx_mod_read_word(SCREEN);
+    if (screen == FIGHT || screen == MENU) forced_held = 0;
+    return forced_mode >= 0 && forced_held ? forced_arena : -1;
+}
+
 /* From the routine that picks the fight's arena (0x8004F3B0), each fight. */
 void __wrap_tekken3_stage_select_fight(unsigned mode) {
     __real_tekken3_stage_select_fight(mode);
-    fight = fight_mode = -1; moving = 0;
-    if (!ready()) return;
+    fight = fight_mode = -1; moving = 0; forced_mode = -1; forced_held = 0;
+    int tournament_stage, tournament = tmst_tournament_fight_stage(mode, &tournament_stage);
+    if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage); return; }
+    if (!ready()) {
+        if (tournament == TMST_TSTAGE_T2) tmst_log("tekken2: tournament fight, Tekken 2's stages off: the system's stage");
+        return;
+    }
     int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1;
     const char *e = getenv("TMST_T2_STAGE");
     if (e && *e) stage = atoi(e) % STAGES;
+    else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
     else if (line >= 0 && armed[line]) stage = chosen[line] >= 0 ? chosen[line] : pick(STAGES);
     if (line >= 0) armed[line] = 0;
     if (stage < 0) return;
     fight = stage; fight_mode = (int)mode; moving = 1;
     fight_extras();
-    tmst_log("tekken2: mode %u fight on Tekken 2's %s (stage %d, %s, arena %d)%s", mode, names[stage], stage,
-             version_words[drawn_version()], T2_ARENA, line >= 0 && chosen[line] < 0 && !(e && *e) ? ", RANDOM" : "");
+    tmst_log("tekken2: mode %u fight on Tekken 2's %s (stage %d, %s, arena %d)%s%s", mode, names[stage], stage,
+             version_words[drawn_version()], T2_ARENA, line >= 0 && chosen[line] < 0 && !(e && *e) ? ", RANDOM" : "",
+             tournament == TMST_TSTAGE_T2 ? ", the tournament's" : "");
 }
 /* The same arena for the guests' correction (src/tekken3_ttt1_roster.c) and
  * the STAGES row's decision (Tekken 3's stage there: nothing moved). */
 int __wrap_tekken3_stage_select_arena(void) {
+    if (forced_mode >= 0 && forced_held) return forced_arena;
     return fight >= 0 && moving ? T2_ARENA : __real_tekken3_stage_select_arena();
 }
 int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stage, int *arena) {
+    if (forced_mode >= 0 && (unsigned)forced_mode == mode) {
+        *source = forced_source; *ttt_stage = forced_ttt; *arena = forced_arena;
+        return 1;
+    }
     if (fight < 0 || (unsigned)fight_mode != mode) return __real_tekken3_stage_select_choice(mode, source, ttt_stage, arena);
     *source = TEKKEN3_STAGE_T3; *ttt_stage = -1; *arena = T2_ARENA;
     return 1;
@@ -807,6 +852,7 @@ int tmst_tekken2_remake_drawn(void) { return 0; }
 int32_t tmst_tekken2_fixed_period(void) { return 0; }
 const int16_t *tmst_tekken2_walls(int *n, int *radius) { *n = *radius = 0; return NULL; }
 void tmst_tekken2_stage_entry(void) {}
+int tmst_stage_forced_arena(void) { return -1; }
 
 static void activate(void) {
     if (tmst_guard("tmst.tekken2.stages", TMST_NEED_ACTIVATION))

@@ -32,6 +32,7 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_pools.c
     src/tournament/tmst_bracket.c
     src/tournament/tmst_tournament_progress.c
+    src/tournament/tmst_tournament_stages.c
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament_options.c
