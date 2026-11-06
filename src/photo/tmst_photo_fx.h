@@ -4,7 +4,7 @@
  * One description draws each of them two ways: live, as the GPU's own
  * primitives over the paused frame, and onto the photo, by the CPU over the
  * read-back frame at the renderer's resolution, with the same arithmetic
- * (the GPU's blend modes, its Gouraud shading, the core's font), so the
+ * (the GPU's blend modes, its Gouraud shading, the core's UI font), so the
  * photo is what was seen.
  *
  * The GPU has no mixing between colour channels (only per-channel adds,
@@ -18,7 +18,7 @@
  * The frames are drawn on the screen's whole height (tmst_prim_whole_height:
  * live as on the photo). T3E RED and T3E BLACK (one frame, two colourings)
  * write their name in Tekken 3's own big letters, read from the fight's VRAM
- * (the core's font where they are not there), and carry the T3E logo
+ * (the core's UI font where they are not there), and carry the T3E logo
  * (data/photo/t3e_logo.png: live from the upper VRAM half, tmst_overlay_set_
  * sheet; on the photo from the PNG, its soft edge whole). */
 #ifndef TMST_PHOTO_FX_H

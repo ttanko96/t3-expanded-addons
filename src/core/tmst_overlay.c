@@ -27,7 +27,7 @@
 #include "tmst_overlay.h"
 #include "tmst_core.h"
 #include "tmst_compat.h"
-#include "tmst_font.h"
+#include "tmst_ui_font.h"
 #include "mod_plugins.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -219,28 +219,65 @@ static void prims_finish_to(TmstPrims *k, uint32_t next) {
 static void prims_finish(TmstPrims *k) { prims_finish_to(k, 0x00FFFFFFu); }
 
 /* ---- the font's sheet ----
- * 95 glyphs (ASCII 32..126) of 6 x 8 texels, 4-bit, 42 to a texture page
- * (256 texels), 3 pages side by side; row 8 holds the palette (0 see-
- * through, 1 white). Placed from the half's bottom right corner, where the
- * stage packs leave room; its 8 glyph rows within one row of pages. */
-enum { ATLAS_PER_PAGE = 42, ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 9, CELL_W = 6, CELL_H = 8 };
+ * The UI font's SCREEN face (tmst_ui_font.h): its glyphs, each with a
+ * see-through texel all round (a glyph is drawn from half a screen unit's
+ * texel off, see below), on shelves (the tallest glyphs first, each shelf as
+ * tall as its first) on texture pages of 256 (u up to 255), 4-bit; the last
+ * row holds the palette: 16 levels of cover, the faint ones see-through,
+ * the middle ones white with the STP bit (half see-through, B/2 + F/2: a
+ * quad of them over the screen is half itself, half the screen), the rest
+ * white to grey (opaque). Placed from the half's bottom right corner, where
+ * the stage packs leave room (tools/t2_remake_stages.py keeps 192 x 64 there
+ * for it where it must: FONT_W, FONT_H); within one row of pages. */
+enum { ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 61, ATLAS_GLYPHS = 128 };
 static uint16_t atlas[ATLAS_W * ATLAS_H], atlas_kept[ATLAS_W * ATLAS_H];
+static struct { uint8_t page, u, v; } cell[ATLAS_GLYPHS];   /* by the face's glyph index */
 static int atlas_built, atlas_x = -1, atlas_y, atlas_has_kept, atlas_dirty = 1, text_wanted, text_last, text_ready, atlas_said;
 static unsigned atlas_generation, atlas_frame;
+#define FACE (&tmst_ui_face_screen)
 
 static void build_atlas(void) {
     memset(atlas, 0, sizeof atlas);
-    for (int g = 0; g < 95; g++) {
-        const uint8_t *rows = tmst_font_glyph((unsigned char)(32 + g));
-        int u0 = (g / ATLAS_PER_PAGE) * 256 + (g % ATLAS_PER_PAGE) * CELL_W;
-        for (int row = 0; row < 7; row++)
-            for (int col = 0; col < 5; col++)
-                if (rows[row] >> (4 - col) & 1) {
-                    int u = u0 + col;                    /* 4 texels to a halfword, the first lowest */
-                    atlas[row * ATLAS_W + u / 4] |= (uint16_t)(1u << (u % 4 * 4));
-                }
+    int n = FACE->count < ATLAS_GLYPHS ? FACE->count : ATLAS_GLYPHS, order[ATLAS_GLYPHS];
+    for (int i = 0; i < n; i++) {                       /* by height, the tallest first */
+        int j = i;
+        while (j > 0 && FACE->glyphs[order[j - 1]].h < FACE->glyphs[i].h) { order[j] = order[j - 1]; j--; }
+        order[j] = i;
     }
-    atlas[8 * ATLAS_W + 1] = 0x7fff;             /* palette: 0 see-through, 1 white */
+    enum { SHELVES = 16 };
+    struct { int page, v, h, u; } shelf[SHELVES];
+    int shelves = 0, page_h[ATLAS_PAGES] = {0};
+    for (int k = 0; k < n; k++) {
+        int i = order[k];
+        const TmstUiGlyph *g = &FACE->glyphs[i];
+        if (!g->w || !g->h) continue;
+        int w = g->w + 2, h = g->h + 2, s = 0;
+        while (s < shelves && (shelf[s].h < h || shelf[s].u + w > 255)) s++;
+        if (s == shelves) {
+            int p = 0;
+            while (p < ATLAS_PAGES && page_h[p] + h > ATLAS_H - 1) p++;
+            if (p == ATLAS_PAGES || shelves == SHELVES) { tmst_log("overlay: the font's sheet is full at glyph %d", i); break; }
+            shelf[s].page = p; shelf[s].v = page_h[p]; shelf[s].h = h; shelf[s].u = 0;
+            page_h[p] += h; shelves++;
+        }
+        int page = shelf[s].page, u = shelf[s].u, v = shelf[s].v;
+        cell[i].page = (uint8_t)page; cell[i].u = (uint8_t)u; cell[i].v = (uint8_t)v;
+        shelf[s].u += w;
+        int stride = (g->w + 1) / 2;
+        for (int r = 0; r < g->h; r++)
+            for (int q = 0; q < g->w; q++) {
+                uint8_t b = FACE->bits[g->offset + (size_t)r * stride + q / 2];
+                unsigned c = q & 1 ? b & 15u : b >> 4;
+                int tu = page * 256 + u + 1 + q, tv = v + 1 + r;   /* 4 texels to a halfword, the first lowest */
+                atlas[tv * ATLAS_W + tu / 4] |= (uint16_t)(c << (tu % 4 * 4));
+            }
+    }
+    uint16_t *clut = &atlas[(ATLAS_H - 1) * ATLAS_W];
+    for (int v = 0; v < 16; v++) {
+        unsigned grey = v < 3 ? 0u : v <= 10 ? (unsigned)(v * 62 + 7) / 15 : (unsigned)(v * 31 + 7) / 15;
+        if (grey > 31) grey = 31;
+        clut[v] = v < 3 ? 0 : (uint16_t)((v <= 10 ? 0x8000u : 0u) | grey << 10 | grey << 5 | grey);
+    }
     atlas_built = 1;
 }
 static void atlas_give_back(void) {
@@ -248,7 +285,7 @@ static void atlas_give_back(void) {
     atlas_x = -1; atlas_has_kept = 0; atlas_dirty = 1;
 }
 static int atlas_fits(int x, int y) {
-    return (y - 512) / 256 == (y + CELL_H - 1 - 512) / 256 && !tmst_compat_high_vram_taken(x, y, ATLAS_W, ATLAS_H);
+    return (y - 512) / 256 == (y + ATLAS_H - 1 - 512) / 256 && !tmst_compat_high_vram_taken(x, y, ATLAS_W, ATLAS_H);
 }
 /* This frame: the sheet in place and up to date, or 0. */
 static int place_atlas(void) {
@@ -273,27 +310,54 @@ static int place_atlas(void) {
     return 1;
 }
 
-int tmst_prim_text(TmstPrims *k, int x, int y, const char *text, int cw, int ch, uint32_t tint) {
-    int n = text ? (int)strlen(text) : 0;
+/* Floor division by t (1 or 2), for negative numbers too. */
+static int floor_div(int a, int t) { return a >= 0 ? a / t : -((-a + t - 1) / t); }
+
+int tmst_ui_prim_width(const char *text, int scale) {
+    int t = scale >= 2 ? 1 : 2;                          /* texels to a screen unit */
+    return (tmst_ui_width(FACE, text) + t / 2) / t;
+}
+
+/* Each glyph a quad on whole screen units: at scale 1 a unit is two texels,
+ * so a glyph that starts on an odd texel is drawn from the see-through
+ * texel before it (off 1), and the quad is as many units as it then needs
+ * (its last texel see-through too, where the glyph ends on an even one). */
+int tmst_ui_prim_text(TmstPrims *k, int x, int y, const char *text, int scale, uint32_t tint) {
+    int t = scale >= 2 ? 1 : 2;
     text_wanted = 1;
-    if (!text_ready) return n * cw;
-    int base = atlas_y < 768 ? 512 : 768, v0 = atlas_y - base;
-    uint32_t clut = 0x8000u | (uint32_t)(atlas_y + CELL_H - 512) << 6 | (uint32_t)(atlas_x / 16);
-    for (int i = 0; i < n; i++, x += cw) {
-        unsigned char c = (unsigned char)text[i];
-        if (c == ' ') continue;
-        int g = (c < 32 || c > 126 ? '?' : c) - 32;
-        uint32_t tpage = (uint32_t)(atlas_x / 64 + g / ATLAS_PER_PAGE) | (uint32_t)(base - 512) / 256u << 4 | 1u << 11;
-        uint32_t u0 = (uint32_t)(g % ATLAS_PER_PAGE * CELL_W), u1 = u0 + CELL_W;
-        uint32_t t = (uint32_t)v0 << 8, b = (uint32_t)(v0 + CELL_H) << 8;
-        tmst_prim_room(k, 9);
-        tmst_prim_word(k, 0x2C000000u | (tint & 0xFFFFFFu));      /* textured quad, opaque, tinted */
-        tmst_prim_word(k, tmst_xy(x, y));           tmst_prim_word(k, u0 | t | clut << 16);
-        tmst_prim_word(k, tmst_xy(x + cw, y));      tmst_prim_word(k, u1 | t | tpage << 16);
-        tmst_prim_word(k, tmst_xy(x, y + ch));      tmst_prim_word(k, u0 | b);
-        tmst_prim_word(k, tmst_xy(x + cw, y + ch)); tmst_prim_word(k, u1 | b);
+    if (!text_ready || !text) return tmst_ui_prim_width(text, scale);
+    if (!atlas_built) build_atlas();
+    int base = atlas_y < 768 ? 512 : 768, v_top = atlas_y - base, pen = 0, baseline = t * y + FACE->cap;
+    uint32_t clut = 0x8000u | (uint32_t)(atlas_y + ATLAS_H - 1 - 512) << 6 | (uint32_t)(atlas_x / 16);
+    const char *p = text;
+    while (*p) {
+        /* the face is ASCII (and U+2026): any other character is '?' */
+        unsigned c = (unsigned char)*p++;
+        if (c >= 0x80) {
+            if (c == 0xE2 && (unsigned char)p[0] == 0x80 && (unsigned char)p[1] == 0xA6) { c = 0x2026; p += 2; }
+            else { while (((unsigned char)*p & 0xC0) == 0x80) p++; c = '?'; }
+        }
+        int i = 0;
+        while (i < FACE->count && FACE->glyphs[i].code != c) i++;
+        if (i == FACE->count || i >= ATLAS_GLYPHS) { i = 0; while (FACE->glyphs[i].code != '?') i++; }
+        const TmstUiGlyph *g = &FACE->glyphs[i];
+        if (g->w && g->h) {
+            int gx = t * x + ((pen + 32) >> 6) + g->left, gy = baseline + g->top;
+            int qx = floor_div(gx, t), qy = floor_div(gy, t), offx = gx - t * qx, offy = gy - t * qy;
+            int qw = (offx + g->w + t - 1) / t, qh = (offy + g->h + t - 1) / t;
+            uint32_t u0 = (uint32_t)(cell[i].u + 1 - offx), u1 = u0 + (uint32_t)(t * qw);
+            uint32_t v0 = (uint32_t)(v_top + cell[i].v + 1 - offy), v1 = v0 + (uint32_t)(t * qh);
+            uint32_t tpage = (uint32_t)(atlas_x / 64 + cell[i].page) | (uint32_t)(base - 512) / 256u << 4 | 1u << 11;
+            tmst_prim_room(k, 9);
+            tmst_prim_word(k, 0x2E000000u | (tint & 0xFFFFFFu));      /* textured quad, semi-transparent, tinted */
+            tmst_prim_word(k, tmst_xy(qx, qy));           tmst_prim_word(k, u0 | v0 << 8 | clut << 16);
+            tmst_prim_word(k, tmst_xy(qx + qw, qy));      tmst_prim_word(k, u1 | v0 << 8 | tpage << 16);
+            tmst_prim_word(k, tmst_xy(qx, qy + qh));      tmst_prim_word(k, u0 | v1 << 8);
+            tmst_prim_word(k, tmst_xy(qx + qw, qy + qh)); tmst_prim_word(k, u1 | v1 << 8);
+        }
+        pen += g->advance;
     }
-    return n * cw;
+    return (((pen + 32) >> 6) + t / 2) / t;
 }
 
 /* ---- a mod's small image (tmst_overlay_set_sheet) ----

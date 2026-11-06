@@ -68,11 +68,12 @@ MAX_CUT = 4
 # pack.Relocation may put palettes.
 WOLF_DRAWN = ((640, 512, 384, 196), (640, 708, 128, 32), (640, 740, 36, 28))
 # The add-on's letters (src/core/tmst_overlay.c place_atlas(): a sheet of
-# 192 x 9 in one row of pages, sought from the half's bottom right, y down 8
+# 192 x 61 (the UI font, Fira Sans, since 2026-11-06; FONT_ROOM's 64 rows
+# hold it) in one row of pages, sought from the half's bottom right, y down 8
 # and x left 64 at a time, off the stage's rectangles, TTT Hitspark's cells
 # and, while Unknown fights, her whole wolf); FONT_ROOM the slots kept free
 # for it when a "wolf_cut" stage leaves no place otherwise.
-FONT_W, FONT_H = 192, 9
+FONT_W, FONT_H = 192, 61
 FONT_ROOM = (1024 - FONT_W, 960, FONT_W, 64)
 
 
@@ -443,7 +444,7 @@ def font_place(pack: bytes) -> tuple[int, int] | None:
             o += 8 + 2 * w * h
             taken.append((x, y, w, h))
     for y in range(1024 - FONT_H, 511, -8):
-        if (y - 512) // 256 != (y + 8 - 1 - 512) // 256:          # its 8 glyph rows in one row of pages
+        if (y - 512) // 256 != (y + FONT_H - 1 - 512) // 256:    # in one row of pages
             continue
         for x in range(1024 - FONT_W, -1, -64):
             if not any(x < rx + rw and rx < x + FONT_W and y < ry + rh and ry < y + FONT_H for rx, ry, rw, rh in taken):

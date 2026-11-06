@@ -13,7 +13,8 @@ set(TMST_TESTED_WITH "v1.4.1")
 # C sources linked into the game (psx-runtime).
 set(TMST_SOURCES
     src/core/tmst_core.c
-    src/core/tmst_font.c
+    src/core/tmst_ui_font.c
+    src/core/tmst_ui_font_data.c
     src/core/tmst_overlay.c
     src/core/tmst_audio.c
     src/core/tmst_music.c
@@ -33,6 +34,7 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_progress.c
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
+    src/tournament/tmst_tournament_options.c
     src/tournament/tmst_tournament.c
     src/tekken2/tmst_tekken2.c
     src/tekken2/tmst_tekken2_stages.c

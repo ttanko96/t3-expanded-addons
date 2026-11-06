@@ -20,7 +20,7 @@
  *
  * Drawn with native primitives only (src/core/tmst_overlay.c): in a fight the
  * stage engine fills the upper VRAM half, so there is no room for a picture.
- * The hint bar at the bottom is the core's font and the pad's symbols as
+ * The hint bar at the bottom is the UI font (Fira Sans) and the pad's symbols as
  * lines.
  *
  * The camera (src/core/tmst_camera.c): the paused frame draws the whole
@@ -119,7 +119,7 @@ enum { CLEAN_FRAMES = 2,                                  /* drawn without our l
 enum { ROW_ZOOM, ROW_FOCUS, ROW_BLUR, ROW_FILTER, ROW_FRAME, ROW_RESET, ROWS };
 enum { FOCUS_FIGHTERS, FOCUS_CENTRE, FOCUS_TOP, FOCUS_BOTTOM, FOCUSES };
 enum { BLUR_MAX = 5 };
-static const char *const focus_names[FOCUSES] = {"FIGHTERS", "CENTER", "TOP", "BOTTOM"};
+static const char *const focus_names[FOCUSES] = {"Fighters", "Center", "Top", "Bottom"};
 static int preview_wanted(void);
 static int release_wait = -1;          /* a player whose buttons are kept until released */
 static int practice_hint;              /* "SELECT PHOTO MODE" under Practice's panel */
@@ -219,7 +219,9 @@ static uint16_t input(int player, uint16_t buttons) {
 }
 
 /* ---- drawing --------------------------------------------------------------------- */
-enum { CW = 6, CH = 16, LINE = 17, GAP = 14, ICON_W = 9, ICON_H = 14, BAR_LINES = 3,
+/* Text in the UI font (Fira Sans, tmst_ui_prim_text), its capitals' top 2
+ * below the line's top (centred on the pad's symbols, ICON_H from y + 1). */
+enum { SPACE = 4, TEXT_DY = 2, LINE = 17, GAP = 14, ICON_W = 9, ICON_H = 14, BAR_LINES = 3,
        BAR_TOP = 480 - 14 - BAR_LINES * LINE, TEXT = 0x7c7c7c, KEY = 0x4c9cb4, DARK = 0x100808 };
 enum { I_NONE, I_CROSS, I_TRIANGLE, I_CIRCLE, I_SQUARE };
 
@@ -250,14 +252,16 @@ static void icon(TmstPrims *k, int x, int y, int which) {
     }
 }
 
+static int say(TmstPrims *k, int x, int y, const char *s, uint32_t tint) { return tmst_ui_prim_text(k, x, y + TEXT_DY, s, 1, tint); }
+
 typedef struct { int icon; const char *key, *label; } Hint;
 static int hint_width(const Hint *h, int n) {
     int w = 0;
     for (int i = 0; i < n; i++) {
         if (i) w += GAP;
         if (h[i].icon) w += ICON_W + 3;
-        if (h[i].key) w += (int)strlen(h[i].key) * CW + CW;
-        w += (int)strlen(h[i].label) * CW;
+        if (h[i].key) w += tmst_ui_prim_width(h[i].key, 1) + SPACE;
+        w += tmst_ui_prim_width(h[i].label, 1);
     }
     return w;
 }
@@ -266,8 +270,8 @@ static void hint_line(TmstPrims *k, int y, const Hint *h, int n) {
     for (int i = 0; i < n; i++) {
         if (i) x += GAP;
         if (h[i].icon) { icon(k, x, y + 1, h[i].icon); x += ICON_W + 3; }
-        if (h[i].key) x += tmst_prim_text(k, x, y, h[i].key, CW, CH, KEY) + CW;
-        x += tmst_prim_text(k, x, y, h[i].label, CW, CH, TEXT);
+        if (h[i].key) x += say(k, x, y, h[i].key, KEY) + SPACE;
+        x += say(k, x, y, h[i].label, TEXT);
     }
 }
 /* A half see-through dark band, the screen's whole width (16:9 sides too). */
@@ -282,13 +286,13 @@ static void band(TmstPrims *k, int y, int h) {
 
 static void hint_bar(TmstPrims *k) {
     int camera = ph.view == VIEW_CAMERA;
-    static const Hint top_camera[] = {{I_CROSS, NULL, "TAKE PHOTO"}, {I_TRIANGLE, NULL, "HIDE HUD"},
-                                      {I_CIRCLE, NULL, "EXIT"}, {I_NONE, "START", "PANEL"}};
-    static const Hint top_panel[] = {{I_CROSS, NULL, "TAKE PHOTO"}, {I_TRIANGLE, NULL, "HIDE HUD"},
-                                     {I_CIRCLE, NULL, "EXIT"}, {I_NONE, "START", "CAMERA"}};
-    static const Hint move[] = {{I_NONE, "D-PAD", "MOVE"}, {I_NONE, "L1/R1", "DOWN/UP"}, {I_SQUARE, "+D-PAD", "TURN"}};
-    static const Hint more[] = {{I_NONE, "L2/R2", "ZOOM"}, {I_NONE, "SELECT", "RESET CAMERA"}};
-    static const Hint rows[] = {{I_NONE, "UP/DOWN", "SELECT"}, {I_NONE, "LEFT/RIGHT", "CHANGE"}};
+    static const Hint top_camera[] = {{I_CROSS, NULL, "Take photo"}, {I_TRIANGLE, NULL, "Hide HUD"},
+                                      {I_CIRCLE, NULL, "Exit"}, {I_NONE, "START", "Panel"}};
+    static const Hint top_panel[] = {{I_CROSS, NULL, "Take photo"}, {I_TRIANGLE, NULL, "Hide HUD"},
+                                     {I_CIRCLE, NULL, "Exit"}, {I_NONE, "START", "Camera"}};
+    static const Hint move[] = {{I_NONE, "D-PAD", "Move"}, {I_NONE, "L1/R1", "Down/Up"}, {I_SQUARE, "+D-PAD", "Turn"}};
+    static const Hint more[] = {{I_NONE, "L2/R2", "Zoom"}, {I_NONE, "SELECT", "Reset camera"}};
+    static const Hint rows[] = {{I_NONE, "UP/DOWN", "Select"}, {I_NONE, "LEFT/RIGHT", "Change"}};
     band(k, BAR_TOP - 6, BAR_LINES * LINE + 10);
     hint_line(k, BAR_TOP, camera ? top_camera : top_panel, 4);
     if (camera) {
@@ -303,21 +307,21 @@ static void hint_bar(TmstPrims *k) {
  * y 85): ZOOM, FOCUS, BLUR, FILTER, FRAME, RESET; the row
  * being changed (panel view only) on a lighter band, its value between
  * arrows. A CPU filter shown by its close look says so below. */
-enum { PANEL_X = 10, PANEL_Y = 92, PANEL_W = 168, LABEL_W = 7 * CW, VALUE_X = PANEL_X + 8 + LABEL_W + 12,
+enum { PANEL_X = 10, PANEL_Y = 92, PANEL_W = 168, LABEL_W = 42, VALUE_X = PANEL_X + 8 + LABEL_W + 12,
        HIGHLIGHT = 0x183450 };
 static void row_value(int row, char *out, size_t n) {
     switch (row) {
     case ROW_ZOOM: snprintf(out, n, "%d%%", (int)lround(ph.zoom * 100)); break;
     case ROW_FOCUS: snprintf(out, n, "%s", focus_names[ph.focus]); break;
-    case ROW_BLUR: if (ph.blur) snprintf(out, n, "%d", ph.blur); else snprintf(out, n, "OFF"); break;
+    case ROW_BLUR: if (ph.blur) snprintf(out, n, "%d", ph.blur); else snprintf(out, n, "Off"); break;
     case ROW_FILTER: snprintf(out, n, "%s", tmst_photo_filter_names[ph.filter]); break;
     case ROW_FRAME: snprintf(out, n, "%s", tmst_photo_frame_names[ph.frame]); break;
-    default: snprintf(out, n, "ALL"); break;
+    default: snprintf(out, n, "All"); break;
     }
 }
 static void panel(TmstPrims *k) {
-    static const char *const labels[ROWS] = {"ZOOM", "FOCUS", "BLUR", "FILTER", "FRAME", "RESET"};
-    const char *note = preview_wanted() && ph.preview <= 0 && !ph.preview_failed ? "EXACT WHEN STILL" : NULL;
+    static const char *const labels[ROWS] = {"Zoom", "Focus", "Blur", "Filter", "Frame", "Reset"};
+    const char *note = preview_wanted() && ph.preview <= 0 && !ph.preview_failed ? "Exact when still" : NULL;
     int lines = 1 + ROWS + (note ? 1 : 0), editing = ph.view == VIEW_PANEL;
     tmst_prim_room(k, 4);
     tmst_prim_word(k, 0xE1000600u);                    /* B/2 + F/2, dither, drawing to the display */
@@ -325,7 +329,7 @@ static void panel(TmstPrims *k) {
     tmst_prim_word(k, tmst_xy(PANEL_X, PANEL_Y));
     tmst_prim_word(k, (uint32_t)(lines * LINE + 10) << 16 | PANEL_W);
     int y = PANEL_Y + 5;
-    tmst_prim_text(k, PANEL_X + 8, y, "PHOTO MODE", CW, CH, KEY);
+    say(k, PANEL_X + 8, y, "Photo Mode", KEY);
     for (int r = 0; r < ROWS; r++) {
         y += LINE;
         char value[24];
@@ -338,14 +342,14 @@ static void panel(TmstPrims *k) {
             tmst_prim_word(k, tmst_xy(PANEL_X + 3, y - 1));
             tmst_prim_word(k, (uint32_t)(LINE) << 16 | (PANEL_W - 6));
         }
-        tmst_prim_text(k, PANEL_X + 8, y, labels[r], CW, CH, chosen ? 0x808080 : TEXT);
-        int w = tmst_prim_text(k, VALUE_X, y, value, CW, CH, chosen ? 0x808080 : TEXT);
+        say(k, PANEL_X + 8, y, labels[r], chosen ? 0x808080 : TEXT);
+        int w = say(k, VALUE_X, y, value, chosen ? 0x808080 : TEXT);
         if (chosen) {
-            tmst_prim_text(k, VALUE_X - CW - 4, y, "<", CW, CH, KEY);
-            tmst_prim_text(k, VALUE_X + w + 4, y, ">", CW, CH, KEY);
+            say(k, VALUE_X - tmst_ui_prim_width("<", 1) - 4, y, "<", KEY);
+            say(k, VALUE_X + w + 4, y, ">", KEY);
         }
     }
-    if (note) tmst_prim_text(k, PANEL_X + 8, y + LINE, note, CW, CH, KEY);
+    if (note) say(k, PANEL_X + 8, y + LINE, note, KEY);
 }
 
 /* Depth of field, FOCUS other than FIGHTERS: a sharp band (CENTER, TOP,
@@ -378,21 +382,21 @@ static void shot_feedback(TmstPrims *k) {
         tmst_prim_word(k, (uint32_t)480 << 16 | (uint32_t)(368 + 2 * m + 16));
     }
     if (ph.saved) {
-        const char *t = ph.saved_ok ? "PHOTO SAVED" : "PHOTO NOT SAVED";
-        int w = (int)strlen(t) * 8, x = 184 - w / 2, y = 232;
+        const char *t = ph.saved_ok ? "Photo saved" : "Photo not saved";
+        int w = tmst_ui_prim_width(t, 1), x = 184 - w / 2, y = 232;
         tmst_prim_room(k, 4);
         tmst_prim_word(k, 0xE1000600u);
         tmst_prim_word(k, 0x62000000u | DARK);
         tmst_prim_word(k, tmst_xy(x - 12, y - 7));
         tmst_prim_word(k, (uint32_t)30 << 16 | (uint32_t)(w + 24));
-        tmst_prim_text(k, x, y, t, 8, 16, ph.saved_ok ? 0x808080 : KEY);
+        say(k, x, y, t, ph.saved_ok ? 0x808080 : KEY);
     }
 }
 
 static void photo_prims(TmstPrims *k) {
     if (!on) return;
     if (practice_hint && !ph.active) {
-        static const Hint h[] = {{I_NONE, "SELECT", "PHOTO MODE"}};
+        static const Hint h[] = {{I_NONE, "SELECT", "Photo Mode"}};
         band(k, 480 - 14 - LINE - 6, LINE + 10);
         hint_line(k, 480 - 14 - LINE, h, 1);
         return;

@@ -4,7 +4,7 @@
 #include "tmst_compat.h"
 #include "tmst_files.h"
 #include "tmst_png.h"
-#include "tmst_font.h"
+#include "tmst_ui_font.h"
 #include "psx_sdl.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -187,21 +187,16 @@ static void glyph_blit(int g, int x, int y, int w, int h, uint32_t colour, uint3
     art_blit(&im, x, y, w, h, ART_PLAIN, shadow ? 150 : 255);
 }
 /* A pad button in a line of text (ART_CROSS .. ART_SQUARE, in the two cells
- * it is given): a dark round key, its symbol in the PlayStation's colour. */
+ * it is given): the symbol alone in the PlayStation's colour (the hints'
+ * colours: the Jukebox's, Photo Mode's), its strokes thick. */
 static void put(int x, int y, uint32_t argb) {
     if (x >= 0 && x < ART_W && y >= 0 && y < ART_H) art_canvas[y * ART_W + x] = argb;
 }
 static void button(char b, int cx, int cy, int r) {
-    int rx = unit_x(r), t = r / 6 > 1 ? r / 6 : 1;                /* the canvas's units are not square */
-    static const uint32_t ink[4] = {0xff7fa8ffu, 0xffff6a6au, 0xff40e0a0u, 0xffe88ad8u};
+    int t = r / 6 > 1 ? r / 6 : 1;                               /* the canvas's units are not square: unit_x() */
+    static const uint32_t ink[4] = {0xff7aa7ffu, 0xffff6b6bu, 0xff3ecf8eu, 0xffff8fd8u};
     uint32_t c = ink[b - ART_CROSS];
-    for (int y = -r; y <= r; y++)
-        for (int x = -rx; x <= rx; x++) {
-            int64_t d = (int64_t)x * x * r * r + (int64_t)y * y * rx * rx, R = (int64_t)r * r * rx * rx;
-            if (d > R) continue;
-            put(cx + x, cy + y, d * 100 > R * 82 ? 0xff707070u : 0xff202024u);   /* a light rim */
-        }
-    int s = r * 55 / 100, sx = unit_x(s);
+    int s = r * 75 / 100, sx = unit_x(s);
     if (b == ART_CROSS)
         for (int i = -s; i <= s; i++)
             for (int k = -t; k <= t; k++) {
@@ -228,13 +223,21 @@ static void button(char b, int cx, int cy, int r) {
                 if (y < -s + 2 * t || y > s - 2 * t || x < -sx + unit_x(2 * t) || x > sx - unit_x(2 * t)) put(cx + x, cy + y, c);
 }
 int art_text(const char *s, int x, int y, int align, int scale, uint32_t colour) {
-    int width = art_text_width(s, scale);
-    x -= align == 1 ? width / 2 : align == 2 ? width : 0;
-    int w = unit_x(GLYPH_W * scale / 100), h = GLYPH_H * scale / 100, off = scale >= 80 ? 2 : 1;
-    if (!font_read) {                                        /* the add-on's font till the title font is read */
-        tmst_text_argb(art_canvas, ART_W, ART_H, x, y, s, h / 8 > 1 ? h / 8 : 1, 0xff000000u | (colour ? colour : 0xe8b830));
+    int h = GLYPH_H * scale / 100;
+    if (!font_read) {
+        /* the UI font (Fira Sans, its SCREEN face) till the title font is
+         * read: capitals 7/8 of the title font's line (as the old font's),
+         * its texels 1.75 as wide as tall on the canvas's square pixels */
+        const TmstUiFace *f = &tmst_ui_face_screen;
+        double sy = h * 7.0 / 8 / f->cap, sx = sy * 1.75;
+        int width = (int)(tmst_ui_width(f, s) * sx + 0.5);
+        x -= align == 1 ? width / 2 : align == 2 ? width : 0;
+        tmst_ui_text_scaled(art_canvas, ART_W, ART_H, x, y, sx, sy, f, s, 0xff000000u | (colour ? colour : 0xe8b830));
         return width;
     }
+    int width = art_text_width(s, scale);
+    x -= align == 1 ? width / 2 : align == 2 ? width : 0;
+    int w = unit_x(GLYPH_W * scale / 100), off = scale >= 80 ? 2 : 1;
     for (int pass = 0; pass < 2; pass++)                     /* the shadow, then the letters */
         for (int i = 0; s[i]; i++) {
             int cx = x + unit_x(i * ADVANCE * scale / 100), g = glyph_of(s[i]);

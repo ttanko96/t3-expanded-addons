@@ -142,20 +142,20 @@ class WolfCut(unittest.TestCase):
     def test_font_place(self):
         def vram(*rects):
             return pack([(b'VRAM', struct.pack('<I', len(rects)) + b''.join(rect(*r, 1) for r in rects))])
-        self.assertEqual(rs.font_place(vram()), (832, 1015))
+        self.assertEqual(rs.font_place(vram()), (832, 963))
         # the bottom right taken: the next place up, never on the wolf
-        self.assertEqual(rs.font_place(vram((768, 960, 256, 64))), (576, 1015))
+        self.assertEqual(rs.font_place(vram((768, 960, 256, 64))), (576, 963))
         full = [(x, y, 16, 64) for x in range(0, 1024, 16) for y in range(512, 1024, 64)
                 if not (640 <= x and y < 768)]
         self.assertIsNone(rs.font_place(vram(*full)))
         self.assertEqual(rs.font_place(vram(*[r for r in full if not rs.FONT_ROOM[0] <= r[0] or r[1] < 960])),
-                         (832, 1015))
+                         (832, 963))
         # as the overlay seeks it
         c = (ADDON / 'src/core/tmst_overlay.c').read_text(encoding='utf-8')
-        for s in ('ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 9, CELL_W = 6, CELL_H = 8',
+        for s in ('ATLAS_PAGES = 3, ATLAS_W = ATLAS_PAGES * 64, ATLAS_H = 61,',
                   'for (int y = 1024 - ATLAS_H; y >= 512 && atlas_x < 0; y -= 8)',
                   'for (int x = 1024 - ATLAS_W; x >= 0; x -= 64)',
-                  '(y - 512) / 256 == (y + CELL_H - 1 - 512) / 256'):
+                  '(y - 512) / 256 == (y + ATLAS_H - 1 - 512) / 256'):
             self.assertIn(s, c)
 
     def test_cut_fitted_keeps_room_for_the_letters(self):

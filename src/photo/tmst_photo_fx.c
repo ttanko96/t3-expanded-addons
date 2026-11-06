@@ -4,7 +4,7 @@
  * the primitives 0xBBGGRR (the GPU's), of the pixels 0xAARRGGBB. */
 #include "tmst_photo_fx.h"
 #include "tmst_compat.h"
-#include "tmst_font.h"
+#include "tmst_ui_font.h"
 #include "tmst_core.h"
 #include "tmst_files.h"
 #include "tmst_png.h"
@@ -14,10 +14,10 @@
 #include <string.h>
 
 const char *const tmst_photo_filter_names[FX_FILTERS] = {
-    "NONE", "BLACK & WHITE", "SEPIA", "NOIR", "VINTAGE", "HIGH CONTRAST", "COLD", "WARM", "TEAL & ORANGE",
-    "DUOTONE", "POSTER", "NIGHT VISION", "SCANLINES", "NEGATIVE"};
-const char *const tmst_photo_frame_names[FR_FRAMES] = {"NONE", "LETTERBOX", "POLAROID", "FILM STRIP", "VIGNETTE", "T3E RED", "T3E BLACK",
-                                                       "CRT TV", "COMIC"};
+    "None", "Black & white", "Sepia", "Noir", "Vintage", "High contrast", "Cold", "Warm", "Teal & orange",
+    "Duotone", "Poster", "Night vision", "Scanlines", "Negative"};
+const char *const tmst_photo_frame_names[FR_FRAMES] = {"None", "Letterbox", "Polaroid", "Film strip", "Vignette", "T3E red", "T3E black",
+                                                       "CRT TV", "Comic"};
 
 int tmst_photo_filter_cpu(int f) {
     return f == FX_BW || f == FX_SEPIA || f == FX_NOIR || f == FX_TEAL_ORANGE || f == FX_DUOTONE || f == FX_POSTER ||
@@ -123,23 +123,16 @@ static void quad(Canvas *c, const int x[4], const int y[4], const uint32_t k[4],
     triangle(c, ax, ay, ak, m);
     triangle(c, bx, by, bk, m);
 }
-/* The core's font: each glyph's 5 x 7 dots in a cell of cw x ch, white
- * times tint / 128. */
-static void text(Canvas *c, int x, int y, const char *s, int cw, int ch, uint32_t tint) {
-    if (c->k) { tmst_prim_text(c->k, x, y, s, cw, ch, tint); return; }
+/* The UI font (Fira Sans, tmst_ui_font.h), its capitals' top at y + 1
+ * (where the old 5 x 7 font's 14-unit capitals were centred, in a cell from
+ * y): the GPU's quads live, the same glyphs over the photo's pixels, white
+ * times tint / 128. Returns the width in screen units. */
+static int text(Canvas *c, int x, int y, const char *s, uint32_t tint) {
+    if (c->k) return tmst_ui_prim_text(c->k, x, y + 1, s, 1, tint);
     uint32_t colour = rgb(255 * chan(tint, 0) / 128, 255 * chan(tint, 8) / 128, 255 * chan(tint, 16) / 128);
-    for (; *s; s++, x += cw) {
-        if (*s == ' ') continue;
-        const uint8_t *rows = tmst_font_glyph((unsigned char)*s);
-        for (int r = 0; r < 7; r++)
-            for (int q = 0; q < 5; q++) {
-                if (!(rows[r] >> (4 - q) & 1)) continue;
-                int x0 = col(c, x + q * cw / 6.0), x1 = col(c, x + (q + 1) * cw / 6.0);
-                int y0 = row(c, y + r * ch / 8.0), y1 = row(c, y + (r + 1) * ch / 8.0);
-                for (int py = y0; py < y1; py++)
-                    for (int px = x0; px < x1; px++) c->px[(size_t)py * c->w + px] = colour;
-            }
-    }
+    tmst_ui_text_scaled(c->px, c->w, c->h, (x - c->left) * c->s, (y + 1) * c->s, c->s / 2, c->s / 2,
+                        &tmst_ui_face_screen, s, colour);
+    return tmst_ui_prim_width(s, 1);
 }
 /* The frame plus itself times tint / 128 (the 368-pixel screen only, as the
  * GPU's copy). */
@@ -337,7 +330,7 @@ static void film(Canvas *c) {
  * silver, a dark red edge. Read back once in a while (the lower VRAM half,
  * tmst_compat_vram_read) for each letter's width and for the photo's CPU,
  * which draws them filtered at its scale; live, textured quads from the page
- * itself. Not there (no read-back, or not these letters): the core's font. */
+ * itself. Not there (no read-back, or not these letters): the UI font (Fira Sans). */
 enum { T3F_PAGE_X = 896, T3F_TW = 192, T3F_TH = 200, T3F_CW = 24, T3F_CH = 40, T3F_V0 = 1, T3F_V1 = 39,
        T3F_CLUT_X = 384, T3F_CLUT_Y = 506, T3F_RECHECK = 60 };
 static const char t3f_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!?.'123456789-";
@@ -542,7 +535,7 @@ static void tekken(Canvas *c, uint32_t base, uint32_t line, uint32_t marks) {
     int lx = l + 2;
     logo_draw(c, lx, H - LOGO_H - 4);
     /* the name in the bottom bar, marks either side, centred right of the
-     * logo: Tekken 3's letters (the core's font, gold, where they are not
+     * logo: Tekken 3's letters (the UI font, gold, where they are not
      * there) */
     static const char name[] = "TEKKEN 3 EXPANDED";
     enum { NAME_H = 19, NAME_GAP = 1 };
@@ -554,10 +547,10 @@ static void tekken(Canvas *c, uint32_t base, uint32_t line, uint32_t marks) {
         t3f_text(c, tx, ty, name, NAME_H, NAME_GAP);
         return;
     }
-    int cw = 8, w = (int)(sizeof name - 1) * cw, tx = mid - w / 2, ty = H - BOTTOM + 7;
+    int w = tmst_ui_prim_width(name, 1), tx = mid - w / 2, ty = H - BOTTOM + 7;
     rect(c, tx - 22, ty + 6, 12, 4, marks, OPAQUE);
     rect(c, tx + w + 10, ty + 6, 12, 4, marks, OPAQUE);
-    text(c, tx, ty, name, cw, 16, 0x205878);
+    text(c, tx, ty, name, 0x205878);
 }
 
 /* A quarter disc of `bgr` filling the corner (cx, cy) outside the circle of
@@ -641,11 +634,11 @@ static void comic(Canvas *c) {
     rect(c, x1 - LINE_X, y0, LINE_X, y1 - y0, INK, OPAQUE);
     halftone(c, x1 - LINE_X, y1 - LINE_Y, -1, -1, INK);
     /* the caption, top left */
-    static const char text_[] = "MEANWHILE...";
-    int tw = (int)(sizeof text_ - 1) * 7, bx = x0 + LINE_X + 6, by = y0 + LINE_Y + 6;
+    static const char text_[] = "MEANWHILE...";               /* a comic's caption: capitals */
+    int tw = tmst_ui_prim_width(text_, 1), bx = x0 + LINE_X + 6, by = y0 + LINE_Y + 6;
     rect(c, bx, by, tw + 14, 24, INK, OPAQUE);
     rect(c, bx + 2, by + 3, tw + 10, 18, CAPTION, OPAQUE);
-    text(c, bx + 7, by + 4, text_, 7, 16, 0x101010);
+    text(c, bx + 7, by + 4, text_, 0x101010);
 }
 
 static void frame_ops(Canvas *c, int f) {
