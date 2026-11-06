@@ -3,7 +3,7 @@ id = "tmst.tekken2"
 version = "1.0.0"
 name = "Tekken 2 Content"
 author = "TMST"
-description = "What the add-on takes from your own Tekken 2 PlayStation disc (Setup TMST.cmd), in one package: Tekken 2 Content switches it all on or off, and under it, in the TMST / Tekken 2 Content group, each part on its own. Music: Tekken 2's and the Tekken 1 stage themes it plays again, as the Jukebox's TEKKEN 1 and TEKKEN 2 categories (Console and Arcade). Stages: Tekken 2's 23 stages, drawn by the game's stage engine, picked as TEKKEN 2 on the STAGE line of VS and Practice. Restart after toggling this package."
+description = "What the add-on takes from your own Tekken 2 PlayStation disc (Setup TMST.cmd), in one package: Tekken 2 Content switches it all on or off, and under it, in the TMST / Tekken 2 Content group, each part on its own. Music: Tekken 2's and the Tekken 1 stage themes it plays again, as the Jukebox's TEKKEN 1 and TEKKEN 2 categories (Console and Arcade). Stages: Tekken 2's 23 stages, drawn by the game's stage engine, picked as TEKKEN 2 on the STAGE line of VS and Practice. Wireframe Mode: Tekken 2's hidden mode, your fighter in green lines, the camera behind its head, switched on in GAME OPTION. Restart after toggling this package."
 license = "PolyForm-Noncommercial-1.0.0"
 resolver = "declarative"
 save_compatibility = "shared"
@@ -54,5 +54,21 @@ id = "tmst.tekken2.stages"
 
 [[constraint]]
 feature = "stages"
+kind = "requires_feature"
+requires_feature = "tekken2"
+
+[[feature]]
+id = "wireframe"
+name = "Wireframe Mode"
+description = "Tekken 2's hidden Wireframe Mode: your fighter drawn in glowing green lines, no fill, and the camera just behind its head, looking the way the body faces. Not a button at the selector as in Tekken 2: GAME OPTION's TEKKEN 2 WIREFRAME MODE row, OFF or ON. Arcade, Team Battle, Tournament, Time Attack, Survival and Practice, with one human player (a challenger's fight, or a Team Battle of two players, keeps the game's own look); throws keep the game's camera. Needs Tekken 2 Content. Restart after changing."
+group = "TMST / Tekken 2 Content"
+default_enabled = false
+
+[[plugin]]
+feature = "wireframe"
+id = "tmst.tekken2.wireframe"
+
+[[constraint]]
+feature = "wireframe"
 kind = "requires_feature"
 requires_feature = "tekken2"
