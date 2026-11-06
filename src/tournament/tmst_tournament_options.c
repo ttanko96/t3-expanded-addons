@@ -40,9 +40,12 @@ static const struct { char c; unsigned char u, v; } cells[] = {
     {'T', 0, 84}, {'E', 8, 84}, {'N', 40, 84}, {'O', 64, 84}, {'R', 72, 84},
     {'U', 24, 56}, {'A', 24, 0}, {'M', 28, 28},
 };
-/* The rows whose Team Battle lamp the tournament does not follow (it sets
- * them itself): the rounds to win are its own. */
-static const char *const own_rows[] = { "FIGHT COUNT" };
+/* The rows whose Team Battle lamp the tournament does not follow, its own
+ * lamp: the rounds to win are its own (dim); Tekken 2's stages are its
+ * Tekken 1 and 2 tournaments' (lit; Team Battle's lamp dim). */
+static const struct { const char *title; int lit; } own_rows[] = {
+    { "FIGHT COUNT", 0 }, { "TEKKEN 2 STAGES", 1 },
+};
 
 static unsigned frames, box_frame, team_battle_lit;
 static unsigned page;                     /* the texture page the walk has reached */
@@ -85,16 +88,18 @@ static int build(void) {
     return 1;
 }
 
-/* The row under the cursor sets the tournament itself. */
+/* The row under the cursor: the tournament's own lamp (0 dim, 1 lit), -1
+ * Team Battle's. */
 static int own_row(void) {
     uint32_t rows = psx_mod_read_word(ROWS_AT), cursor = psx_mod_read_half(CURSOR);
     uint32_t title = rows ? psx_mod_read_word(rows + cursor * ROW_BYTES + 4) : 0;
-    if (title < 0x80000000u) return 0;
+    if (title < 0x80000000u) return -1;
     char s[32];
     for (unsigned i = 0; i < sizeof s; i++) if (!(s[i] = (char)psx_mod_read_byte(title + i))) break;
     s[sizeof s - 1] = 0;
-    for (unsigned i = 0; i < sizeof own_rows / sizeof own_rows[0]; i++) if (!strcmp(s, own_rows[i])) return 1;
-    return 0;
+    for (unsigned i = 0; i < sizeof own_rows / sizeof own_rows[0]; i++)
+        if (!strcmp(s, own_rows[i].title)) return own_rows[i].lit;
+    return -1;
 }
 
 void tmst_tournament_options_tick(void) {
@@ -116,7 +121,7 @@ void tmst_tournament_options_tick(void) {
         return;
     }
     if (!ready && !(ready = build())) return;
-    int want = frames - team_battle_lit <= 2 && !own_row() ? 2 : 1;
+    int own = own_row(), want = (own < 0 ? frames - team_battle_lit <= 2 : own) ? 2 : 1;
     if (shown != want || !tmst_overlay_visible()) {
         tmst_overlay_show_ex(want == 2 ? lit_line : dim_line, OUR_W, LINE_H, OUR_X, OUR_Y, TMST_OVERLAY_BORROW);
         shown = want;

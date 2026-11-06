@@ -197,14 +197,18 @@ int tmst_menu_distance(int row) {
  * the game's: our visitor colours the letters as the row's last one comes,
  * for that drawing only. A row: its letters on one line in one palette (as
  * the list turns, two rows can share a line). After a choice the menu is
- * drawn on for some frames on the next screens (7, then 1): the same
- * colour, as bright as on the menu's last frame. */
+ * drawn on for some frames on the next screens (7 then 1, OPTION MODE's 2,
+ * measured): the same colour, as bright as on the menu's last frame, on any
+ * screen while the font's letters are still drawn (the menu at 30 frames a
+ * second: QUIET VBlanks without them end it), AFTER_MAX at most. Up to
+ * LETTERS of them a frame (the menu draws 64 to 72). */
 enum { FONT_PAGE = 832 / 64, FONT_U = 172, GLYPH_W = 14, GLYPH_H = 24, WHITE_CLUT = (505 << 6) | (352 / 16),
-       AFTER_MENU = 7, AFTER_MENU_TOO = 1, LETTERS = 64, WHITE_LEVEL = 236 };
+       QUIET = 8, AFTER_MAX = 240, LETTERS = 256, WHITE_LEVEL = 236 };
 static const unsigned char fade[] = {255, 200, 150, 100, 60};        /* by rows from the highlighted one */
 static struct { unsigned frame; int n; struct { int x, y; char c; uint32_t at, clut; } l[LETTERS]; } letters;
 static unsigned frames, page;             /* VBlanks seen; the texture page the walk has reached */
 static int coloured_rows, menu_drawn;     /* the menu drawn now (its screen, or right after it) */
+static unsigned left_at;                  /* the VBlank the menu's screen was left (0: on it) */
 
 void tmst_menu_set_colour(int row, uint32_t rgb) {
     if (row < 0 || row >= row_count) return;
@@ -291,11 +295,16 @@ static void colour_vblank(void) {
     unsigned screen = psx_mod_read_half(SCREEN);
     if (screen == MENU) {
         for (int r = 0; r < row_count; r++) rows[r].distance = tmst_menu_distance(r);
-        menu_drawn = 1;
+        menu_drawn = 1; left_at = 0;
         tmst_overlay_show_prims();
-    } else if (menu_drawn && (screen == AFTER_MENU || screen == AFTER_MENU_TOO)) {
+        return;
+    }
+    if (!menu_drawn) return;
+    if (!left_at) left_at = frames;
+    unsigned last = letters.frame > left_at ? letters.frame : left_at;
+    if (frames - last <= QUIET && frames - left_at < AFTER_MAX) {
         tmst_overlay_show_prims();
-    } else if (menu_drawn) {
+    } else {
         menu_drawn = 0;
         if (!tmst_overlay_visible()) tmst_overlay_hide();   /* another mod's picture stays */
     }

@@ -56,7 +56,8 @@ The King of Iron Fist Tournament, as a mode of its own.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
 - **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the
-  option affects the tournament (as Team Battle's, but FIGHT COUNT: the tournament's rounds are its own).
+  option affects the tournament (as Team Battle's, but FIGHT COUNT: the tournament's rounds are its own; and TEKKEN 2 STAGES,
+  which its Tekken 1 and Tekken 2 tournaments use).
 - The tournaments won are saved beside the memory card (`saves\tournament.txt`; deleting it locks them again).
 - The screens' backgrounds are PNG files you may redraw: `addons\tmst\data\tournament\` (`progress`, `match`,
   `champion`, `over`, 854×480); `data\tournament\guides\` shows where the mod draws on each.
