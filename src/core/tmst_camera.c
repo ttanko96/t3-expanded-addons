@@ -121,9 +121,23 @@ extern void __tmst_chain_func_8003A818(CPUState *cpu);
 extern void __real_func_8003A818(CPUState *cpu);
 void __tmst_chain_func_8003A818(CPUState *cpu) { __real_func_8003A818(cpu); }
 #endif
+/* Tekken 2's Wireframe Mode (src/tekken2/tmst_tekken2_wireframe.c): around a
+ * fighter's drawing, entry and return. */
+int tmst_t2wf_draw_begin(uint32_t record) __attribute__((weak));
+void tmst_t2wf_draw_end(uint32_t record) __attribute__((weak));
 void __wrap_func_8003A818(CPUState *cpu) {
+    static uint32_t ret, sp, record;
+    static int around;
     if (cpu->pc == 0 && free_on && (fighters_hidden || behind(cpu->gpr[4]))) { cpu->pc = cpu->gpr[31]; return; }
+    if (cpu->pc == 0 || cpu->pc == 0x8003a818u) {
+        record = cpu->gpr[4]; ret = cpu->gpr[31]; sp = cpu->gpr[29];
+        /* (not under our free camera: a photo shows the fighters as they are) */
+        around = !free_on && tmst_t2wf_draw_begin && tmst_t2wf_draw_begin(record);
+    }
     __tmst_chain_func_8003A818(cpu);
+    if (!around || cpu->pc != ret || cpu->gpr[29] != sp) return;
+    around = 0;
+    tmst_t2wf_draw_end(record);
 }
 
 /* The end of the scene's drawing in the whole-screen pause frame (called

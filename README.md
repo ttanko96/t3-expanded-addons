@@ -105,6 +105,20 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
 - **Unknown:** Szechwan, Hong Kong, Akihabara, the Great Wall, Launch Pad, Kyoto and Arizona have the top of their
   background trimmed, so that Unknown's wolf and the add-on's letters keep their room in the video memory.
 
+#### Wireframe Mode
+Tekken 2's hidden Wireframe Mode: your fighter drawn in glowing green lines, no fill, and the camera just behind its
+head, looking the way the body faces.
+- **Switching it on:** not a button at the selector as in Tekken 2, but GAME OPTION's **TEKKEN 2 WIREFRAME MODE**
+  row, **OFF** or **ON** (kept beside the memory card, in `t2-wireframe.txt`).
+- **Modes:** Arcade, Team Battle, Tournament, Time Attack, Survival and Practice, with one human player. A
+  challenger's fight in the Arcade, or a Team Battle of two players, keeps the game's own look; VS, Tekken Ball and
+  Tekken Force too.
+- **The game's own camera and the solid fighter:** at the fighters' entrance, during throws and from the KO on (the
+  replay, the winner's pose); in Photo Mode the fighter is solid too.
+- **The camera follows:** it turns the way the game turns the fighter, smoothly, so that a combo's blows do not
+  swing it; TTT1 guests too.
+- Your fighter's shadow stays.
+
 ## Installation
 
 You need Windows 10/11, a Tekken 3 Expanded that has been set up once with its own `Setup Tekken 3.cmd` (the game

@@ -40,6 +40,7 @@ set(TMST_SOURCES
     src/tekken2/tmst_tekken2_extras.c
     src/tekken2/tmst_tekken2_trace.c
     src/tekken2/tmst_tekken2_anchor.c
+    src/tekken2/tmst_tekken2_wireframe.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -87,6 +88,7 @@ set(TMST_CHAINS
     "func_800826E8|src/tekken2/tmst_tekken2_stages.c"
     "func_8006D014|src/tekken2/tmst_tekken2_mirror.c"
     "func_80036CAC|src/tekken2/tmst_tekken2_mirror.c"
+    "func_80064E10|src/tekken2/tmst_tekken2_wireframe.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).
