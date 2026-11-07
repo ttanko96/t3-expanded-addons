@@ -33,6 +33,7 @@ set(TMST_SOURCES
     src/tournament/tmst_bracket.c
     src/tournament/tmst_tournament_progress.c
     src/tournament/tmst_tournament_stages.c
+    src/tournament/tmst_tournament_cine.c
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament_options.c
@@ -88,6 +89,7 @@ set(TMST_CHAINS
     "func_8003A818|src/core/tmst_camera.c"
     "func_8004F0E4|src/tournament/tmst_tournament.c"
     "func_8004439C|src/tournament/tmst_tournament.c"
+    "func_80050450|src/tournament/tmst_tournament.c"
     "func_800826E8|src/tekken2/tmst_tekken2_stages.c"
     "func_8006D014|src/tekken2/tmst_tekken2_mirror.c"
     "func_80049848|src/tekken2/tmst_tekken2_stages.c"

@@ -39,6 +39,7 @@
 #include "tmst_menu.h"
 #include "tmst_music.h"
 #include "tmst_input.h"
+#include "tmst_spu.h"
 #include "tmst_bracket.h"
 #include "tmst_tournament_pools.h"
 #include "tmst_tournament_progress.h"
@@ -46,6 +47,8 @@
 #include "tmst_tournament_art.h"
 #include "tmst_tournament_screens.h"
 #include "tmst_tournament_options.h"
+#include "tmst_tournament_cine.h"
+#include "tmst_files.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "memcard.h"
@@ -513,6 +516,235 @@ void __wrap_func_8004439C(CPUState *cpu) {
     __tmst_chain_func_8004439C(cpu);
 }
 
+/* ---- the boss intro ------------------------------------------------------------ */
+/* Before the boss's second form (the CPU's team of two, its second member's
+ * round: Kazuya, then Devil), once that round is loaded (the fight's screen,
+ * phase INTRO_PHASE: Team Battle's next member has no intro of its own, the
+ * round starts 0.3 s later), a short cinematic (src/tournament/
+ * tmst_tournament_cine.c) in the Expanded's cinematic engine
+ * (src/tekken3_cine.c): its .cine written from the boss's own TTT1 combat
+ * pack (the player's install, mods/ttt1) into addons/tmst/workspace/
+ * boss-intro, played with no one to take over, so the fight goes on where
+ * it was (the engine puts back the phase, the fighters' places, the camera).
+ * START skips it: at the start of one of the engine's frames (0x80050450 at
+ * the fight frame's own stack: the engine is not halfway through a call of
+ * the game's), the engine let go (tekken3_cine_abandon) and what it would
+ * have put back put back here (the same: saved as it starts). The boss's
+ * music leads in with it (tmst_jukebox_lead_in, the user's choice).
+ * The parts' own sounds play with them (intro_mix). Bench:
+ * TMST_BOSS_INTRO_PHASE, another phase to start in; TMST_BOSS_INTRO_CINE,
+ * another .cine played instead. */
+extern int tekken3_cine_play(const char *path, int pre, void (*on_done)(void)) __attribute__((weak));
+extern int tekken3_cine_engine_active(void) __attribute__((weak));
+extern void tekken3_cine_abandon(void) __attribute__((weak));
+extern const char *tekken3_ttt1_asset_root(void) __attribute__((weak));
+extern const char *tekken3_guest_moves_prefix_for(unsigned player) __attribute__((weak));
+enum { INTRO_PHASE = 4, FRAME_PIECE = 0x80050450, ACTORS = 0x800a9228, ACTOR_SIZE = 0x188c, FILL = 0x8009e73c,
+       DARK = 0x800afaa0, CAM_MODE = 0x800a0400, CAM_MODE_SIZE = 0x80, CAM_OBJECT = 0x800a8c40, CAM_OBJECT_SIZE = 0xc0 };
+static struct {
+    int played_match, playing, skip;
+    int swap;                                 /* the intro's character change (its frame), 0 none: no skip before it */
+    uint16_t previous;                        /* the player's last read (a START held from before is no press) */
+    uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
+    unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
+} intro = {.played_match = -2};
+static int intro_phase(void) {
+    static int phase = -1;
+    if (phase < 0) { const char *e = getenv("TMST_BOSS_INTRO_PHASE"); phase = e && *e ? atoi(e) : INTRO_PHASE; }
+    return phase;
+}
+/* The packs an intro's parts read (tmst_tournament_cine.h's TmstPackOf):
+ * the boss's own (NULL: its moves' prefix, P2's) or another by its stem
+ * ("Kazuya-TTT1"), mods/ttt1/<stem>-combat.jmv, read whole once while the
+ * .cine is written. */
+enum { PACKS_MAX = 4 };
+static struct { char stem[64]; uint8_t *data; size_t size; } packs[PACKS_MAX];
+static const uint8_t *intro_pack(const char *stem, size_t *size, void *ctx) {
+    (void)ctx;
+    const char *root = tekken3_ttt1_asset_root ? tekken3_ttt1_asset_root() : NULL;
+    if (!stem) stem = tekken3_guest_moves_prefix_for ? tekken3_guest_moves_prefix_for(1) : NULL;
+    if (!root || !stem || !*stem || strlen(stem) >= sizeof packs[0].stem) return NULL;
+    int i = 0;
+    for (; i < PACKS_MAX && packs[i].stem[0]; i++)
+        if (!strcmp(packs[i].stem, stem)) { *size = packs[i].size; return packs[i].data; }
+    if (i == PACKS_MAX) return NULL;
+    snprintf(packs[i].stem, sizeof packs[i].stem, "%s", stem);   /* tried, found or not */
+    char path[4200];
+    FILE *f = snprintf(path, sizeof path, "%s/%s-combat.jmv", root, stem) < (int)sizeof path ? fopen(path, "rb") : NULL;
+    if (!f) { tmst_log("tournament: no %s for the boss intro", path); return NULL; }
+    long n = fseek(f, 0, SEEK_END) == 0 ? ftell(f) : -1;
+    uint8_t *data = NULL;
+    if (n > 32 && n < 64L * 1024 * 1024 && fseek(f, 0, SEEK_SET) == 0 && (data = malloc((size_t)n)) &&
+        fread(data, 1, (size_t)n, f) != (size_t)n) { free(data); data = NULL; }
+    fclose(f);
+    packs[i].data = data; packs[i].size = data ? (size_t)n : 0;
+    *size = packs[i].size;
+    return data;
+}
+static void intro_packs_free(void) {
+    for (int i = 0; i < PACKS_MAX; i++) { free(packs[i].data); packs[i].data = NULL; packs[i].size = 0; packs[i].stem[0] = 0; }
+}
+static void intro_save(void) {
+    intro.phase = psx_mod_read_half(PHASE);
+    for (unsigned p = 0; p < 2; p++)
+        for (unsigned k = 0; k < 12; k++) intro.actor[p][k] = psx_mod_read_word(ACTORS + p * ACTOR_SIZE + k * 4);
+    for (unsigned i = 0; i < 4; i++) intro.fill[i] = psx_mod_read_word(FILL + i * 16);
+    intro.dark = psx_mod_read_byte(DARK);
+    for (unsigned k = 0; k < CAM_MODE_SIZE / 4; k++) intro.mode[k] = psx_mod_read_word(CAM_MODE + k * 4);
+    for (unsigned k = 0; k < CAM_OBJECT_SIZE / 4; k++) intro.object[k] = psx_mod_read_word(CAM_OBJECT + k * 4);
+}
+static void intro_restore(void) {
+    psx_mod_write_half(PHASE, (uint16_t)intro.phase);
+    for (unsigned p = 0; p < 2; p++)
+        for (unsigned k = 0; k < 12; k++) psx_mod_write_word(ACTORS + p * ACTOR_SIZE + k * 4, intro.actor[p][k]);
+    for (unsigned i = 0; i < 4; i++) psx_mod_write_word(FILL + i * 16, intro.fill[i]);
+    psx_mod_write_byte(DARK, intro.dark);
+    for (unsigned k = 0; k < CAM_MODE_SIZE / 4; k++) psx_mod_write_word(CAM_MODE + k * 4, intro.mode[k]);
+    for (unsigned k = 0; k < CAM_OBJECT_SIZE / 4; k++) psx_mod_write_word(CAM_OBJECT + k * 4, intro.object[k]);
+}
+/* The intro's sounds (tmst_boss_intro_sounds: the parts' records' own): each
+ * from its fighter's TTT1 sound pack (mods/ttt1/<stem>-sfx.jus, the
+ * Expanded's tools/ttt1/sfx.py: "JUS1", 1, size, count, 44 100, then per
+ * sound index, offset, frames, driver ID; mono 16-bit), read as the intro
+ * starts, played by our mixer (src/core/tmst_spu.h) from its frame, at the
+ * player's sound-effects volume, at the level the Expanded gives the TTT1
+ * sounds (its 200 %, against the SPU's main volume about half). The
+ * engine plays none of them: its records have no sounds. */
+enum { CUES_MAX = 8, JUS_MAGIC = 0x3153554a };
+static struct { int frame; int16_t *pcm; uint32_t frames; volatile int32_t pos; } cues[CUES_MAX];
+static volatile int cue_count;
+static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+/* Sound `index` of <stem>-sfx.jus (malloc'ed), NULL without it. */
+static int16_t *jus_sound(const char *stem, unsigned index, uint32_t *frames) {
+    const char *root = tekken3_ttt1_asset_root ? tekken3_ttt1_asset_root() : NULL;
+    char path[4200];
+    if (!root || !stem || snprintf(path, sizeof path, "%s/%s-sfx.jus", root, stem) >= (int)sizeof path) return NULL;
+    FILE *f = fopen(path, "rb");
+    uint8_t head[32];
+    int16_t *pcm = NULL;
+    if (!f) return NULL;
+    if (fread(head, 1, sizeof head, f) == sizeof head && le32(head) == JUS_MAGIC && le32(head + 4) == 1 &&
+        le32(head + 16) == 44100) {
+        uint32_t count = le32(head + 12), size = le32(head + 8);
+        for (uint32_t i = 0; i < count && i < 0x800; i++) {
+            uint8_t e[16];
+            if (fseek(f, 32 + (long)i * 16, SEEK_SET) || fread(e, 1, 16, f) != 16) break;
+            if (le32(e) != index) continue;
+            uint32_t offset = le32(e + 4), n = le32(e + 8);
+            if (!n || offset > size || n > (size - offset) / 2 || fseek(f, (long)offset, SEEK_SET)) break;
+            uint8_t *raw = malloc((size_t)n * 2);
+            if (raw && fread(raw, 2, n, f) == n) {
+                pcm = (int16_t *)raw;
+                for (uint32_t k = 0; k < n; k++) pcm[k] = (int16_t)(raw[k * 2] | raw[k * 2 + 1] << 8);
+                *frames = n;
+            } else free(raw);
+            break;
+        }
+    }
+    fclose(f);
+    return pcm;
+}
+static void intro_sounds_free(void) {
+    cue_count = 0;
+    for (int i = 0; i < CUES_MAX; i++) { free(cues[i].pcm); cues[i].pcm = NULL; cues[i].frames = 0; cues[i].pos = -1; }
+}
+static void intro_sounds_load(const TmstBossIntro *e) {
+    TmstCineSound s[CUES_MAX];
+    intro_sounds_free();
+    int n = tmst_boss_intro_sounds(e, intro_pack, NULL, s, CUES_MAX), k = 0;
+    const char *own = tekken3_guest_moves_prefix_for ? tekken3_guest_moves_prefix_for(1) : NULL;
+    for (int i = 0; i < n; i++) {
+        uint32_t frames = 0;
+        int16_t *pcm = jus_sound(s[i].stem ? s[i].stem : own, s[i].index, &frames);
+        if (!pcm) { tmst_log("tournament: the intro's sound %u of %s not there", s[i].index, s[i].stem ? s[i].stem : own); continue; }
+        cues[k].frame = s[i].frame; cues[k].pcm = pcm; cues[k].frames = frames; cues[k].pos = -1;
+        tmst_log("tournament: the intro's sound %u of %s at its frame %d", s[i].index, s[i].stem ? s[i].stem : own, s[i].frame);
+        k++;
+    }
+    cue_count = k;
+}
+extern int tekken3_cine_engine_frame(void) __attribute__((weak));
+static void intro_mix(int16_t *out, int frames, int audible, int music_gain) {
+    (void)music_gain;
+    int f = intro.playing && tekken3_cine_engine_frame ? tekken3_cine_engine_frame() : -1, gain = tmst_spu_sfx_gain();
+    for (int c = 0; c < cue_count; c++) {
+        if (!cues[c].pcm) continue;
+        if (cues[c].pos < 0) {
+            if (f < cues[c].frame || f > cues[c].frame + 2) continue;   /* not yet, or skipped past */
+            cues[c].pos = 0;
+            tmst_log("tournament: the intro's sound at its frame %d", f);
+        }
+        if (!intro.playing) continue;                                    /* left: silent from here */
+        for (int i = 0; i < frames && (uint32_t)cues[c].pos < cues[c].frames; i++, cues[c].pos++) {
+            int32_t v = audible ? cues[c].pcm[cues[c].pos] * gain / 100 : 0;
+            for (int k = 0; k < 2; k++) {
+                int32_t m = out[i * 2 + k] + v;
+                out[i * 2 + k] = (int16_t)(m > 32767 ? 32767 : m < -32768 ? -32768 : m);
+            }
+        }
+    }
+}
+static void boss_intro_tick(unsigned screen, int due) {
+    if (intro.playing && !(tekken3_cine_engine_active && tekken3_cine_engine_active())) {
+        intro.playing = 0; intro.skip = 0;
+        tmst_log("tournament: the boss intro over");
+    }
+    if (!tekken3_cine_play || !tekken3_cine_abandon || team_size() < 2 || due != 1 || intro.played_match == mt.match ||
+        screen != FIGHT || psx_mod_read_half(PHASE) != (unsigned)intro_phase())
+        return;
+    intro.played_match = mt.match;
+    const Fighter *boss = member_fighter(1);
+    size_t size = 0;
+    if (boss->id < STOCK || !intro_pack(NULL, &size, NULL)) {
+        tmst_log("tournament: no TTT1 moves for %s, no intro", boss->name);
+        intro_packs_free();
+        return;
+    }
+    char dir[4200], path[4300];
+    snprintf(dir, sizeof dir, "%s/addons/tmst/workspace/boss-intro", tmst_files_root());
+    snprintf(path, sizeof path, "%s/%s.cine", dir, boss->key);
+    FILE *f = tmst_files_make_dirs(dir) ? fopen(path, "w") : NULL;
+    const TmstBossIntro *e = tmst_boss_intro(boss->key);
+    int ok = f && tmst_boss_intro_write(f, e, intro_pack, NULL, psx_mod_read_half(FIGHTERS), psx_mod_read_half(COSTUMES),
+                                        boss->id, boss->costume);
+    if (f && fclose(f)) ok = 0;
+    if (ok) intro_sounds_load(e);
+    intro_packs_free();
+    if (!ok) { tmst_log("tournament: %s not written, no intro", path); return; }
+    const char *bench = getenv("TMST_BOSS_INTRO_CINE");      /* bench: another .cine played instead */
+    if (bench && *bench) snprintf(path, sizeof path, "%s", bench);
+    intro_save();
+    if (!tekken3_cine_play(path, 0, NULL)) { tmst_log("tournament: %s not played", path); return; }
+    intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0;
+    tmst_log("tournament: %s's intro (%s) at phase %d, %d frames", boss->name, e->key ? e->key : "the fallback",
+             intro_phase(), e->frames);
+    /* The boss's piece from the intro's first frame on (the Jukebox; the
+     * game starts it only with the round). */
+    if (!tmst_jukebox_lead_in()) tmst_log("tournament: the intro without music (no Jukebox piece)");
+}
+/* The fight frame's piece after its pause check (src/tekken3_cine.c runs its
+ * frames there): a skip at a frame's start. */
+extern void __tmst_chain_func_80050450(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_80050450
+extern void __real_func_80050450(CPUState *cpu);
+void __tmst_chain_func_80050450(CPUState *cpu) { __real_func_80050450(cpu); }
+#endif
+void __wrap_func_80050450(CPUState *cpu) {
+    if (cpu->pc == 0 || cpu->pc == FRAME_PIECE) {
+        if (!intro.playing) intro.frame_sp = cpu->gpr[29];
+        /* Not before the character change: the boss would stay the other
+         * character's model (the START is kept till just after it). */
+        else if (intro.skip && cpu->gpr[29] == intro.frame_sp && !cpu->gpr[2] &&
+                 (!intro.swap || !tekken3_cine_engine_frame || tekken3_cine_engine_frame() > intro.swap + 1)) {
+            tekken3_cine_abandon();
+            intro_restore();
+            intro.playing = 0; intro.skip = 0;
+            tmst_log("tournament: the boss intro left, the fight goes on");
+        }
+    }
+    __tmst_chain_func_80050450(cpu);
+}
+
 /* A match under way: the opponent kept through the loading screen, the
  * result at the results. */
 static void match_tick(unsigned screen) {
@@ -525,6 +757,7 @@ static void match_tick(unsigned screen) {
     }
     int due = member_due();
     const Fighter *f = member_fighter(due);
+    boss_intro_tick(screen, due);
     if (screen == LOADING && (psx_mod_read_half(FIGHTERS + 2) != f->id || mt.member != due)) {
         if (mt.member == due) tmst_log("tournament: the CPU's member was changed (ID %u), %s again", psx_mod_read_half(FIGHTERS + 2), f->name);
         else tmst_log("tournament: the CPU's next member, %s", f->name);
@@ -779,6 +1012,16 @@ static void cover_input(uint16_t buttons) {
 }
 static uint16_t input(int player, uint16_t buttons) {
     if (!on) return buttons;
+    /* The boss intro: START skips it; nothing reaches the game meanwhile
+     * (its pause would hold the cinematic). */
+    if (intro.playing) {
+        if (player == 0) {
+            uint16_t edges = (uint16_t)~buttons & intro.previous;
+            intro.previous = buttons;
+            if ((edges & B_START) && !intro.skip) { intro.skip = 1; tmst_log("tournament: the boss intro skipped"); }
+        }
+        return 0xffff;
+    }
     if (mt.flow == FLOW_BETWEEN && player == 0) cover_input(buttons);
     if (mt.flow == FLOW_BETWEEN && (mt.cover || mt.stalled) && !tm.active)
         return player != 0 ? 0xffff : mt.stalled ? (uint16_t)(buttons & ~mt.hold) : (uint16_t)~mt.hold;
@@ -1650,6 +1893,7 @@ static void activate(void) {
     if (menu_row < 0) tmst_log("tournament: no main-menu row (no room)");
     tmst_menu_set_colour(menu_row, 0xE8C030);                  /* old gold */
     tmst_input_add_filter(input);
+    tmst_spu_add_mixer(intro_mix);
     tmst_music_add_hook(music);
     tmst_overlay_set_prims(tournament_prims);
     tmst_overlay_prepare();

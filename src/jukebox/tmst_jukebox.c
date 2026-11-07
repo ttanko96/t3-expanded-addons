@@ -1196,8 +1196,9 @@ enum { M_STATE = 0x800a05d8, M_AUDIBLE = 0x800a061c, M_CUR = 0x800a0620, M_RESUM
        ROUND_MUSIC = 0x800add08 };
 static Choice fight_choice;
 static int fight_armed, fight_id = -1, fight_seen, fight_paused, fight_waiting;
+static int lead_in;                           /* tmst_jukebox_lead_in: streaming ahead of the game's piece */
 static void fight_stop(void) {
-    stream_close(&fight); fight_armed = 0; fight_id = -1;
+    stream_close(&fight); fight_armed = 0; fight_id = -1; lead_in = 0;
     if (!jb.active) tmst_spu_mute_game_music(0);
 }
 /* A piece the game loops from the XA in both music modes, not the fight's
@@ -1221,6 +1222,17 @@ static void mix(int16_t *out, int frames, int audible, int gain) {
     if (!on) return;
     if (jb.active) { stream_mix(&preview, out, frames, audible, gain); return; }
     if (!fight_armed) return;
+    /* The lead-in: ours alone, at the player's music volume, until the
+     * game's start of the fight's music takes it over (music()). */
+    if (lead_in) {
+        if (!fight.kind) {
+            Track t;
+            if (!resolve(&fight_choice, &t) || !stream_open(&fight, fight_choice.cat, &t)) { fight_stop(); lead_in = 0; return; }
+            tmst_log("jukebox: %s plays %s (lead-in)", fight_choice.key, fight.what);
+        }
+        stream_mix(&fight, out, frames, audible, gain);
+        return;
+    }
     int cur = (int16_t)psx_mod_read_half(M_CUR), state = psx_mod_read_half(M_STATE);
     if (cur != fight_id || (state != 2 && state != 3)) {
         if (!fight_seen) return;                          /* not started yet */
@@ -1255,35 +1267,70 @@ static void mix(int16_t *out, int frames, int audible, int gain) {
  * stage select gave the chosen stage) or the opponent's record piece. The
  * Jukebox follows the opponent, never the stage; without a choice the
  * game's own piece plays. */
+/* The opponent's choice for its fight (its own, else a tournament's piece),
+ * NULL none; *key its key. */
+static Choice *opponent_choice(const char **key) {
+    unsigned fid = psx_mod_read_half(P2_ID), costume = psx_mod_read_byte(P2_COSTUME);
+    Choice *c = NULL;
+    *key = NULL;
+    /* Kuma's second costume is Panda, Eddy's third Tiger: their own choice
+     * first, then their fighter's. */
+    if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) *key = "panda";
+    else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) *key = "tiger";
+    else if ((*key = fighter_key(fid))) c = heard_choice(*key);
+    /* Tournament Mode's match (src/tournament/tmst_tournament.c): its
+     * piece, unless the player chose one for this opponent. */
+    const char *t_key, *t_cat, *t_name;
+    static Choice tournament;
+    if (!(c && *key && c == choice_of(*key)) && tmst_tournament_fight_music(&t_key, &t_cat, &t_name)) {
+        Track t;
+        memset(&tournament, 0, sizeof tournament);
+        snprintf(tournament.key, KEY, "%s", t_key);
+        snprintf(tournament.name, NAME, "%s", t_name);
+        tournament.cat = category_of(t_cat);
+        if (tournament.cat >= 0 && resolve(&tournament, &t)) { c = &tournament; *key = tournament.key; }
+        else tmst_log("jukebox: the tournament's %s/%s is not there, %s", t_cat, t_name,
+                      c ? "the default choice plays" : "the game's piece plays");
+    }
+    return c;
+}
+/* The lead-in (tmst_core.h): the coming fight's piece streamed ahead of the
+ * game's, at the player's music volume, until the game starts that fight's
+ * music (music(): the same choice, taken over unbroken). */
+int tmst_jukebox_lead_in(void) {
+    if (!on || jb.active) return 0;
+    const char *key;
+    Choice *c = opponent_choice(&key);
+    if (!c) return 0;
+    fight_stop();
+    fight_choice = *c; fight_id = -1; fight_seen = fight_paused = fight_waiting = 0; fight_armed = 1; lead_in = 1;
+    tmst_log("jukebox: %s's music %s/%s leads in", key, cats[c->cat].id, c->name);
+    return 1;
+}
+
 static int music(int id) {
     if (!on) return id;
     if (jb.active) return -1;                             /* the preview only, while open */
     unsigned screen = psx_mod_read_word(SCREEN);
-    if (screen != FIGHT && screen != LOADING) { if (fight_armed) fight_stop(); return id; }
+    if (screen != FIGHT && screen != LOADING) { if (fight_armed) fight_stop(); lead_in = 0; return id; }
     unsigned fid = psx_mod_read_half(P2_ID), costume = psx_mod_read_byte(P2_COSTUME);
     Choice *c = NULL;
     const char *key = NULL;
-    if (id == (int)psx_mod_read_byte(ROUND_MUSIC) || record_music(fid, costume) == id) {
-        /* Kuma's second costume is Panda, Eddy's third Tiger: their own
-         * choice first, then their fighter's. */
-        if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) key = "panda";
-        else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) key = "tiger";
-        else if ((key = fighter_key(fid))) c = heard_choice(key);
-        /* Tournament Mode's match (src/tournament/tmst_tournament.c): its
-         * piece, unless the player chose one for this opponent. */
-        const char *t_key, *t_cat, *t_name;
-        static Choice tournament;
-        if (!(c && key && c == choice_of(key)) && tmst_tournament_fight_music(&t_key, &t_cat, &t_name)) {
-            Track t;
-            memset(&tournament, 0, sizeof tournament);
-            snprintf(tournament.key, KEY, "%s", t_key);
-            snprintf(tournament.name, NAME, "%s", t_name);
-            tournament.cat = category_of(t_cat);
-            if (tournament.cat >= 0 && resolve(&tournament, &t)) { c = &tournament; key = tournament.key; }
-            else tmst_log("jukebox: the tournament's %s/%s is not there, %s", t_cat, t_name,
-                          c ? "the default choice plays" : "the game's piece plays");
+    if (id == (int)psx_mod_read_byte(ROUND_MUSIC) || record_music(fid, costume) == id) c = opponent_choice(&key);
+    /* The lead-in's piece: the game's start takes it over, the stream goes on. */
+    if (lead_in && c && fight_armed && !strcmp(fight_choice.key, c->key) && fight_choice.cat == c->cat &&
+        !strcmp(fight_choice.name, c->name)) {
+        int stand = stand_in(id);
+        lead_in = 0;
+        if (stand >= 0) {
+            fight_id = stand; fight_seen = 1; fight_waiting = 0;
+            tmst_spu_mute_game_music(1);
+            tmst_log("jukebox: %s's lead-in goes on as the fight's music (the game plays %d, muted)", key, stand);
+            return stand;
         }
+        fight_stop();
     }
+    lead_in = 0;
     if (!c) { if (fight_armed) fight_stop(); return id; }
     /* The same choice again (the next round's setup): the game keeps its
      * piece playing, and so do we. */

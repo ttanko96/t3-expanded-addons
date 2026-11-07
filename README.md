@@ -53,6 +53,10 @@ The King of Iron Fist Tournament, as a mode of its own.
 - **The bosses:** Tekken 1 Heihachi; Tekken 2 Kazuya, then Devil; Tekken 3 Ogre, then True Ogre (one round each, you
   take the life you have left on to the second); Tekken Tag Unknown (one round: she heals and changes her style);
   Free a boss drawn at the start (three rounds). The bosses cannot be picked.
+- **Boss intro:** before Devil, a short cinematic: Kazuya standing in the dark, the camera coming to him, then his
+  Tekken Tag change in lightning and a white flash, and Devil stands there; his music starts with it, the move's
+  own sounds too. START skips it (from the change on). Made from the fighters' own TTT1 moves in your install
+  (TTT1 Characters needed; without them the fight starts as before).
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
 - **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the
