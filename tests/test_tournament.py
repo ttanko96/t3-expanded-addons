@@ -1,10 +1,11 @@
 """src/tournament: the pools, the bracket and the progress file, built alone with
 the C compiler at hand (skipped without one) through tests/c/tournament_main.c."""
-import os, shutil, subprocess, tempfile, unittest
+import os, shutil, struct, subprocess, tempfile, unittest
 from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
-SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c']
+SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c',
+           'tmst_tournament_cine.c']
 # The roster keys the Expanded has today: the stock fighters, Panda and Tiger, its guests.
 STOCK = ['paul', 'law', 'lei', 'king', 'yoshimitsu', 'nina', 'hwoarang', 'xiaoyu', 'eddy', 'jin', 'julia', 'kuma',
          'bryan', 'heihachi', 'ogre', 'mokujin', 'gunjack', 'gon', 'anna', 'drb', 'trueogre', 'panda', 'tiger']
@@ -249,6 +250,143 @@ class TournamentTest(unittest.TestCase):
             self.assertEqual(self.stages(t, ['xiaoyu', 'jin', 'paul'], 1),
                              {'xiaoyu': (kind, 7), 'jin': (kind, 7), 'paul': (kind, 0)})
         self.assertEqual(self.stages(1, ['jun'], 1), {'jun': (self.T2, 2)})   # T2: no school stage
+
+    # ---- the boss intros (tmst_tournament_cine.c) ----
+    @staticmethod
+    def pack(records=4, clips=None, ch3=0, sounds=None):
+        """A TTT1 combat pack: record 0 the neutral (3 still frames), the
+        records in `clips` ({record: (frames, step)}) on their own: heading
+        0x8000, distance step a frame, channel 3 from `ch3` on, wrapping
+        past 0xFFFF; `sounds` ({record: (event1, event2, frame)}) their
+        sound lists (the others 0xFFFF, 0xFFFF, 0)."""
+        def clip(frames, step):
+            rows = []
+            for f in range(frames):
+                row = [0] * 57
+                row[0], row[1], row[2], row[3] = 0x8000, 1040, f * step, (ch3 + f * 8) & 0xffff
+                rows.append(struct.pack('<57H', *row))
+            return struct.pack('<II', 0x4a554e00 | frames, 57) + b''.join(rows)
+        clips, sounds = clips or {}, sounds or {}
+        table = 32 + records * 16
+        at = table + records * 56
+        blobs, offsets, lists = [clip(3, 0)], {None: at}, {}
+        at += len(blobs[0])
+        for r, (frames, step) in sorted(clips.items()):
+            blobs.append(clip(frames, step)); offsets[r] = at; at += len(blobs[-1])
+        for r in range(records):
+            blobs.append(struct.pack('<3H', *sounds.get(r, (0xffff, 0xffff, 0))) + b'\xff\xff'); lists[r] = at; at += 8
+        head = struct.pack('<8I', 0x314d554a, 4, 0, records, 0, 0, 0, table)
+        entries = b''.join(struct.pack('<4I', 0, 0x80000000 + i, table + i * 56, 0) for i in range(records))
+        recs = b''.join(struct.pack('<I', offsets.get(i, offsets[None])) + b'\0' * 24 + struct.pack('<I', lists[i])
+                        + b'\0' * 24 for i in range(records))
+        out = bytearray(head + entries + recs + b''.join(blobs))
+        struct.pack_into('<I', out, 8, len(out))
+        return bytes(out)
+
+    def cine(self, key, own, cmd='cine', **others):
+        args, d = [], Path(self.tmp.name)
+        (d / 'own.jmv').write_bytes(own)
+        for stem, data in others.items():
+            (d / (stem + '.jmv')).write_bytes(data)
+            args.append('%s-TTT1=%s' % (stem, d / (stem + '.jmv')))
+        r = subprocess.run([str(self.exe), cmd, key, str(d / 'own.jmv'), *args], capture_output=True, text=True)
+        return r.returncode, r.stdout.splitlines()
+
+    @staticmethod
+    def blocks(lines):
+        """The .cine's header words, its camera rows, its actors' pose rows."""
+        head, cam, poses, i = {}, [], {}, 1
+        while i < len(lines):
+            w = lines[i].split()
+            if w[0] == 'camera':
+                cam = [list(map(int, l.split())) for l in lines[i + 1:i + 1 + int(w[2])]]; i += 1 + int(w[2]); continue
+            if w[0] == 'poses':
+                poses[int(w[1])] = [list(map(int, l.split())) for l in lines[i + 1:i + 1 + int(w[3])]]; i += 1 + int(w[3]); continue
+            head.setdefault(w[0], []).append(w[1:]); i += 1
+        return head, cam, poses
+
+    @staticmethod
+    def turn(a, b): return min(abs(b - a), 65536 - abs(b - a))
+
+    def devil(self, step=20, sounds=None):
+        """Devil's intro on test packs: Kazuya's stance and tag move (record 1),
+        Devil's stance; Kazuya's channel 3 from 1000, Devil's from 30000."""
+        kazuya = self.pack(clips={1: (50, step)}, ch3=1000, sounds=sounds)
+        return self.cine('devil', self.pack(ch3=30000), Kazuya=kazuya)
+
+    def test_intro_devil(self):
+        code, out = self.devil()
+        self.assertEqual((code, out[0]), (0, 'entry devil'))
+        head, cam, poses = self.blocks(out)
+        n = int(head['length'][0][0])
+        self.assertEqual((len(cam), len(poses[1]), len(poses[0])), (n, n, 1))
+        # Kazuya first, Devil (the boss, 33 costume 0) from the swap on
+        self.assertEqual(head['actor'], [['0', '7', '1'], ['1', 'kazuya', '0']])
+        swap = int(head['swap'][0][3])
+        self.assertEqual(head['swap'][0][:3], ['1', '33', '0'])
+        self.assertEqual(head['hide'], [['0', '0']])
+        self.assertEqual(head['dark'], [['0']])
+        # the flash: up to white before the swap, down after; black at both ends
+        fades = [list(map(int, f)) for f in head['fade']]
+        self.assertEqual(fades[0][2:], [-256, 0])
+        self.assertIn([swap - 6, swap - 1, 0, 256], fades)
+        self.assertIn([swap, swap + 12, 256, 0], fades)
+        self.assertEqual(fades[-1][1:], [n - 1, 0, -256])
+        # the lightning on the actor, round the swap
+        aura = list(map(int, head['aura'][0]))
+        self.assertEqual(aura[0], 1)
+        self.assertTrue(aura[1] < swap < aura[2])
+        self.assertTrue(all(len(p) == 57 for p in poses[1]))
+        # Kazuya's channel 3 first (from 1000), Devil's stance at the end (30000)
+        c3 = [p[3] for p in poses[1]]
+        self.assertTrue(1000 <= c3[0] < 1100)
+        self.assertTrue(30000 <= c3[-1] < 30100)
+        self.assertTrue(all(self.turn(a, b) <= 2500 for a, b in zip(c3, c3[1:])))   # blended, no jump
+        for a, b in zip(cam, cam[1:]):                                               # the camera eased
+            self.assertTrue(all(abs(x - y) <= 40 for x, y in zip(a, b)), (a, b))
+        self.assertGreater(poses[0][0][2], 10000)                                    # the hidden player far away
+
+    def test_intro_parts_go_on(self):
+        # the tag move walks forward: never back, and Devil's stance stays where it
+        # left him, on its heading (no jump of the root across the parts)
+        code, out = self.devil(step=10)
+        p = self.blocks(out)[2][1]
+        d = [r[2] for r in p]
+        self.assertEqual(code, 0)
+        self.assertTrue(all(0 <= b - a <= 20 for a, b in zip(d, d[1:])), d)
+        self.assertGreater(d[-1], 300)
+        self.assertTrue(all(r[0] == 0x8000 for r in p[100:]))
+
+    def test_intro_sounds(self):
+        # the tag move's own sound (event 0x705C at its frame 34): index 92 of
+        # Kazuya's pack, at the intro's frame of that clip frame (70 %)
+        kazuya = self.pack(clips={1: (50, 0)}, sounds={1: (0x705c, 0xffff, 34)})
+        code, out = self.cine('devil', self.pack(), 'sounds', Kazuya=kazuya)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, ['entry devil', '%d Kazuya-TTT1 92' % (80 + 34 * 100 // 70)])
+        # a sound past the part's end, none; the boss's own pack in its place
+        kazuya = self.pack(clips={1: (50, 0)}, sounds={1: (0x705c, 0x7001, 49)})
+        self.assertEqual(self.cine('devil', self.pack(), 'sounds', Kazuya=kazuya)[1], ['entry devil'])
+        self.assertEqual(self.cine('devil', self.pack(sounds={0: (0x7010, 0xffff, 5)}), 'sounds')[1],
+                         ['entry devil', '5 - 16', '87 - 16', '155 - 16'])   # 80 + 5 / 0.7, 150 + 5
+
+    def test_intro_fallback(self):
+        own = self.pack()
+        code, out = self.cine('-', own)
+        self.assertEqual((code, out[0]), (0, 'entry -'))
+        self.assertEqual(self.cine('lei', own)[1][0], 'entry -')
+        head, cam, poses = self.blocks(out)
+        self.assertNotIn('swap', head)
+        self.assertNotIn('aura', head)
+        self.assertEqual(head['actor'][1], ['1', '33', '0'])
+        self.assertEqual(len(head['fade']), 2)                                # no flash
+        self.assertTrue(all(p[2] == 0 for p in poses[1]))                     # the stance, standing
+        # Kazuya's pack missing: the boss's neutral instead, still written
+        code, out = self.cine('devil', own)
+        self.assertEqual(code, 0)
+        self.assertTrue(all(p[3] < 24 for p in self.blocks(out)[2][1]))
+        # not a pack
+        self.assertEqual(self.cine('devil', b'\0' * 64)[0], 1)
 
 
 if __name__ == '__main__':
