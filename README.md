@@ -215,7 +215,7 @@ needed). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
    ```
 3. **Run the setup** in a terminal:
    ```bash
-   cd ~/Games/tekken3-expanded/addons/tmst && ./"Setup TMST.sh"
+   cd ~/<your_folder>/tekken3-expanded/addons/tmst && ./"Setup TMST.sh"
    ```
    (*Permission denied*: `bash "Setup TMST.sh"`.) With Tk and a desktop it opens the same setup window as on Windows;
    without them it asks for the Tekken 2 disc in the terminal (drag the file onto the window, or type its path;
