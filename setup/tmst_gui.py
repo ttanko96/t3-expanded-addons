@@ -1,4 +1,4 @@
-"""The TMST add-on's setup window (Setup TMST.cmd): the Tekken 2 disc, then
+"""The TMST add-on's setup window (Setup TMST.cmd, .command, .sh): the Tekken 2 disc, then
 the add-on's setup (setup/tmst_setup.py) and the game built again with it
 (dev/build.py), with their progress; then the game.
 
@@ -12,11 +12,12 @@ the setup's "TMST step n/N" lines and the build's Ninja "[n/N]" lines.
 from __future__ import annotations
 import ctypes, json, os, queue, re, subprocess, sys, threading
 from pathlib import Path
+import tmst_platform as platform
 
 ADDON = Path(__file__).resolve().parents[1]
 ROOT = ADDON.parents[1]                     # <expanded>/addons/tmst/setup
 LOG = ADDON / 'workspace' / 'setup.log'
-EXE_NAME = 'Tekken_3_Expanded.exe'
+EXE = ROOT / 'build-release' / platform.EXE_NAME
 sys.path.insert(0, str(ADDON / 'tools'))
 sys.path.insert(0, str(ROOT / 'launcher'))
 
@@ -49,22 +50,16 @@ def expanded_backend():
 def expanded_problem(backend) -> str | None:
     """Why the add-on cannot be set up yet, or None."""
     if not (ROOT / 'game.toml').is_file():
-        return f'This folder is not inside Tekken 3 Expanded. Put it at <Tekken 3 Expanded>\\addons\\tmst.'
+        return ('This folder is not inside Tekken 3 Expanded. Put it at '
+                + os.path.join('<Tekken 3 Expanded>', 'addons', 'tmst') + '.')
     if backend is None or not (ROOT / '.setup/ready.json').is_file() or not (ROOT / 'build-release/CMakeCache.txt').is_file():
-        return ('Tekken 3 Expanded has not been set up yet. Run Setup Tekken 3.cmd in '
+        return (f'Tekken 3 Expanded has not been set up yet. Run {platform.script("Setup Tekken 3")} in '
                 f'{ROOT} first and let it finish (the game starts), close the game, then open this again.')
     return None
 
 
 def game_running() -> bool:
-    if os.name != 'nt':
-        return False
-    try:
-        out = subprocess.run(['tasklist', '/fi', f'imagename eq {EXE_NAME}', '/fo', 'csv', '/nh'],
-                             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout
-    except OSError:
-        return False
-    return EXE_NAME.lower() in out.lower()
+    return platform.game_running(EXE)
 
 
 def known_t2_disc() -> str:
@@ -89,8 +84,12 @@ def known_t2_disc() -> str:
 
 class Job:
     """Windows owns the worker tree, so Cancel also stops the compilers: the
-    Expanded's own ProcessJob when it has one."""
+    Expanded's own ProcessJob when it has one. Elsewhere the step runs in a
+    session of its own, which Cancel stops whole (setup/tmst_platform.py)."""
     def __init__(self):
+        self.job = None
+        if not platform.WINDOWS:
+            return
         try:
             from easy_launcher import ProcessJob
             self.job = ProcessJob()
@@ -249,7 +248,7 @@ def gui(t2_arg: str | None, test_hook=None):
                         job = Job()
                         process = subprocess.Popen(command, cwd=ADDON, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                                    stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', env=env,
-                                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+                                                   **platform.popen_options())
                         job.assign(process)
                     except OSError as error:
                         self.events.put((epoch, ('error', f'Could not start: {error}')))
@@ -330,15 +329,15 @@ def gui(t2_arg: str | None, test_hook=None):
                 self.window.destroy()
             except Exception as error:   # noqa: BLE001
                 self.status.set('Could not launch the game')
-                self.detail.set(f'{error}. Start Tekken 3 Expanded.exe yourself.')
+                self.detail.set(f'{error}. Start {platform.PLAY} yourself.')
 
         def cancel(self):
             self.epoch += 1
             if self.job:
                 self.job.close()
                 self.job = None
-            if self.process and self.process.poll() is None:
-                self.process.terminate()
+            if self.process:
+                platform.stop(self.process)
             self.process = None
             self.set_busy(False)
             self.status.set('Setup cancelled')
@@ -352,7 +351,7 @@ def gui(t2_arg: str | None, test_hook=None):
 
         def open_log(self):
             if LOG.is_file():
-                os.startfile(str(LOG)) if os.name == 'nt' else subprocess.Popen(['xdg-open', str(LOG)])
+                platform.open_file(LOG)
             else:
                 self.detail.set('The log appears when the setup starts.')
 

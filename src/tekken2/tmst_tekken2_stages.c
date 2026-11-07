@@ -136,7 +136,14 @@ int __real_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stag
 int __real_tekken3_stage_select_arena(void);
 uint16_t __real_tekken3_stage_select_input(int player, uint16_t buttons);
 int __real_tekken3_stage_select_line(const char **label, const char **name, int *arrows);
+/* fopen is chained (addon.cmake): the Expanded's Android runtime wraps it
+ * (android_apk_file.c, the files kept in the APK); elsewhere the bridge is the
+ * C library's. */
+FILE *__tmst_chain_fopen(const char *path, const char *mode);
+#ifdef TMST_BRIDGE_fopen
 FILE *__real_fopen(const char *path, const char *mode);
+FILE *__tmst_chain_fopen(const char *path, const char *mode) { return __real_fopen(path, mode); }
+#endif
 
 static int stages;                       /* the feature, at activation */
 static int t2[LINES];                    /* TEKKEN 2 on the line (theirs on DEFAULT) */
@@ -247,7 +254,7 @@ static void pack_path(int version_dir, int stage, char *out, size_t size) {
     our_path(name, out, size);
 }
 static int there(const char *path) {
-    FILE *f = __real_fopen(path, "rb");
+    FILE *f = __tmst_chain_fopen(path, "rb");
     if (f) fclose(f);
     return f != NULL;
 }
@@ -279,7 +286,7 @@ static int t3_real(void) {
 
 /* A pack's file, read whole (NULL: none); its size in *size. */
 static uint8_t *read_all(const char *path, long *size) {
-    FILE *f = __real_fopen(path, "rb");
+    FILE *f = __tmst_chain_fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
     *size = ftell(f);
@@ -320,11 +327,11 @@ static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     uint8_t *flor = held_as == NIGHT ? (uint8_t *)section(b, size, "FLOR", &len) : NULL;
     if (flor && len >= 8) { int16_t kind = NIGHT_KIND; memcpy(flor, &kind, 2); }
     our_path("loaded.ast", to, sizeof to);
-    FILE *f = __real_fopen(to, "wb");
+    FILE *f = __tmst_chain_fopen(to, "wb");
     int ok = f && fwrite(b, 1, (size_t)size, f) == (size_t)size;
     if (f) fclose(f);
     free(b);
-    return ok ? __real_fopen(to, mode) : NULL;
+    return ok ? __tmst_chain_fopen(to, mode) : NULL;
 }
 
 /* An empty pack for arena n (blank.ast): nothing to draw (no far background
@@ -362,10 +369,10 @@ static FILE *blank(int n, const char *mode) {
     }
     char path[1100];
     our_path("blank.ast", path, sizeof path);
-    FILE *f = __real_fopen(path, "wb");
+    FILE *f = __tmst_chain_fopen(path, "wb");
     int ok = f && fwrite(b, 1, sizeof b, f) == sizeof b;
     if (f) fclose(f);
-    return ok ? __real_fopen(path, mode) : NULL;
+    return ok ? __tmst_chain_fopen(path, mode) : NULL;
 }
 
 /* The number of a Tekken 3 pack the engine opens (<its folder>/stageNN.ast),
@@ -388,13 +395,13 @@ static int held_wanted(void);
 
 FILE *__wrap_fopen(const char *path, const char *mode) {
     int n = path && mode && mode[0] == 'r' ? t3_pack(path) : -1;
-    if (n < 0) return __real_fopen(path, mode);
+    if (n < 0) return __tmst_chain_fopen(path, mode);
     char ours[1100];
     if (!psx_mod_game_started()) {
         /* Arcade Stages' activation looking for its packs: one of ours, when it has none */
-        FILE *f = __real_fopen(path, mode);
+        FILE *f = __tmst_chain_fopen(path, mode);
         if (f || n > LAST_ARENA || t3_real()) return f;
-        for (int s = 0; s < STAGES && !f; s++) { pack_path(CLASSIC, s, ours, sizeof ours); f = __real_fopen(ours, mode); }
+        for (int s = 0; s < STAGES && !f; s++) { pack_path(CLASSIC, s, ours, sizeof ours); f = __tmst_chain_fopen(ours, mode); }
         if (f) tmst_log("tekken2: no Tekken 3 arcade stage packs, ours bring up the stage engine");
         return f;
     }
@@ -411,7 +418,7 @@ FILE *__wrap_fopen(const char *path, const char *mode) {
         if (f) held_version = as;
         if (f && as == NIGHT) tmst_log("tekken2: True Ogre's dark arena: %s's Classic floor at night", names[fight]);
     } else {
-        f = __real_fopen(path, mode); what = HELD_REAL;
+        f = __tmst_chain_fopen(path, mode); what = HELD_REAL;
     }
     if (f) { held_arena = n; held = what; }
     return f;

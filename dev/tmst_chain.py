@@ -23,9 +23,9 @@ def ours(path: Path, objdir: Path) -> bool:
 
 
 def defines(nm: str, obj: Path, name: str) -> bool:
-    out = subprocess.run([nm, '--defined-only', '--format=just-symbols', str(obj)],
-                         capture_output=True, text=True).stdout.split()
-    return name in out
+    # -P (POSIX: name, type, ...): llvm-nm and GNU nm of any age read it.
+    out = subprocess.run([nm, '--defined-only', '-P', str(obj)], capture_output=True, text=True).stdout
+    return name in (line.split()[0] for line in out.splitlines() if line.strip())
 
 
 def candidates(objdir: Path, names: list[bytes], cached: list[str]):
@@ -33,8 +33,9 @@ def candidates(objdir: Path, names: list[bytes], cached: list[str]):
     for c in cached:
         p = Path(c)
         if p.is_file(): seen.add(p); yield p
-    for p in objdir.rglob('*.obj' if sys.platform == 'win32' else '*.o'):
-        if p in seen or ours(p, objdir): continue
+    # .obj (Windows), .o (elsewhere, and the Android NDK's on any host)
+    for p in objdir.rglob('*'):
+        if p.suffix not in ('.o', '.obj') or p in seen or ours(p, objdir): continue
         try: data = p.read_bytes()
         except OSError: continue
         if any(n in data for n in names): yield p

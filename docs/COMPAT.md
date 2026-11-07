@@ -40,7 +40,7 @@
 | Unknown's wolf in the upper VRAM half (`tools/ttt1/spirit.py`, `Unknown-TTT1-wolf.glow`; `tekken3_ttt1_wolf_high_vram_used`: x 640..1023, y 512..767), what it draws there: all but x 768..1023 at y 708..767 and x 676..767 at y 740..767 (measured 2026-11-05) | `tools/t2_remake_stages.py` `WOLF_DRAWN`, `cut_fitted()` (the "wolf_cut" stages: no texel there, their palettes too; a place for the overlay's letters, `font_place()`, while the wolf's whole rectangle is taken) | `tests/test_t2_remake_stages.py` (`WolfCut`); a new wolf pack: measure it again |
 | `.setup/last-inputs.json` "tekken3": the tekken3.zip the Expanded's setup was given | `tools/t2_remake_stages.py` `tekken3_zip()` | setup |
 | Pillow's lossless WebP (the Expanded's pinned version): the Remake's picture patches, their pixels checked by SHA-256 when opened | `tools/t2_remake_patch.py` | `tests/test_t2_remake_patch.py`; setup |
-| the engine's pack cache: one pack, kept while the arena stays the same; an arena it could not read stays the PS1's until another is tried (`s_tried`); arena-numbered rules (far background 0, 3, 5, 6, 11; objects 3, 11; ANIM 6, 12), none for arena 9; `<base>mods/arcade-stages/stageNN.ast` (or `TEKKEN3_ARCADE_STAGES_DIR`) opened with `fopen` (not `__imp_`), `packs_present` at the Arcade Stages activation (before the game starts; its package activates before `tmst.tekken2`: ids in order) | `src/tekken2/tmst_tekken2_stages.c` (`--wrap=fopen`, arena 9, the switch to arena 8 / 7 for one empty pack) | in game (headless: a T2 stage after another, after the game's own) |
+| the engine's pack cache: one pack, kept while the arena stays the same; an arena it could not read stays the PS1's until another is tried (`s_tried`); arena-numbered rules (far background 0, 3, 5, 6, 11; objects 3, 11; ANIM 6, 12), none for arena 9; `<base>mods/arcade-stages/stageNN.ast` (or `TEKKEN3_ARCADE_STAGES_DIR`) opened with `fopen` (not `__imp_`), `packs_present` at the Arcade Stages activation (before the game starts; its package activates before `tmst.tekken2`: ids in order) | `src/tekken2/tmst_tekken2_stages.c` (`--wrap=fopen`, a chain: the Android runtime wraps fopen itself (`android_apk_file.c`, `LINKER:--wrap=fopen`); arena 9, the switch to arena 8 / 7 for one empty pack) | in game (headless: a T2 stage after another, after the game's own) |
 | `tekken3_arcade_stages_thunder_mix(out, frames, audible, main_volume, gain)` and `tekken3_arcade_stages_thunder_stop()` (wrapped: called from `src/tekken3_ttt1_voices.c`; theirs first, then the Remake's thunder mixed in; the engine's own calls of `_stop` inside its file stay unwrapped); TTT1 Stages' TTT stage 4 pack (format 4, table from byte 24, STRM and THND as `tools/arcade_stages/pack.py` writes them) at the setup | `src/tekken2/tmst_tekken2_extras.c`, `tools/t2_remake_stages.py` `storm_like()` | `tests/test_t2_remake_stages.py`; in game |
 | `tekken3_stage_source`, `tekken3_stage_ttt_stage`, `tekken3_stage_select_fight` / `_input` / `_line` / `_arena` / `_choice` (wrapped: called from other files of theirs; the declarations looked for in their headers: `TMST_HAS_STAGE_ENGINE`, else not wrapped and the part says it is off); the STAGE line's GAME labels (`GAME`, `DEFAULT`) and its game order (DEFAULT, RANDOM, TEKKEN 3, TEKKEN TAG TOURNAMENT) | `src/tekken2/tmst_tekken2_stages.c` | build, `src/compat/tmst_features.cmake` |
 | guest `0x80064E10` the fight's camera routine (the Expanded's generated copy, chained: slot index at the caller's sp + 0x18, slot 0 the fight's and slot 1 the throw's, a3 / a2 its yaw / pitch at the entry, the slots 0x800A02A8 + 24 a slot: x, y, z, pitch, yaw, H written at its return), `0x8003A818` a fighter's drawing (chained in `src/core/tmst_camera.c`: the main OT's heads before and after, ranks below 1000 the fighter's, its shadow 1007); fighter records 0x800A9228 + 0x188C (+0x2C the facing, 0x10000 a turn, forward = sin, cos; bones from +0x8F4, 68 bytes, 2 the head, position at +0x14); the human's side 0x800AFAA5 bits 0 / 1, the mode 0x800AFA88 (Arcade 0, Team Battle 2, Time Attack 3, Survival 4, Practice 5), screen 0x800AE204, phase 0x800AE224, lives 0x800A961E / 0x800AAEAA, timer 0x800ADBCC (the pause, 0x80095494, left alone: paused, no camera computed and no fighter drawn; Photo Mode's free camera, `free_on` in `src/core/tmst_camera.c`, draws them solid); `psx_mod_alloc_gpu_dma_memory` for the line strips; `tekken3_game_options_add` | `src/tekken2/tmst_tekken2_wireframe.c` | in game (headless: Arcade 1P and 2P, Team Battle, VS, TTT1 guests) |
@@ -118,8 +118,27 @@
 
 ## Known limits of the dev shim
 
-- **macOS:** the Expanded applies its emulated wraps (`tekken3_apply_wraps()`) before our deferred setup, so
-  add-on wraps are not applied there yet. Fine while `TMST_WRAPS` is empty; to be solved with the hook (API_GAPS G11).
+- **Linux (Steam Deck in Distrobox):** built with the system's cmake, ninja and cc (gcc or clang), as the Expanded's
+  setup builds it there (`setup_backend.tools()` returns None). `--wrap` is GNU ld's / lld's own; the chains need an
+  `objcopy` and an `nm` (binutils, which every compiler package brings, or LLVM's). Not built on Linux by the
+  add-on's author yet: the sources pass the errors GCC 14 makes of old warnings (checked with clang on Windows).
+- **macOS:** ld64 has no `--wrap`, and the Expanded applies its emulated wraps (`tekken3_apply_wraps()`) before our
+  deferred setup. So `dev/tmst_wraps.cmake` emulates ours the same way: the defining source with `sym=__real_sym`,
+  ours with `__wrap_sym=sym` (sources found by `dev/tmst_wraps.py` among psx-runtime's); a chain turns their wrapper's
+  `__wrap_sym=sym` into `__wrap_sym=__tmst_chain_sym` (their wrapper from `TEKKEN3_WRAP_WRAPPER_<sym>` or the
+  search); `fopen` (the system's) by `-include src/compat/tmst_redirect_fopen.h` on `src/tekken3_arcade_stages.c`
+  (`TMST_APPLE_CALLERS`); our weak declarations get `-Wl,-U,_name`. A symbol not found: a warning, our wrapper
+  unused, the game still links. Calls inside the defining source reach the routine itself (as `--wrap` once the
+  release build has inlined them). Tried on Windows with `dev\build.cmd --debug --emulate-wraps`
+  (2026-11-07: Tekken 2 stages with the fopen hand-over, Wireframe, Photo Mode, pause row, Jukebox, menu rows,
+  headless); never built on a Mac by the add-on's author (Mach-O, ld64 and `-U` untried).
+- **Android:** `setup/tmst_android.py` (Build Android APK (TMST)) calls the Expanded's `make_apk.build()` with
+  `defines=[CMAKE_PROJECT_INCLUDE=<build-android>/tmst_include.cmake]` and a `run` that adds `--data` for what the
+  game reads from `addons/tmst` (internal API of the Expanded, as `setup_backend`). The runtime's folder on the phone
+  is the data folder (`SDL_GetBasePath` is `./`, game.toml in it), so the same relative paths work. The Android
+  runtime wraps `fopen` (`LINKER:--wrap=fopen`, the APK's files): ours is chained in front (`tmst_chain.py`, the
+  NDK's llvm-objcopy, `.o` objects on a Windows host). 2026-11-07: the APK built and signed on Windows (853 MB, no
+  music); never run on a phone by the add-on's author.
 - **Cached include:** `CMAKE_PROJECT_INCLUDE` stays in `build-release/CMakeCache.txt`, so the Expanded's own
   Update & play keeps building the add-on in. `dev\build.cmd --without` clears it.
 - **Chains and `--without`:** renamed objects are listed in `<build>/tmst_chain_state.json`; `--without` (or a

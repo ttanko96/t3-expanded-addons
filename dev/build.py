@@ -82,7 +82,12 @@ def expanded_setup():
 
 
 def environment(setup):
-    toolchain = setup.tools()      # downloads the pinned compilers when missing (Windows)
+    # Windows: the pinned compilers (downloaded when missing). macOS, Linux:
+    # None, after checking that cmake, ninja and a compiler are installed.
+    try:
+        toolchain = setup.tools()
+    except Exception as error:   # noqa: BLE001 - their SetupError says what to install
+        fail(str(error))
     env = dict(os.environ)
     env.update(PYTHONUTF8='1', PYTHONNOUSERSITE='1',
                CMAKE_BUILD_PARALLEL_LEVEL=str(min(8, max(2, os.cpu_count() or 2))))
@@ -92,7 +97,7 @@ def environment(setup):
     return toolchain, env
 
 
-def configure_args(toolchain, source: Path, build: Path, with_addon: bool) -> list[str]:
+def configure_args(toolchain, source: Path, build: Path, with_addon: bool, emulate: bool = False) -> list[str]:
     cmake = str(toolchain / 'bin/cmake.exe') if toolchain else (shutil.which('cmake') or 'cmake')
     args = [cmake, '-S', str(source), '-B', str(build), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
             '-DCMAKE_SUPPRESS_REGENERATION=ON', '-DPython3_EXECUTABLE=' + sys.executable]
@@ -110,6 +115,8 @@ def configure_args(toolchain, source: Path, build: Path, with_addon: bool) -> li
         m = re.search(r'^TEKKEN3_TTT1_CHARACTERS:BOOL=(\w+)', cache.read_text(errors='replace'), re.M)
         if m: ttt1 = m.group(1)
     args.append('-DTEKKEN3_TTT1_CHARACTERS=' + ttt1)
+    # --emulate-wraps: the add-on's wraps as macOS builds them (dev/tmst_wraps.cmake).
+    args.append('-DTMST_EMULATE_WRAPS=' + ('ON' if emulate else 'OFF'))
     # The cache keeps CMAKE_PROJECT_INCLUDE: set or clear it every time, so that
     # the Expanded's own Update & play builds what was built last.
     args.append('-DCMAKE_PROJECT_INCLUDE=' + (write_stub(build).as_posix() if with_addon else ''))
@@ -181,6 +188,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('ref', nargs='?', help='a tag, branch or commit of the Expanded (default: the game you play)')
     parser.add_argument('--without', action='store_true', help='build without the add-on')
+    parser.add_argument('--emulate-wraps', action='store_true',
+                        help='the wraps without -Wl,--wrap, as on macOS (to try that emulation here)')
     parser.add_argument('--debug', action='store_true',
                         help='a debug build of the installed Expanded (debug server: screenshots, input) in dev/build/debug')
     a = parser.parse_args()
@@ -192,7 +201,7 @@ def main() -> None:
     if a.debug:
         build = DEV / 'build' / 'debug'
         forget_chains(build, keep)
-        args = configure_args(toolchain, ROOT, build, with_addon)
+        args = configure_args(toolchain, ROOT, build, with_addon, a.emulate_wraps)
         args = [x for x in args if not x.startswith('-DPSX_DEBUG_TOOLS=')] + ['-DPSX_DEBUG_TOOLS=ON']
         run(args, env)
         run([args[0], '--build', str(build), '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
@@ -201,8 +210,8 @@ def main() -> None:
     if a.ref:
         source, build = worktree(a.ref)
         forget_chains(build, keep)
-        run(configure_args(toolchain, source, build, with_addon), env)
-        run([configure_args(toolchain, source, build, with_addon)[0], '--build', str(build),
+        run(configure_args(toolchain, source, build, with_addon, a.emulate_wraps), env)
+        run([configure_args(toolchain, source, build, with_addon, a.emulate_wraps)[0], '--build', str(build),
              '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
         print(f'TMST build: {a.ref} built in {build}')
         return
@@ -214,8 +223,8 @@ def main() -> None:
     forget_chains(build, keep)
     was_ready = expanded_ready(setup)
     with setup.kept_mods():
-        run(configure_args(toolchain, ROOT, build, with_addon), env)
-        run([configure_args(toolchain, ROOT, build, with_addon)[0], '--build', str(build),
+        run(configure_args(toolchain, ROOT, build, with_addon, a.emulate_wraps), env)
+        run([configure_args(toolchain, ROOT, build, with_addon, a.emulate_wraps)[0], '--build', str(build),
              '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)
     if was_ready:
         keep_ready(setup)
