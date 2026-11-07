@@ -5,14 +5,22 @@ tab, in the **TMST** group. Each mod can be switched on and off there; nothing i
 
 No game data is included: everything a mod needs from the game is made on your machine by the add-on's setup.
 
-## Add-On Features (currently)
+## Add-On Features
 
 ### Jukebox
 Choose the music of every fighter.
-- **Open:** the last row of the main menu, **JUKEBOX**.
-- **Grid:** ✕ a fighter's music list · L2/R2 switch the character panel (with TTT1 characters) · □ reset every
-  fighter to their own music · ○ exit (asks to save changes).
-- **List:** L2/R2 category · △ preview / stop · ✕ give the track to the fighter · □ reset this fighter · ○ back.
+- New Menu item: **JUKEBOX**
+- **Buttons:**
+    · ✕ a fighter's music list 
+    · L2/R2 switch the character panel (with TTT1 characters)
+    · □ reset every fighter to their default music
+    · ○ exit (asks to save changes)
+- **Music Player:**
+    · L2/R2 category 
+    · △ preview / stop 
+    · ✕ give the track to the fighter 
+    · □ reset this fighter 
+    · ○ back.
 - **Categories** (console and arcade each): Tekken 1 and Tekken 2 (with **Tekken 2 Content**'s Music on, from your Tekken 2
   disc: it plays ten Tekken 1 stage themes again), Tekken 3 (the game's disc), Tekken Tag Tournament (the TTT music
   the Expanded imported).
@@ -22,17 +30,21 @@ Choose the music of every fighter.
   `addons\tmst\workspace\jukebox\` (`file = title` per line; `--disable` in a title leaves the track out).
 
 ### Photo Mode
-A free camera in any paused fight, and photos of it.
+Free camera view during any paused match, as well as the ability to take your own custom screenshots
 - **Open:** pause a fight and choose **PHOTO** (Arcade, VS, Team Battle, Time Attack, Survival, Tekken Ball). In
   Practice, press **SELECT** while paused. Not in Tekken Force.
-- **Camera:** D-pad move · L1/R1 down/up · □ + D-pad turn and look · L2/R2 zoom · SELECT reset the camera. The camera
-  stops at the edge of the stage.
+- **Camera controls:**
+    · D-pad move 
+    · L1/R1 down/up 
+    · □ + D-pad turn and look 
+    · L2/R2 zoom 
+    · SELECT reset the camera.
+  The camera stops at the edge of the stage.
 - **Panel (START):** ZOOM, FOCUS and BLUR (depth of field: the fighters sharp, or a sharp band), FILTER (14: black &
   white, sepia, noir, vintage, high contrast, cold, warm, teal & orange, duotone, poster, night vision, scanlines,
   negative), FRAME (8: letterbox, polaroid, film strip, vignette, T3E Red, T3E Black, CRT TV, comic; the T3E frames
   carry the T3E logo and Tekken 3's own letters), RESET.
-- ✕ take a photo · △ hide the HUD (Tekken Ball's power bars and numbers too) · ○ back to the pause menu, the fight
-  exactly as it was.
+- ✕ take a photo · △ hide the HUD · ○ back to the pause menu, the fight exactly as it was.
 - Photos are saved as PNG at the renderer's resolution (16:9 with its sides) in `addons\tmst\screenshots\`
   (`photo_YYYYMMDD_HHMMSS.png`).
 - Filters that need every pixel's colour (black & white, sepia, negative ...) and, in 16:9, the blur on the screen's
@@ -40,23 +52,32 @@ A free camera in any paused fight, and photos of it.
 - Best with the OpenGL renderer. With Vulkan the panel's text and the exact preview are not shown.
 
 ### Tournament Mode
-The King of Iron Fist Tournament, as a mode of its own.
-- **Open:** **TOURNAMENT MODE** in the main menu (in gold, under TEKKEN FORCE MODE).
-- **Tournaments:** Tekken 1, Tekken 2, Tekken 3, Tekken Tag and Free. At first only Tekken 1 is open; winning a
-  tournament opens the next (Free after Tekken Tag), for good. Up/down choose · ✕ enter · ○ back to the main menu.
-- **Your fighter:** on the Team Battle grid. Only the highlighted fighters take part in the tournament; the face
-  buttons pick the costume (a fighter with a TTT1 moveset asks for it on the MOVESET card) · L2/R2 switch the
-  character panel (with TTT1 characters) · SELECT back to the tournaments.
+The King of Iron Fist Tournament, as an additional game mode of its own.
+- New Menu item: **TOURNAMENT MODE**
+- **Tournaments:** At first only Tekken 1 is open; winning a tournament opens the next (Free after Tekken Tag).
+    · Tekken 1 Tournament
+    · Tekken 2 Tournament
+    · Tekken 3 Tournament
+    · Tekken Tag Tournament
+    · Free Tournament.
+- Up/down choose · ✕ enter · ○ back to the main menu.
+- **Your fighter:** Only the highlighted fighters take part in the tournament; the face
+  buttons pick the costume (a fighter with a TTT1 moveset asks for it on the MOVESET card)
+    · L2/R2 switch the character panel (with TTT1 characters added)
+    · SELECT back to the tournaments.
 - **The bracket:** 16 fighters, single elimination: first round, quarter final, semi final, final, then the Grand
   Final against the boss. A match is won with two rounds, each round starting with full life; the CPU gets stronger
   from round to round of the tournament. The other matches of a round are decided as you play yours.
-- **The bosses:** Tekken 1 Heihachi; Tekken 2 Kazuya, then Devil; Tekken 3 Ogre, then True Ogre (one round each, you
-  take the life you have left on to the second); Tekken Tag Unknown (one round: she heals and changes her style);
-  Free a boss drawn at the start (three rounds). The bosses cannot be picked.
+- **The bosses:**
+    · Tekken 1 - Heihachi
+    · Tekken 2 - Kazuya, then Devil
+    · Tekken 3 Ogre, then True Ogre (one round each, you take the life you have left on to the second)
+    · Tekken Tag - Unknown (one round: she heals and changes her style)
+    · Free - a boss drawn at the start randomly (three rounds). The bosses cannot be picked.
 - **Boss intro:** before Devil, a short cinematic: Kazuya standing in the dark, the camera coming to him, then his
   Tekken Tag change in lightning and a white flash, and Devil stands there; his music starts with it, the move's
   own sounds too. START skips it (from the change on). Made from the fighters' own TTT1 moves in your install
-  (TTT1 Characters needed; without them the fight starts as before).
+  (TTT1 Characters needed; without them the fight starts as before). The other bosses are coming in the future..
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
 - **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the
@@ -131,18 +152,18 @@ head, looking the way the body faces.
 ## Installation
 
 The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
-experimental: not tried there by the add-on's author yet). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), access to
+experimental). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), access to
 this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in `addons/tmst/workspace/`
 (Tekken 1 and 2 about 1.3 GB, TTT about 470 MB).
 
 ### Windows
 
-Below, `C:\Games\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
+Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
-2. **Put the add-on in place**, exactly at `C:\Games\tekken3-expanded\addons\tmst\`:
+2. **Put the add-on in place**, exactly at `C:\<your_folder>\tekken3-expanded\addons\tmst\`:
    ```bash
-   git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\Games\tekken3-expanded\addons\tmst"
+   git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\<your_folder>\tekken3-expanded\addons\tmst"
    ```
    (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
@@ -167,12 +188,12 @@ Below, `C:\Games\tekken3-expanded` is the Expanded's folder: change it if yours 
 
 The add-on is built into the Expanded's macOS game, with the Homebrew tools its
 [macOS setup](https://github.com/omarma/tekken3-expanded#install-on-macos) installed (nothing more is needed; for the
-setup window, `brew install python-tk@3.13`). Below, `~/Games/tekken3-expanded` is the Expanded's folder.
+setup window, `brew install python-tk@3.13`). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
 
 1. **Close the game.**
-2. **Put the add-on in place**, exactly at `~/Games/tekken3-expanded/addons/tmst/`:
+2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`:
    ```bash
-   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/Games/tekken3-expanded/addons/tmst
+   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
    ```
 3. **Double-click `addons/tmst/Setup TMST.command`** (or run it in Terminal: `./"Setup TMST.command"`). With Tk it
    opens the same setup window as on Windows; without it, it asks for the Tekken 2 disc in the Terminal window
@@ -185,12 +206,12 @@ Afterwards play as before, with `Tekken 3 Expanded.app`.
 
 The add-on is built into the Expanded's native Linux game, with the tools its
 [Linux setup](https://github.com/omarma/tekken3-expanded#install-on-linux-experimental) installed (nothing more is
-needed). Below, `~/Games/tekken3-expanded` is the Expanded's folder.
+needed). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
 
 1. **Close the game.**
-2. **Put the add-on in place**, exactly at `~/Games/tekken3-expanded/addons/tmst/`:
+2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`:
    ```bash
-   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/Games/tekken3-expanded/addons/tmst
+   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
    ```
 3. **Run the setup** in a terminal:
    ```bash
@@ -224,7 +245,7 @@ downloads Google's Android tools, about 1 GB, into `.setup/android`).
    Expanded's folder, signed with the same key as the Expanded's own APK (it installs over it, memory cards kept).
 3. Install it on the phone as the Expanded's guide says; with the phone on USB, `--install` does it:
    ```bash
-   "C:\Games\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
+   "C:\<your_folder>\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
    ```
 
 - **The Jukebox's music:** the Tekken 1, 2 and TTT music is left out by default (about 1.8 GB, and the phone keeps
@@ -243,14 +264,14 @@ default). Restart the game after switching a mod.
 
 - **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, run
   `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`) again.
-- **Add-on update:** `git -C "C:\Games\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`).
+- **Add-on update:** `git -C "C:\<your_folder>\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`).
 - **Removing:** close the game, rebuild without the add-on, then delete the folder:
   ```bash
-  "C:\Games\tekken3-expanded\addons\tmst\dev\build.cmd" --without
+  "C:\<your_folder>\tekken3-expanded\addons\tmst\dev\build.cmd" --without
   ```
   On macOS and Linux:
   ```bash
-  ~/Games/tekken3-expanded/addons/tmst/dev/build.sh --without
+  ~/<your_folder>/tekken3-expanded/addons/tmst/dev/build.sh --without
   ```
   If the folder is deleted first, the Expanded's next Update & play builds the game without the add-on by itself.
 
