@@ -130,10 +130,14 @@ head, looking the way the body faces.
 
 ## Installation
 
-You need Windows 10/11, a Tekken 3 Expanded that has been set up once with its own `Setup Tekken 3.cmd` (the game
-starts), access to this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in
-`addons\tmst\workspace\` (Tekken 1 and 2 about 1.3 GB, TTT about 470 MB). Below, `C:\Games\tekken3-expanded` is the
-Expanded's folder: change it if yours is elsewhere.
+The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
+experimental: not tried there by the add-on's author yet). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), access to
+this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in `addons/tmst/workspace/`
+(Tekken 1 and 2 about 1.3 GB, TTT about 470 MB).
+
+### Windows
+
+Below, `C:\Games\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
 2. **Put the add-on in place**, exactly at `C:\Games\tekken3-expanded\addons\tmst\`:
@@ -159,19 +163,94 @@ Expanded's folder: change it if yours is elsewhere.
    `The TMST add-on is installed`, **Play** opens the game's launcher. Once the Expanded runs add-on setups itself, its
    **Update & play** does all of this.
 
+### macOS (experimental)
+
+The add-on is built into the Expanded's macOS game, with the Homebrew tools its
+[macOS setup](https://github.com/omarma/tekken3-expanded#install-on-macos) installed (nothing more is needed; for the
+setup window, `brew install python-tk@3.13`). Below, `~/Games/tekken3-expanded` is the Expanded's folder.
+
+1. **Close the game.**
+2. **Put the add-on in place**, exactly at `~/Games/tekken3-expanded/addons/tmst/`:
+   ```bash
+   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/Games/tekken3-expanded/addons/tmst
+   ```
+3. **Double-click `addons/tmst/Setup TMST.command`** (or run it in Terminal: `./"Setup TMST.command"`). With Tk it
+   opens the same setup window as on Windows; without it, it asks for the Tekken 2 disc in the Terminal window
+   (drag the file onto it; Return goes on without it). Then it makes the same files and rebuilds the game with the
+   add-on.
+
+Afterwards play as before, with `Tekken 3 Expanded.app`.
+
+### Linux (experimental)
+
+The add-on is built into the Expanded's native Linux game, with the tools its
+[Linux setup](https://github.com/omarma/tekken3-expanded#install-on-linux-experimental) installed (nothing more is
+needed). Below, `~/Games/tekken3-expanded` is the Expanded's folder.
+
+1. **Close the game.**
+2. **Put the add-on in place**, exactly at `~/Games/tekken3-expanded/addons/tmst/`:
+   ```bash
+   git clone https://github.com/ttanko96/t3-expanded-addons.git ~/Games/tekken3-expanded/addons/tmst
+   ```
+3. **Run the setup** in a terminal:
+   ```bash
+   cd ~/Games/tekken3-expanded/addons/tmst && ./"Setup TMST.sh"
+   ```
+   (*Permission denied*: `bash "Setup TMST.sh"`.) With Tk and a desktop it opens the same setup window as on Windows;
+   without them it asks for the Tekken 2 disc in the terminal (drag the file onto the window, or type its path;
+   Return goes on without it). A disc can also be given at once: `./"Setup TMST.sh" ~/discs/tekken2.cue`. Then it
+   makes the same files and rebuilds the game with the add-on, and offers to open the game's launcher.
+
+Afterwards play as before: **Tekken 3 Expanded** in the applications menu, or `./"Tekken 3 Expanded.sh"` in the
+Expanded's folder.
+
+### Steam Deck (experimental)
+
+- **With Proton** (the Windows build copied to the Deck, as the Expanded's guide says): install the add-on on the
+  Windows PC as above, then copy the whole `tekken3-expanded` folder to the Deck. Nothing more is built on the Deck.
+- **Natively, inside Distrobox** (the Expanded's guide's `tekken-build` container): enter the container
+  (`distrobox enter tekken-build`), then follow the Linux steps above in it, with `/home/deck/Games/tekken3-expanded`.
+  The game keeps starting through `distrobox-enter`, as the guide sets it up in Steam.
+
+### Android (experimental)
+
+The add-on goes into the Expanded's Android APK, built on your Windows PC or Mac as the Expanded's
+[Build Android APK](https://github.com/omarma/tekken3-expanded#android-experimental) builds it (its first run
+downloads Google's Android tools, about 1 GB, into `.setup/android`).
+
+1. Install the add-on on the PC game as above (`Setup TMST`), so that what it makes from your discs is there.
+2. Double-click **`addons/tmst/Build Android APK (TMST).cmd`** (macOS: `.command`). It runs the add-on's setup steps
+   again (nothing is made twice), then the Expanded's APK build with the add-on in it: `Tekken3Expanded.apk` in the
+   Expanded's folder, signed with the same key as the Expanded's own APK (it installs over it, memory cards kept).
+3. Install it on the phone as the Expanded's guide says; with the phone on USB, `--install` does it:
+   ```bash
+   "C:\Games\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
+   ```
+
+- **The Jukebox's music:** the Tekken 1, 2 and TTT music is left out by default (about 1.8 GB, and the phone keeps
+  a second copy after the install): the Jukebox then shows only the Tekken 3 disc's music. Add `--music` to put it in.
+- **Photo Mode** works, but its pictures stay in the game's private storage on the phone: they cannot be copied off
+  it yet (a screenshot of the phone is the way for now).
+- The Expanded's own Build Android APK keeps building the add-on in afterwards (as Update & play does on PC);
+  `--without` builds the APK without it.
+
 ## Settings
 
-Start `Tekken 3 Expanded.exe`, open the **Mods** tab and switch the mods on in the **TMST** group (all are off by
+Start the game (`Tekken 3 Expanded.exe`; macOS: `.app`, Linux: `.sh`), open the **Mods** tab and switch the mods on in the **TMST** group (all are off by
 default). Restart the game after switching a mod.
 
 ## Updating and removing
 
 - **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, run
-  `Setup TMST.cmd` again.
-- **Add-on update:** `git -C "C:\Games\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd`.
+  `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`) again.
+- **Add-on update:** `git -C "C:\Games\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`).
 - **Removing:** close the game, rebuild without the add-on, then delete the folder:
   ```bash
   "C:\Games\tekken3-expanded\addons\tmst\dev\build.cmd" --without
+  ```
+  On macOS and Linux:
+  ```bash
+  ~/Games/tekken3-expanded/addons/tmst/dev/build.sh --without
   ```
   If the folder is deleted first, the Expanded's next Update & play builds the game without the add-on by itself.
 

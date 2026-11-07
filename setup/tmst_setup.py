@@ -23,6 +23,7 @@ gives numpy): started with another one, it starts itself again with that one.
 from __future__ import annotations
 import argparse, json, os, subprocess, sys
 from pathlib import Path
+import tmst_platform as platform
 
 ADDON = Path(__file__).resolve().parents[1]
 ROOT = ADDON.parents[1]                     # <expanded>/addons/tmst/setup
@@ -188,7 +189,7 @@ def python_packages() -> None:
 
 
 def build() -> int:
-    """The game built again with the add-on (dev/build.py, as Setup TMST.cmd does)."""
+    """The game built again with the add-on (dev/build.py, as Setup TMST does)."""
     log('building the game with the add-on (dev/build.py)')
     return subprocess.call([sys.executable, '-u', str(ADDON / 'dev/build.py')], cwd=ADDON)
 
@@ -238,14 +239,14 @@ def tekken2_disc() -> None:
         except (DiscError, OSError) as error:
             log(f'Tekken 2 disc: {candidate.name} not used ({error})')
     if have.get('declined') or not OPTIONS.interactive:
-        log('Tekken 2 disc: none (optional; Setup TMST.cmd asks for it, or drop the disc on it)')
+        log(f'Tekken 2 disc: none (optional; {platform.script("Setup TMST")} asks for it{", or drop the disc on it" if platform.WINDOWS else ""})')
         return
     log('Tekken 2 disc: choose it in the window (optional: Cancel goes on without it)')
     while True:
         chosen = ask_t2_disc()
         if not chosen:
             save_stamp(name, {'version': t2.VERSION, 'declined': True})
-            log('Tekken 2 disc: none (drop the disc on Setup TMST.cmd to add it later)')
+            log(f'Tekken 2 disc: none (run {platform.script("Setup TMST")} again to add it later)')
             return
         try:
             keep(t2.identify(chosen), 'chosen')

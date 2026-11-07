@@ -54,6 +54,7 @@ def main() -> int:
 
     for chain in cmake_list(addon, 'TMST_CHAINS'):
         sym, _, file = chain.partition('|')
+        file = file.partition('|')[0]           # "|NAME": a build feature it needs
         text = (ADDON / file).read_text(encoding='utf-8', errors='replace') if file and (ADDON / file).is_file() else ''
         if f'__wrap_{sym}' not in text or f'__tmst_chain_{sym}' not in text:
             errors.append(f'addon.cmake: chain {sym}: {file or "?"} must define __wrap_{sym} and call __tmst_chain_{sym}')

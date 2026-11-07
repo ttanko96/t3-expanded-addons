@@ -64,6 +64,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <strings.h>
 #endif
 
 /* The runtime's disc reader (psxrecomp/runtime/src/iso_reader_c.cpp). */

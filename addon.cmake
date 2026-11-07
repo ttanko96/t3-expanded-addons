@@ -59,7 +59,6 @@ set(TMST_INCLUDE_DIRS
 set(TMST_WRAPS
     "gpu_ws_prepass_linked_list|src/core/tmst_overlay.c"
     "psx_sdl_audio_open|src/core/tmst_audio.c"
-    "fopen|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_source|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_ttt_stage|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_fight|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
@@ -71,13 +70,24 @@ set(TMST_WRAPS
     "tekken3_arcade_stages_thunder_stop|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
 )
 
+# macOS (ld64 has no --wrap; dev/tmst_wraps.cmake emulates it): wrapped
+# symbols that no source of the game defines (the system's), each
+# "symbol|the Expanded's source whose calls go to our wrapper|header put before
+# it (-include)". The other wraps need nothing more there.
+set(TMST_APPLE_CALLERS
+    "fopen|src/tekken3_arcade_stages.c|src/compat/tmst_redirect_fopen.h"
+)
+
 # Symbols the Expanded may wrap itself (guest routines and runtime
-# functions), each "symbol|file defining __wrap_symbol": ours runs first and
-# calls __tmst_chain_symbol (theirs). Wrapped in the build: the build renames
+# functions), each "symbol|file defining __wrap_symbol", optionally "|NAME"
+# (only with TMST_HAS_NAME, as for TMST_WRAPS): ours runs first and calls
+# __tmst_chain_symbol (theirs). Wrapped in the build: the build renames
 # their wrapper (dev/tmst_chain.py). Not wrapped there (another release, or
 # TTT1 Characters off): we wrap it, and the file defines __tmst_chain_ under
-# TMST_BRIDGE_symbol as a call of __real_symbol.
+# TMST_BRIDGE_symbol as a call of __real_symbol. fopen: the Expanded's
+# Android runtime wraps it (the APK's files, android_apk_file.c), the PC ones not.
 set(TMST_CHAINS
+    "fopen|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "func_8006AE14|src/core/tmst_music.c"
     "func_80028CD4|src/core/tmst_menu.c"
     "tekken3_outfits_input|src/core/tmst_input.c"
