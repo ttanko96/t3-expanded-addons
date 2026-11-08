@@ -37,7 +37,8 @@
  * level (fades, the pause), mixed after the game's sound at the player's
  * music volume (src/core/tmst_spu.c). In a Tournament Mode match, an
  * opponent without the player's own choice plays the tournament's piece
- * (tmst_tournament_fight_music). While the Jukebox is open the game's
+ * (tmst_tournament_fight_music), on a Tekken 2 stage of the STAGE line the
+ * stage's piece (tmst_tekken2_fight_music). While the Jukebox is open the game's
  * music is silent and the preview plays.
  *
  * The list is a picture of our own over the lower part of the grid screen
@@ -1292,6 +1293,19 @@ static Choice *opponent_choice(const char **key) {
         if (tournament.cat >= 0 && resolve(&tournament, &t)) { c = &tournament; *key = tournament.key; }
         else tmst_log("jukebox: the tournament's %s/%s is not there, %s", t_cat, t_name,
                       c ? "the default choice plays" : "the game's piece plays");
+    }
+    /* A Tekken 2 stage of the STAGE line (src/tekken2/tmst_tekken2_stages.c):
+     * its own piece, unless the player chose one for this opponent. */
+    static Choice stage_piece;
+    if (!(c && *key && c == choice_of(*key)) && c != &tournament && tmst_tekken2_fight_music(&t_key, &t_cat, &t_name)) {
+        Track t;
+        memset(&stage_piece, 0, sizeof stage_piece);
+        snprintf(stage_piece.key, KEY, "%s", t_key);
+        snprintf(stage_piece.name, NAME, "%s", t_name);
+        stage_piece.cat = category_of(t_cat);
+        if (stage_piece.cat >= 0 && resolve(&stage_piece, &t)) { c = &stage_piece; *key = stage_piece.key; }
+        else tmst_log("jukebox: the Tekken 2 stage's %s/%s is not there (Tekken 2 Content's Music off?), %s", t_cat,
+                      t_name, c ? "the default choice plays" : "the game's piece plays");
     }
     return c;
 }

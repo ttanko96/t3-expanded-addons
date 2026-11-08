@@ -67,6 +67,7 @@ set(TMST_WRAPS
     "tekken3_stage_select_input|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_line|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_arena|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
+    "tekken3_stage_select_music|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_choice|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_arcade_stages_thunder_mix|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
     "tekken3_arcade_stages_thunder_stop|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
