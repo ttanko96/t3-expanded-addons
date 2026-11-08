@@ -1,7 +1,7 @@
 /* TMST core: our pad filters, chained in front of the Expanded's (tmst_input.h). */
 #include "tmst_input.h"
 
-enum { MAX_FILTERS = 4 };
+enum { MAX_FILTERS = 6 };
 static TmstInputFilter filters[MAX_FILTERS];
 static int count;
 
@@ -24,3 +24,5 @@ uint16_t __wrap_tekken3_outfits_input(int player, uint16_t buttons) {
     for (int i = 0; i < count; i++) buttons = filters[i](player, buttons);
     return __tmst_chain_tekken3_outfits_input(player, buttons);
 }
+
+uint16_t tmst_input_run(int player, uint16_t buttons) { return __wrap_tekken3_outfits_input(player, buttons); }

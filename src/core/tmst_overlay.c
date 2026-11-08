@@ -34,7 +34,11 @@
 #include <string.h>
 
 enum { TILE = 256, BUF_WORDS = 8192, BUF_BYTES = BUF_WORDS * 4, NODE_MAX = 255,
-       LONG_LIST = 256, MAX_WALK = 200000 };
+       LONG_LIST = 256, SHORT_LIST = 32, MAX_WALK = 200000 };
+/* A mod's screen whose whole frame is one short list (the main menu's: 159
+ * nodes, between two of one node): linked into lists of SHORT_LIST nodes too. */
+static int short_lists;
+void tmst_overlay_short_lists(int on) { short_lists = on != 0; }
 
 static uint32_t packet;                 /* guest address of our chain's first node */
 static uint32_t backdrop_node;          /* our node linked after the ordering table's first entry */
@@ -59,7 +63,7 @@ static void vram_up(const char *what, int x, int y, int w, int h, const uint16_t
 }
 static int kept_x, kept_y, kept_w, kept_h;
 static unsigned frame, linked_frame = ~0u, uploaded_frame;
-enum { MAX_CLIENTS = 4 };
+enum { MAX_CLIENTS = 6 };
 static TmstPrimsBuilder builders[MAX_CLIENTS];
 static TmstNodeVisitor visitors[MAX_CLIENTS];
 static int builder_count, visitor_count;
@@ -736,13 +740,32 @@ static void link_extras(void) {
     }
 }
 
+/* What follows our chain's last node: 0x00FFFFFF, or packets someone linked
+ * after it (the Expanded's MOVESET cards and STAGE line go after the last
+ * node of a list that is not cleared, VS BATTLE SELECT's: ours, when our
+ * chain is still in it). `relink`: that node's link set to it. */
+static uint32_t chain_end(int relink, uint32_t next) {
+    uint32_t at = packet & 0x00FFFFFFu;
+    for (unsigned n = 0; n < BUF_WORDS; n++) {
+        uint32_t tag = psx_mod_read_word(0x80000000u | at), to = tag & 0x00FFFFFFu;
+        if (!ours(to)) {
+            if (relink) psx_mod_write_word(0x80000000u | at, (tag & 0xFF000000u) | (next & 0x00FFFFFFu));
+            return to;
+        }
+        at = to;
+    }
+    return 0x00FFFFFFu;
+}
+
 /* One walk of the list about to be drawn. Our chain already in it (a list
- * not cleared since: the paused frame's) gets this frame's content, or goes
- * out when hidden; otherwise, shown, the frame's first long list gets it
- * after its last node. */
+ * not cleared since: the paused frame's, VS BATTLE SELECT's) gets this
+ * frame's content, or goes out when hidden, keeping what others linked after
+ * it (the walk, the visitors, go on there); otherwise, shown, the frame's
+ * first long list gets it after its last node. */
 static void link_into(uint32_t start) {
     uint32_t at = start & 0x00FFFFFFu, last = 0;
     unsigned n = 0;
+    int met = 0;                                        /* our chain was in the list */
     ot_top = (psx_mod_read_word(0x80000000u | at) >> 24) == 0 ? 0x80000000u | at : 0;
     rank = -1;
     uint32_t rank_at[RANKS];
@@ -754,18 +777,23 @@ static void link_into(uint32_t start) {
         uint32_t node = 0x80000000u | at;
         note_rank(node, psx_mod_read_word(node));
         if (ours(at)) {
+            if (met) return;                            /* round again: never */
+            met = 1;
+            uint32_t after = chain_end(0, 0);
             if (!drawing()) {                           /* hidden: out of the list */
                 if (last) {
                     uint32_t tag = psx_mod_read_word(0x80000000u | last);
-                    psx_mod_write_word(0x80000000u | last, (tag & 0xFF000000u) | 0x00FFFFFFu);
+                    psx_mod_write_word(0x80000000u | last, (tag & 0xFF000000u) | after);
                 }
                 psx_mod_write_word(packet, 0x00FFFFFFu);
             } else if (linked_frame != frame) {
                 linked_frame = frame;
                 link_extras();
                 write_chain(gpu_e1);
+                if (after != 0x00FFFFFFu) chain_end(1, after);
             }
-            return;
+            at = after;                                 /* the others' packets after ours */
+            continue;
         }
         for (int r = 0; r < RANKS; r++) if (node == rank_at[r]) { ranks[r].entry = node; ranks[r].e1 = gpu_e1; }
         if (drawing()) for (int i = 0; i < visitor_count; i++) visitors[i](node);
@@ -774,7 +802,7 @@ static void link_into(uint32_t start) {
         at = psx_mod_read_word(node) & 0x00FFFFFFu;
         n++;
     }
-    if (!drawing() || n < LONG_LIST || n >= MAX_WALK || linked_frame == frame) return;
+    if (met || !drawing() || n < (short_lists ? SHORT_LIST : LONG_LIST) || n >= MAX_WALK || linked_frame == frame) return;
     linked_frame = frame;
     link_extras();
     write_chain(gpu_e1);

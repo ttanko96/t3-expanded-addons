@@ -38,6 +38,8 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament_options.c
     src/tournament/tmst_tournament.c
+    src/vsplus/tmst_vsplus.c
+    src/vsplus/tmst_vsplus_options.c
     src/tekken2/tmst_tekken2.c
     src/tekken2/tmst_tekken2_stages.c
     src/tekken2/tmst_tekken2_mirror.c
@@ -112,6 +114,7 @@ set(TMST_PACKAGES
     tmst.jukebox
     tmst.photo-mode
     tmst.tournament
+    tmst.vs-plus
     tmst.tekken2
 )
 

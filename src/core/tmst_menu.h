@@ -41,6 +41,17 @@ int tmst_menu_distance(int row);
  * away from it as the native rows are, and in the frames the menu goes on
  * being drawn after a choice (the screen already the next one). */
 void tmst_menu_set_colour(int row, uint32_t rgb);
+/* A native row taken over: the native row whose mode byte is `mode` reads
+ * `label` (the menu's font: 1..9, A..Z, !) and has no controller
+ * restriction (the VS row asks for two pads: the menu skips it with one),
+ * so it can be chosen whatever is connected. The Expanded's menu code still
+ * sees the row as it was (taken back before it runs, given again after).
+ * One row. */
+void tmst_menu_native_row(unsigned mode, const char *label);
+/* Nonzero while the menu waits for a choice with that native row
+ * highlighted. */
+int tmst_menu_native_highlighted(unsigned mode);
+
 /* Every VBlank, from the VBlank plugin of the mod that owns a row. */
 void tmst_menu_vblank(void);
 
