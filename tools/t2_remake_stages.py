@@ -15,11 +15,19 @@ draws them when GAME OPTION's TEKKEN 2 STAGES says REMAKE).
   (t2_remake_stage.classic_cfg(): as high on the floor as the Classic); the
   high half's pictures never on Unknown's wolf nor TTT Hitspark's fixed
   cells (RESERVED); the wolf's area taken only when a pack does not fit
-  without it, never for the stages of "wolf_cut", whose background loses
-  as few top cell rows as it takes instead (cut_fitted());
-- the others (Cambodian Wetlands, Athens, Nowhere Desert, Hills, Eternal
-  Darkness: no Remake yet, the user's, 2026-11-03), and every stage without
-  tekken3.zip: the Classic's pack as it is.
+  without it; for the stages of "wolf_cut" two packs: stageNNw.ast, drawn
+  while Unknown fights, whose background loses as few top cell rows as it
+  takes instead (cut_fitted()), and stageNN.ast with all of it (full_fitted(),
+  the wolf's area too; wolf_name(); the user's, 2026-11-08), one alone when
+  the whole does not fit;
+- Cambodian Wetlands, Athens, Nowhere Desert, Hills and Eternal Darkness
+  (the old fork's last five, 2026-11-07: "own_frame") in the old fork's own
+  frame, the recipe as it is (no Classic frame: Eternal Darkness has no
+  panorama of Tekken 2's, and the Classic frame's eight cell rows would not
+  fit), the user's picture from its patch; their animations' frames past
+  the VRAM (T2AN) as the others';
+- every stage without tekken3.zip, and one of the five whose picture the
+  patch did not give: the Classic's pack as it is.
 
 Sections: the engine's (VRAM, TILE, FARB, FLOR, TRIG, ANIM), the old fork's
 that the Expanded's engine does not read (DUST, GULL, FTHR, ...: the
@@ -49,7 +57,7 @@ import tekken2_stages as classic  # noqa: E402
 from disc_image import open_disc  # noqa: E402
 
 # Increase whenever the packs this writes change: the setup makes them again.
-VERSION = 9
+VERSION = 12
 REMAKE = 'remake'
 PICTURES = 'pictures'                       # tools/t2_remake_patch.py's (in t2-stages/, never staged)
 RENAMED = {b'OBJS': b'T2OB', b'ROTT': b'T2RT', b'OBJA': b'T2OA'}
@@ -59,9 +67,20 @@ RESERVED = list(classic.HIT_EFFECT_CELLS)
 WOLF = classic.WOLF
 # The stages whose background loses top cell rows rather than its pictures
 # go on the wolf (tools/data/t2_remake_stages.json "wolf_cut", the user's,
-# 2026-11-05: cut_fitted()); a stage out of the list is built as before.
+# 2026-11-05: cut_fitted()), in their pack for Unknown's fights alone (the
+# user's, 2026-11-08: wolf_name(), full_fitted()); a stage out of the list is
+# built as before.
 WOLF_CUT = frozenset(gen.DATA.get('wolf_cut', []))
+# The stages built in their own frame, the old fork's (tools/data/
+# t2_remake_stages.json "own_frame", the user's, 2026-11-07: D1 a): the
+# recipe as it is, no Classic frame (classic_cfg()), no "frames".
+OWN_FRAME = frozenset(gen.DATA.get('own_frame', []))
 MAX_CUT = 4
+# Palettes a run (t2_remake_stage.CLUT_RUN): as the old fork's, or, for one
+# of the last five whose runs find no room otherwise, a slot's width
+LONG_RUN, SHORT_RUN = 64, 4
+# ... and its lights' palettes (t2_remake_stage.PG_CHUNK) in runs of this many
+SHORT_CHUNK = 4
 # What the wolf's pack (the Expanded's tools/ttt1/spirit.py,
 # Unknown-TTT1-wolf.glow, measured 2026-11-05) draws in WOLF: all but x
 # 768..1023 at y 708..767 and x 676..767 at y 740..767, where the Expanded's
@@ -75,6 +94,15 @@ WOLF_DRAWN = ((640, 512, 384, 196), (640, 708, 128, 32), (640, 740, 36, 28))
 # for it when a "wolf_cut" stage leaves no place otherwise.
 FONT_W, FONT_H = 192, 61
 FONT_ROOM = (1024 - FONT_W, 960, FONT_W, 64)
+
+
+def gen_pictures(cfg: dict) -> list[str]:
+    """The pictures a recipe names (its panorama, a material's source ...)."""
+    if isinstance(cfg, dict):
+        return [n for v in cfg.values() for n in gen_pictures(v)]
+    if isinstance(cfg, list):
+        return [n for v in cfg for n in gen_pictures(v)]
+    return [cfg] if isinstance(cfg, str) and cfg.endswith('.png') else []
 
 
 def owners() -> dict:
@@ -139,7 +167,7 @@ def users_picture(owner: str, size: tuple, pictures: Path, repeat: int = 2) -> t
     if [wo, ho] != frame['old']:
         raise ValueError(f'{owner}: the old panorama is {wo} x {ho}, its frame was measured on {frame["old"]}')
     w, h = size
-    a, b = frame['y']
+    a, b = gen.frame_y(frame)
     sx = w / wo / (2 / repeat)
     ext = 64 if b <= -64 else 0
     above = ext + round(b)                  # the new rows above the old picture's top
@@ -187,13 +215,14 @@ def frames_out(parts: list) -> list:
     engine's ANIM does from the VRAM."""
     vram = dict(parts)[b'VRAM']
     n, o = struct.unpack_from('<I', vram)[0], 4
-    kept, ram = [], {}
+    kept, ram, every = [], {}, {}
     for _ in range(n):
         x, y, w, h = struct.unpack_from('<4H', vram, o)
         rect = vram[o:o + 8 + 2 * w * h]
         o += 8 + 2 * w * h
+        every.setdefault((x, y), np.frombuffer(rect[8:], '<u2').reshape(h, w))
         if y >= 1024:
-            ram[x, y] = np.frombuffer(rect[8:], '<u2').reshape(h, w)
+            ram[x, y] = every[x, y]
         else:
             kept.append(rect)
     if not ram:
@@ -214,7 +243,12 @@ def frames_out(parts: list) -> list:
         for fx, fy in unique:
             frame = np.zeros((h, w), np.uint16)
             for k in range(0, w, 16):
-                frame[:, k:k + 16] = ram[fx + k, fy][:h]
+                # the rectangle holding (fx + k, fy): a picture's 16 x 64 (its
+                # top h rows), or a row of palettes (palette_frames()); in
+                # RAM, or the shown one in the VRAM (Eternal Darkness's web)
+                rx, ry = next((rx, ry) for (rx, ry), a in every.items()
+                              if rx <= fx + k < rx + a.shape[1] and ry <= fy < ry + a.shape[0])
+                frame[:, k:k + 16] = every[rx, ry][fy - ry:fy - ry + h, fx + k - rx:fx + k - rx + 16]
             pixels += frame.astype('<u2').tobytes()
         order = struct.pack(f'<{count}H', *(unique.index(p) for p in places))
         anims.append(sid + struct.pack('<8H', x, y, w, h, period, count, len(unique), mode)
@@ -290,6 +324,9 @@ def rewritten(pack: bytes, extra: list) -> bytes:
 # Darkness (and Eternal Darkness, the Classic's for now).
 DAY_ARENA = classic.DAY_ARENA
 DARK_LIGHT = classic.DARK_LIGHT
+# Dark on the Remake only: Nowhere Desert's Remake is at night (its recipe's
+# "fighter_light", FDIM), its Classic by day (D3 a, the user's, 2026-11-07).
+REMAKE_DARK = frozenset({12})
 
 
 def ours(stage: int, cfg: dict) -> list:
@@ -301,7 +338,7 @@ def ours(stage: int, cfg: dict) -> list:
     dim = round(0x80 * cfg['fighter_light']) if cfg.get('fighter_light') else \
         lay.get('dim', classic.NO_DIM) if cfg.get('night') else classic.NO_DIM
     out = [(b'T2FX', struct.pack('<2H', dim, 0))]
-    if stage not in DARK_LIGHT:
+    if stage not in DARK_LIGHT and stage not in REMAKE_DARK:
         out.append((b'T2LT', struct.pack('<2H', DAY_ARENA, 0)))
     if lay.get('mirror'):
         out.append((b'T2MR', struct.pack('<6i', *lay['mirror'])))
@@ -404,16 +441,17 @@ def write_like(path: Path, parts: dict) -> None:
     path.write_bytes(b'ASTG' + struct.pack('<2H2I', 3, 0, len(parts), off) + table + body)
 
 
-def fitted(owner: str, src, tekken3: Path, temp: Path, cfg: dict) -> tuple[dict, str]:
+def fitted(owner: str, src, tekken3: Path, temp: Path, cfg: dict, room: tuple = ()) -> tuple[dict, str]:
     """gen.build() off Unknown's wolf, else (only when it does not fit
-    without it) on it too: its report and "free" or "used"."""
+    without it) on it too: its report and "free" or "used". room: more
+    rectangles kept free (FONT_ROOM)."""
     try:
-        gen.RESERVED[:] = RESERVED + [WOLF]
+        gen.RESERVED[:] = RESERVED + [WOLF, *room]
         return gen.build(owner, src, tekken3, temp, cfg), 'free'
     except SystemExit as error:
         if 'do not fit' not in str(error):
             raise
-    gen.RESERVED[:] = RESERVED
+    gen.RESERVED[:] = RESERVED + [*room]
     return gen.build(owner, src, tekken3, temp, cfg), 'used'
 
 
@@ -432,11 +470,12 @@ def on_wolf(pack: bytes) -> int:
     return hit
 
 
-def font_place(pack: bytes) -> tuple[int, int] | None:
+def font_place(pack: bytes, wolf: bool = True) -> tuple[int, int] | None:
     """Where the add-on's letters go beside the pack while Unknown fights
-    (FONT_W x FONT_H, as tmst_overlay.c place_atlas() seeks it), or None."""
+    (FONT_W x FONT_H, as tmst_overlay.c place_atlas() seeks it; wolf False:
+    while she does not), or None."""
     data = dict(sections(pack)).get(b'VRAM', b'')
-    taken = list(classic.HIT_EFFECT_CELLS) + [WOLF]
+    taken = list(classic.HIT_EFFECT_CELLS) + ([WOLF] if wolf else [])
     if data:
         n, o = struct.unpack_from('<I', data)[0], 4
         for _ in range(n):
@@ -449,6 +488,53 @@ def font_place(pack: bytes) -> tuple[int, int] | None:
         for x in range(1024 - FONT_W, -1, -64):
             if not any(x < rx + rw and rx < x + FONT_W and y < ry + rh and ry < y + FONT_H for rx, ry, rw, rh in taken):
                 return x, y
+    return None
+
+
+def wolf_name(name: str) -> str:
+    """The pack of a "wolf_cut" stage drawn while Unknown fights
+    (stageNNw.ast beside stageNN.ast; the runtime's hand_over())."""
+    return name[:-4] + 'w' + name[-4:]
+
+
+def full_fitted(owner: str, src, tekken3: Path, temp: Path, make) -> tuple[dict, str, dict] | None:
+    """A "wolf_cut" stage with its whole background (make(0)), as fitted()
+    builds it (on the wolf's area too when it does not fit without it: drawn
+    only when Unknown is not in the fight), FONT_ROOM kept free for the
+    add-on's letters; for the last five (OWN_FRAME) the
+    short palette runs when the long ones find no room. Its report (its pack
+    "_pack"), "free" or "used", the recipe; None when it does not fit or
+    leaves the letters no place (font_place())."""
+    cfg = make(0)
+    # the palettes too (pack.Relocation puts them where no texture is,
+    # bottom right first): FONT_ROOM theirs as TTT Hitspark's cells are
+    cells = gen.pack.HIT_EFFECT_64_CELLS
+    gen.pack.HIT_EFFECT_64_CELLS = tuple(cells) + (FONT_ROOM,)
+    try:
+        for run, chunk in ((LONG_RUN, None), (SHORT_RUN, SHORT_CHUNK)):
+            gen.CLUT_RUN, gen.PG_CHUNK = run, chunk
+            try:
+                # the add-on's letters a place of their own on the wolf's area
+                # too (font_place(), Unknown not in the fight): FONT_ROOM free
+                report, wolf = fitted(owner, src, tekken3, temp, cfg, (FONT_ROOM,))
+            except ValueError as error:             # pack.Relocation: no room left for a palette run
+                if 'no room for' not in str(error) or owner not in OWN_FRAME or run == SHORT_RUN:
+                    raise
+                continue
+            report['_pack'] = temp.read_bytes()
+            temp.unlink()
+            if not font_place(report['_pack'], wolf=False):
+                return None
+            return report, wolf, cfg
+    except SystemExit as error:
+        if 'do not fit' not in str(error):
+            raise
+    except ValueError as error:
+        if 'no room for' not in str(error):
+            raise
+    finally:
+        gen.CLUT_RUN, gen.PG_CHUNK = LONG_RUN, None
+        gen.pack.HIT_EFFECT_64_CELLS = cells
     return None
 
 
@@ -474,6 +560,44 @@ def cutter(base: dict, picture: np.ndarray, ext: int, frame: dict, repeat: int):
     return make
 
 
+def own_cutter(base: dict):
+    """make(cut) for a stage in its own frame (OWN_FRAME): the recipe with
+    the top cut cell rows of its picture off (its crop's top lower by as
+    much of the picture, "yoff" lower by 32 lines a row: the rest where it
+    was), its rows' indices ("weave" "cell", the animated rows) shifted;
+    windows ("flicker" "rain", "lightning") clipped to what is left, one
+    with less than 16 of its pixels left gone. None: they may not go (an
+    animated row, a fire or a cobweb in what is cut, no "yoff")."""
+    def make(cut: int) -> dict | None:
+        if not cut:
+            return base
+        if cut >= base.get('rows', 0) or 'yoff' not in base or not base.get('crop'):
+            return None
+        c = copy.deepcopy(base)
+        x0, y0, x1, y1 = c['crop']
+        top = round(y0 + cut * (y1 - y0) / c['rows'])
+        c['crop'], c['rows'], c['yoff'] = [x0, top, x1, y1], c['rows'] - cut, c['yoff'] + 32 * cut
+        for key in ('sea', 'pool', 'clouds', 'water'):
+            if key in c:
+                c[key]['row'] -= cut
+                if c[key]['row'] < 0:
+                    return None
+                if 'water' in c[key] and isinstance(c[key]['water'], dict) and 'row' in c[key]['water']:
+                    c[key]['water']['row'] -= cut
+        if 'weave' in c:
+            c['weave']['cell'][0] -= cut
+            if c['weave']['cell'][0] < 0:
+                return None
+        if any(y < top for _, y, *_ in c.get('flicker', {}).get('fires', []) + c.get('webs', {}).get('at', [])):
+            return None
+        for spec in (c.get('flicker', {}).get('rain'), c.get('lightning', {}).get('windows')):
+            key = 'windows' if spec and 'windows' in spec else 'rects'
+            if spec and key in spec:
+                spec[key] = [[wx0, max(wy0, top), wx1, wy1] for wx0, wy0, wx1, wy1 in spec[key] if wy1 - top >= 16]
+        return c
+    return make
+
+
 def cut_fitted(owner: str, src, tekken3: Path, temp: Path, make) -> tuple[dict, str, dict, int]:
     """A stage of WOLF_CUT: gen.build() off Unknown's wolf with 0, 1, 2 ...
     (MAX_CUT at most) top cell rows of its background cut, the first that
@@ -481,28 +605,43 @@ def cut_fitted(owner: str, src, tekken3: Path, temp: Path, make) -> tuple[dict, 
     for the add-on's letters while Unknown fights (font_place(); with
     FONT_ROOM kept free when not without it). Else as fitted() with none
     cut. Its report, "free" or "used", the recipe, the rows cut."""
-    for cut in range(MAX_CUT + 1):
-        cfg = make(cut)
-        if cfg is None:
-            break
-        for room in ((), (FONT_ROOM,)):
-            gen.RESERVED[:] = RESERVED + [WOLF, *room]
-            try:
-                report = gen.build(owner, src, tekken3, temp, cfg)
-            except SystemExit as error:
-                if 'do not fit' not in str(error):
-                    raise
+    try:
+        for cut in range(MAX_CUT + 1):
+            cfg = make(cut)
+            if cfg is None:
                 break
-            except ValueError as error:         # pack.Relocation: no room left for a palette run
-                if 'no room for' not in str(error):
-                    raise
-                break
-            pack = temp.read_bytes()
-            if not on_wolf(pack) and font_place(pack):
-                return report, 'free', cfg, cut
-    cfg = make(0)
-    report, wolf = fitted(owner, src, tekken3, temp, cfg)
-    return report, wolf, cfg, 0
+            for room in ((), (FONT_ROOM,)):
+                gen.RESERVED[:] = RESERVED + [WOLF, *room]
+                try:
+                    report = gen.build(owner, src, tekken3, temp, cfg)
+                except SystemExit as error:
+                    if 'do not fit' not in str(error):
+                        raise
+                    break
+                except ValueError as error:         # pack.Relocation: no room left for a palette run
+                    if 'no room for' not in str(error):
+                        raise
+                    if owner not in OWN_FRAME or gen.CLUT_RUN == SHORT_RUN:
+                        break
+                    # (the last five) shorter runs, the same cut again
+                    gen.CLUT_RUN, gen.PG_CHUNK = SHORT_RUN, SHORT_CHUNK
+                    try:
+                        report = gen.build(owner, src, tekken3, temp, cfg)
+                    except (SystemExit, ValueError) as again:
+                        if 'do not fit' not in str(again) and 'no room for' not in str(again):
+                            raise
+                        gen.CLUT_RUN, gen.PG_CHUNK = LONG_RUN, None
+                        break
+                pack = temp.read_bytes()
+                if not on_wolf(pack) and font_place(pack):
+                    return report, 'free', cfg, cut
+                gen.CLUT_RUN, gen.PG_CHUNK = LONG_RUN, None
+        gen.CLUT_RUN, gen.PG_CHUNK = LONG_RUN, None
+        cfg = make(0)
+        report, wolf = fitted(owner, src, tekken3, temp, cfg)
+        return report, wolf, cfg, 0
+    finally:
+        gen.CLUT_RUN, gen.PG_CHUNK = LONG_RUN, None
 
 
 def convert(disc: Path, out: Path, tekken3: Path | None, say=print, only=None, storm: Path | None = None) -> list[str]:
@@ -540,7 +679,17 @@ def convert(disc: Path, out: Path, tekken3: Path | None, say=print, only=None, s
             base = gen.DATA['arcade'][owner]
             temp = folder / (name + '.part')
             tries = [(lambda cut: None if cut else base, 'no')]       # Mirror Darkness: no panorama
-            if not base.get('night'):
+            if owner in OWN_FRAME:
+                # its own frame (D1 a, the user's, 2026-11-07): the recipe as the
+                # old fork's, its picture the user's when the patch opened it
+                if all((pictures / n).is_file() for n in gen_pictures(base)):
+                    tries = [(own_cutter(base), 'the Remake’s')]
+                else:
+                    say(f'Tekken 2 stage {stage:2} {classic.NAMES[stage]}: no Remake picture, the Classic')
+                    shutil.copyfile(out / classic.CLASSIC / name, target)
+                    names.append(f'{REMAKE}/{name}')
+                    continue
+            elif not base.get('night'):
                 own = classic_picture(classic.stage_data(src, stage))
                 repeat = classic.layout(stage)['repeat']
                 theirs = users_picture(owner, own.shape[1::-1], pictures, repeat)
@@ -559,6 +708,7 @@ def convert(disc: Path, out: Path, tekken3: Path | None, say=print, only=None, s
                 pics.append(((own, 0), 'Tekken 2’s own'))
                 tries = [(cutter(base, p, ext, gen.DATA['frames'][owner], repeat), kind)
                          for (p, ext), kind in pics]
+            gen.PALETTE_RAM = owner in OWN_FRAME        # the last five's lights' frames past the VRAM
             for k, (make, kind) in enumerate(tries):
                 try:
                     if owner in WOLF_CUT:
@@ -571,12 +721,30 @@ def convert(disc: Path, out: Path, tekken3: Path | None, say=print, only=None, s
                     if 'do not fit' not in str(error) or k == len(tries) - 1:
                         raise
                     say(f'Tekken 2 stage {stage:2} {classic.NAMES[stage]}: {kind} picture does not fit the VRAM')
-            pack = rewritten(temp.read_bytes(), ours(stage, cfg))
-            temp.unlink()
-            target.write_bytes(pack)
+            cut_pack = rewritten(temp.read_bytes(), ours(stage, cfg))
+            full = None
+            if owner in WOLF_CUT and cut:
+                # its whole background when Unknown is not in the fight (the
+                # user's, 2026-11-08): the cut pack its wolf variant
+                full = full_fitted(owner, src, tekken3, temp, make)
+            gen.PALETTE_RAM = False
+            temp.unlink(missing_ok=True)
+            (folder / wolf_name(name)).unlink(missing_ok=True)
+            if full:
+                full_report, full_wolf, full_cfg = full
+                pack = rewritten(full_report.pop('_pack'), ours(stage, full_cfg))
+                target.write_bytes(pack)
+                (folder / wolf_name(name)).write_bytes(cut_pack)
+                names += [f'{REMAKE}/{name}', f'{REMAKE}/{wolf_name(name)}']
+                say(f'Tekken 2 stage {stage:2} {classic.NAMES[stage]}: Remake {len(pack)} bytes, '
+                    f'far {full_report["far_cells"]}, {high_cells(pack)} high cells, the wolf’s area {full_wolf}, '
+                    f'{kind} picture, whole; with Unknown {wolf_name(name)}: {len(cut_pack)} bytes, '
+                    f'far {report["far_cells"]}, its top {cut} cell rows cut')
+                continue
+            target.write_bytes(cut_pack)
             names.append(f'{REMAKE}/{name}')
-            say(f'Tekken 2 stage {stage:2} {classic.NAMES[stage]}: Remake {len(pack)} bytes, '
-                f'far {report["far_cells"]}, {high_cells(pack)} high cells, the wolf’s area {wolf}, {kind} picture'
+            say(f'Tekken 2 stage {stage:2} {classic.NAMES[stage]}: Remake {len(cut_pack)} bytes, '
+                f'far {report["far_cells"]}, {high_cells(cut_pack)} high cells, the wolf’s area {wolf}, {kind} picture'
                 + (f', its top {cut} cell rows cut' if cut else ''))
     return names
 

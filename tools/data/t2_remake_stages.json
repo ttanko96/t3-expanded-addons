@@ -43,7 +43,12 @@
   "kuma": 6,
   "mokujin": 7,
   "panda": 1,
-  "anna": 16
+  "anna": 16,
+  "kunimitsu": 10,
+  "tetsujin": 11,
+  "julia": 12,
+  "alex": 14,
+  "kazuya": 21
  },
  "fighters": {
   "jack2": 3,
@@ -63,9 +68,14 @@
   "kuma": 9,
   "mokujin": 6,
   "panda": 8,
-  "anna": 13
+  "anna": 13,
+  "kunimitsu": 16,
+  "tetsujin": 4,
+  "julia": 12,
+  "alex": 15,
+  "kazuya": 0
  },
- "_wolf_cut": "tools/t2_remake_stages.py cut_fitted(): these stages (\"arcade\" keys) lose top cell rows of their background (as few as fit) rather than put pictures on Unknown's wolf and leave room for the overlay's letters while Unknown fights (the user's, 2026-11-05: Szechwan, Hong Kong, Akihabara, Great Wall, Launch Pad, Kyoto; Arizona for the letters). A key taken out: that stage built as before, the wolf's area when it does not fit without it.",
+ "_wolf_cut": "tools/t2_remake_stages.py cut_fitted(): these stages (\"arcade\" keys) lose top cell rows of their background (as few as fit) rather than put pictures on Unknown's wolf and leave room for the overlay's letters while Unknown fights (the user's, 2026-11-05: Szechwan, Hong Kong, Akihabara, Great Wall, Launch Pad, Kyoto; Arizona for the letters). A key taken out: that stage built as before, the wolf's area when it does not fit without it. Since 2026-11-08 (the user's) only in the pack drawn while Unknown fights (stageNNw.ast, wolf_name()); stageNN.ast keeps the whole background, the wolf's area too, the letters' room (FONT_ROOM) free (full_fitted()); Hong Kong's whole does not fit: its one pack cut.",
  "wolf_cut": [
   "panda",
   "gunjack",
@@ -73,7 +83,16 @@
   "wang",
   "lee",
   "ganryu",
-  "michelle"
+  "michelle",
+  "kazuya"
+ ],
+ "_own_frame": "tools/t2_remake_stages.py convert(): these stages (\"arcade\" keys, the old fork's last five, exported 2026-11-07) are built in their own frame, the recipe as the old fork's (no Classic frame, no \"frames\"; the user's, 2026-11-07); a \"wolf_cut\" one of them loses top cell rows of its picture as own_cutter() cuts them. Hills (alex) \"yoff\" 16, not the old fork's 6: its picture's foot (the meadow) down on the floor's far edge, no flat green of the bottom colour under it (the user's, 2026-11-08; measured headless: 14 the least with none).",
+ "own_frame": [
+  "kunimitsu",
+  "tetsujin",
+  "julia",
+  "alex",
+  "kazuya"
  ],
  "arcade": {
   "jack2": {
@@ -2489,6 +2508,16 @@
   "pjack": {
    "base": 0,
    "panorama": "london-ruins-panorama.png",
+   "sea": {
+    "row": 5,
+    "frames": 8,
+    "period": 10,
+    "wash": 4,
+    "reach": 10,
+    "foam_from": 0,
+    "water_to": 0,
+    "glitter": 0
+   },
    "crop": [
     0,
     150,
@@ -4392,9 +4421,1604 @@
     "rank": 1009,
     "flutter": 120
    }
+  },
+  "kunimitsu": {
+   "stage": 10,
+   "source": 16,
+   "base": 0,
+   "panorama": "cambodian-panorama.png",
+   "crop": [
+    0,
+    -16,
+    2000,
+    352
+   ],
+   "sky": [
+    1,
+    50,
+    136
+   ],
+   "rows": 4,
+   "columns": 24,
+   "seam": 96,
+   "degrees": 60,
+   "dust": {
+    "colour": [
+     110,
+     104,
+     80
+    ]
+   },
+   "clouds": {
+    "row": 2,
+    "frames": 4,
+    "period": 14,
+    "billow": 1.4,
+    "wave": 110,
+    "foot": 46,
+    "picture": "cambodia",
+    "bounce": true,
+    "water": {
+     "row": 3,
+     "from": 20,
+     "ripple": 1.3,
+     "wave": 40,
+     "glitter": 0.04,
+     "to": 56
+    }
+   },
+   "yoff": 20,
+   "bank": {
+    "height": 5,
+    "colour": [
+     46,
+     104,
+     34
+    ]
+   },
+   "painted": [
+    "sandstone",
+    "naga",
+    "laterite",
+    "apsara",
+    "fig_root",
+    "palm_trunk",
+    "matting",
+    "boat",
+    "fig_leaves",
+    "net",
+    "reeds",
+    "wood",
+    "plank",
+    "thatch",
+    "bamboo",
+    "iron",
+    "torii_black"
+   ],
+   "tuft_blades": "green",
+   "scenery": {
+    "tile_size": 300,
+    "seed": 10,
+    "light": {
+     "azimuth": 200,
+     "elevation": 50,
+     "ambient": [
+      0.72,
+      0.74,
+      0.76
+     ],
+     "sun": [
+      0.55,
+      0.52,
+      0.45
+     ],
+     "foot_dark": 0
+    },
+    "ruin_walls": [
+     {
+      "at": [
+       0,
+       1250
+      ],
+      "width": 360,
+      "height": 230,
+      "thick": 60,
+      "relief": true
+     },
+     {
+      "at": [
+       270,
+       1300
+      ],
+      "yaw": 15,
+      "width": 260,
+      "height": 190,
+      "thick": 60
+     }
+    ],
+    "naga": {
+     "height": 60,
+     "body": 14
+    },
+    "nagas": [
+     [
+      -40,
+      -12,
+      1150
+     ],
+     [
+      40,
+      12,
+      1150
+     ]
+    ],
+    "khmer_blocks": [
+     [
+      -50,
+      1080,
+      30
+     ],
+     [
+      55,
+      1100,
+      26,
+      "laterite"
+     ],
+     [
+      80,
+      1060,
+      34
+     ],
+     [
+      105,
+      1120,
+      24,
+      "laterite"
+     ],
+     [
+      255,
+      1120,
+      32
+     ],
+     [
+      285,
+      1080,
+      26
+     ],
+     [
+      262,
+      1180,
+      22,
+      "laterite"
+     ],
+     [
+      120,
+      1200,
+      28
+     ]
+    ],
+    "terraces": [
+     {
+      "at": [
+       65,
+       1180
+      ],
+      "count": 3,
+      "rise": 22,
+      "tread": 40,
+      "width": 260,
+      "top": 80
+     }
+    ],
+    "fig": {
+     "at": [
+      100,
+      1450
+     ],
+     "height": 640,
+     "roots": 9,
+     "reach": 320,
+     "crown": 230,
+     "leaves": 30
+    },
+    "palm": {
+     "fronds": 18,
+     "frond": 190
+    },
+    "palms": [
+     [
+      35,
+      1550,
+      760
+     ],
+     [
+      58,
+      1650,
+      680
+     ],
+     [
+      128,
+      1600,
+      800
+     ],
+     [
+      148,
+      1700,
+      700
+     ],
+     [
+      232,
+      1550,
+      740
+     ],
+     [
+      300,
+      1550,
+      800
+     ],
+     [
+      322,
+      1700,
+      660
+     ],
+     [
+      345,
+      1700,
+      720
+     ]
+    ],
+    "stilt_house": {
+     "at": [
+      180,
+      1500
+     ],
+     "yaw": 0,
+     "width": 380,
+     "depth": 280,
+     "floor": 210,
+     "walls": 190,
+     "roof": 170
+    },
+    "boat": {
+     "at": [
+      208,
+      1220
+     ],
+     "yaw": 35,
+     "length": 560,
+     "width": 96,
+     "depth": 46
+    },
+    "net": {
+     "height": 250,
+     "drop": 170
+    },
+    "nets": [
+     [
+      148,
+      162,
+      1280
+     ]
+    ],
+    "lotus_ponds": [
+     [
+      160,
+      1060,
+      320,
+      160,
+      5
+     ],
+     [
+      222,
+      1020,
+      260,
+      140,
+      4
+     ],
+     [
+      250,
+      1060,
+      240,
+      130,
+      4
+     ]
+    ],
+    "tufts": {
+     "count": 70,
+     "near": 1150,
+     "far": 1600,
+     "size": 85,
+     "colour": [
+      1.0,
+      1.0,
+      0.95
+     ],
+     "tex": "reeds"
+    }
+   },
+   "grass": {
+    "period": 450,
+    "count": 24,
+    "size": 40,
+    "rank": 980,
+    "seed": 10,
+    "colour": [
+     1.0,
+     1.0,
+     0.96
+    ],
+    "tex": [
+     "tuft"
+    ]
+   },
+   "egrets": {
+    "count": 5,
+    "flock": 200,
+    "radius": [
+     3000,
+     3000
+    ],
+    "height": [
+     -1100,
+     -1100
+    ],
+    "speed": 34,
+    "centre": [
+     3200,
+     300
+    ],
+    "scale": 1.0,
+    "rank": 1009
+   }
+  },
+  "tetsujin": {
+   "stage": 11,
+   "source": 4,
+   "base": 0,
+   "panorama": "athens-panorama.png",
+   "crop": [
+    0,
+    -67,
+    2000,
+    333
+   ],
+   "sky": [
+    22,
+    72,
+    156
+   ],
+   "rows": 4,
+   "columns": 24,
+   "seam": 96,
+   "degrees": 60,
+   "yoff": 36,
+   "dust": {
+    "colour": [
+     150,
+     130,
+     105
+    ]
+   },
+   "clouds": {
+    "row": 2,
+    "frames": 4,
+    "period": 14,
+    "billow": 1.4,
+    "wave": 110,
+    "foot": 54,
+    "picture": "athens",
+    "bounce": true
+   },
+   "painted": [
+    "pentelic",
+    "flute",
+    "doric_frieze",
+    "ionic",
+    "architrave",
+    "caryatid",
+    "inscription",
+    "odeon",
+    "olive_bark",
+    "cypress",
+    "pole",
+    "brass",
+    "poppies",
+    "lavender"
+   ],
+   "tuft_blades": "green",
+   "scenery": {
+    "tile_size": 300,
+    "seed": 11,
+    "light": {
+     "azimuth": 220,
+     "elevation": 45,
+     "ambient": [
+      0.74,
+      0.74,
+      0.78
+     ],
+     "sun": [
+      0.6,
+      0.54,
+      0.42
+     ],
+     "foot_dark": 0
+    },
+    "colonnades": [
+     {
+      "at": [
+       0,
+       1100
+      ],
+      "yaw": 0,
+      "columns": 6,
+      "spacing": 180,
+      "radius": 38,
+      "height": 480,
+      "broken": [
+       1,
+       1,
+       1,
+       0.55,
+       1,
+       0.3
+      ],
+      "entablature": [
+       0,
+       2
+      ]
+     }
+    ],
+    "column_drums": [
+     [
+      25,
+      1000,
+      36,
+      60,
+      1
+     ],
+     [
+      -32,
+      1050,
+      36,
+      55,
+      1
+     ],
+     [
+      17,
+      1110,
+      36,
+      70,
+      0
+     ],
+     [
+      200,
+      1000,
+      34,
+      60,
+      1
+     ],
+     [
+      150,
+      1050,
+      36,
+      80,
+      0
+     ],
+     [
+      330,
+      980,
+      34,
+      50,
+      1
+     ]
+    ],
+    "marble_blocks": [
+     [
+      40,
+      1050,
+      28
+     ],
+     [
+      -50,
+      1000,
+      24
+     ],
+     [
+      110,
+      1000,
+      30
+     ],
+     [
+      250,
+      1060,
+      26
+     ],
+     [
+      285,
+      1020,
+      22
+     ],
+     [
+      175,
+      1100,
+      28
+     ]
+    ],
+    "ionic_capitals": [
+     [
+      60,
+      980,
+      44
+     ]
+    ],
+    "architraves": [
+     [
+      300,
+      1000,
+      300
+     ],
+     [
+      120,
+      1080,
+      260
+     ]
+    ],
+    "caryatid_porch": {
+     "at": [
+      300,
+      1250
+     ],
+     "yaw": 0,
+     "width": 380,
+     "depth": 240,
+     "podium": 140,
+     "figure": 210
+    },
+    "steles": [
+     [
+      335,
+      950
+     ],
+     [
+      95,
+      960
+     ]
+    ],
+    "odeon": {
+     "from": 150,
+     "to": 210,
+     "distance": 1120,
+     "height": 360,
+     "thick": 70
+    },
+    "flagpole": {
+     "at": [
+      45,
+      1150
+     ],
+     "height": 470,
+     "flag": 150,
+     "picture": "greek",
+     "plinth": "pentelic",
+     "flies": 90
+    },
+    "olive": {
+     "crown": 220,
+     "clumps": 6
+    },
+    "olives": [
+     [
+      70,
+      1150,
+      360
+     ],
+     [
+      125,
+      1250,
+      340
+     ],
+     [
+      232,
+      1300,
+      380
+     ],
+     [
+      262,
+      1150,
+      340
+     ],
+     [
+      100,
+      1200,
+      400
+     ],
+     [
+      338,
+      1150,
+      350
+     ]
+    ],
+    "cypress": {
+     "pot": false
+    },
+    "cypresses": [
+     [
+      30,
+      1350,
+      700
+     ],
+     [
+      140,
+      1500,
+      650
+     ],
+     [
+      218,
+      1450,
+      720
+     ],
+     [
+      235,
+      1450,
+      680
+     ],
+     [
+      322,
+      1500,
+      640
+     ],
+     [
+      50,
+      1500,
+      700
+     ]
+    ],
+    "tufts": {
+     "count": 60,
+     "near": 1100,
+     "far": 1600,
+     "size": 70,
+     "colour": [
+      1.0,
+      1.0,
+      0.95
+     ],
+     "tex": [
+      "tuft",
+      "tuft",
+      "lavender",
+      "poppies"
+     ]
+    }
+   },
+   "grass": {
+    "period": 450,
+    "count": 24,
+    "size": 40,
+    "rank": 980,
+    "seed": 11,
+    "colour": [
+     1.0,
+     1.0,
+     0.96
+    ],
+    "tex": [
+     "tuft",
+     "tuft",
+     "lavender",
+     "poppies"
+    ]
+   },
+   "doves": {
+    "count": 5,
+    "flock": 120,
+    "radius": [
+     2500,
+     2500
+    ],
+    "height": [
+     -900,
+     -900
+    ],
+    "speed": 40,
+    "centre": [
+     3000,
+     300
+    ],
+    "scale": 0.9,
+    "rank": 1009
+   }
+  },
+  "julia": {
+   "stage": 12,
+   "source": 12,
+   "base": 0,
+   "panorama": "nowhere-desert-night-panorama.png",
+   "crop": [
+    0,
+    -67,
+    2000,
+    333
+   ],
+   "sky": [
+    4,
+    12,
+    34
+   ],
+   "rows": 4,
+   "columns": 24,
+   "seam": 96,
+   "twice": true,
+   "degrees": 60,
+   "yoff": 24,
+   "moon": {
+    "x": 420,
+    "y": 84,
+    "radius": 10,
+    "halo": 40,
+    "colour": [
+     236,
+     234,
+     220
+    ],
+    "halo_colour": [
+     34,
+     40,
+     62
+    ],
+    "lining": [
+     80,
+     86,
+     104
+    ],
+    "breath": 0.12,
+    "breath_rows": [
+     64,
+     128
+    ],
+    "sky": 20,
+    "thick": 40
+   },
+   "floor_tint": [
+    0.46,
+    0.52,
+    0.8
+   ],
+   "fighter_light": 0.74,
+   "fighter_tint": [
+    0.92,
+    0.93,
+    1.03
+   ],
+   "dust": {
+    "colour": [
+     42,
+     38,
+     42
+    ]
+   },
+   "clouds": {
+    "row": 1,
+    "frames": 4,
+    "period": 16,
+    "billow": 1.5,
+    "wave": 120,
+    "picture": "desert",
+    "bounce": true
+   },
+   "painted": [
+    "redrock",
+    "redrock_dark",
+    "redrock_top",
+    "petroglyph",
+    "bone",
+    "cholla",
+    "pear_pad",
+    "barbwire",
+    "skull",
+    "driftwood"
+   ],
+   "alias": {
+    "cliff": "redrock",
+    "cliff_dark": "redrock_dark"
+   },
+   "scenery": {
+    "tile_size": 300,
+    "seed": 12,
+    "light": {
+     "azimuth": 15,
+     "elevation": 30,
+     "ambient": [
+      0.3,
+      0.34,
+      0.52
+     ],
+     "sun": [
+      0.26,
+      0.28,
+      0.36
+     ],
+     "foot_dark": 0
+    },
+    "petroglyphs": [
+     {
+      "at": [
+       335,
+       1040
+      ],
+      "width": 230,
+      "height": 165,
+      "depth": 90,
+      "lean": 8
+     }
+    ],
+    "boulders": [
+     [
+      318,
+      1100,
+      55,
+      0.3
+     ],
+     [
+      350,
+      1010,
+      40,
+      0.3
+     ],
+     [
+      272,
+      960,
+      45,
+      0.35
+     ],
+     [
+      140,
+      1000,
+      35,
+      0.3
+     ],
+     [
+      30,
+      990,
+      40,
+      0.3
+     ],
+     [
+      240,
+      1050,
+      30,
+      0.3
+     ]
+    ],
+    "skulls": [
+     [
+      268,
+      930,
+      70,
+      0
+     ]
+    ],
+    "juniper": {
+     "branches": 4,
+     "reach": 70
+    },
+    "junipers": [
+     [
+      70,
+      1150,
+      200,
+      4
+     ],
+     [
+      255,
+      1100,
+      230,
+      7
+     ],
+     [
+      165,
+      1000,
+      170,
+      9
+     ]
+    ],
+    "prickly_pears": [
+     [
+      40,
+      1250,
+      34
+     ],
+     [
+      100,
+      950,
+      30
+     ],
+     [
+      285,
+      1000,
+      32
+     ],
+     [
+      235,
+      1350,
+      36
+     ],
+     [
+      355,
+      1080,
+      30
+     ]
+    ],
+    "chollas": [
+     [
+      150,
+      1250,
+      140
+     ],
+     [
+      300,
+      1150,
+      120
+     ],
+     [
+      5,
+      1150,
+      110
+     ]
+    ],
+    "barb_fences": [
+     {
+      "from": [
+       160,
+       1150
+      ],
+      "to": [
+       200,
+       1180
+      ],
+      "posts": 5,
+      "height": 120,
+      "broken": [
+       2
+      ],
+      "lean": 10
+     }
+    ]
+   },
+   "feathers": {
+    "shape": "tumbleweed",
+    "count": 3,
+    "near": 1500,
+    "far": 4500,
+    "height": 3200,
+    "length": 520,
+    "fall": 600,
+    "colour": [
+     86,
+     80,
+     84
+    ],
+    "devil_colour": [
+     24,
+     22,
+     22
+    ],
+    "devils": 1
+   },
+   "vultures": {
+    "count": 3,
+    "radius": [
+     1800,
+     2800
+    ],
+    "height": [
+     -1700,
+     -1200
+    ],
+    "speed": 34,
+    "centre": [
+     2500,
+     800
+    ],
+    "scale": 0.85,
+    "rank": 1009,
+    "tint": [
+     0.5,
+     0.56,
+     0.78
+    ],
+    "lizards": {
+     "count": 2,
+     "near": 450,
+     "far": 950,
+     "scale": 1.2,
+     "rank": 980
+    }
+   }
+  },
+  "alex": {
+   "stage": 14,
+   "base": 0,
+   "panorama": "hills-panorama.png",
+   "crop": [
+    0,
+    -73,
+    2000,
+    327
+   ],
+   "sky": [
+    40,
+    86,
+    160
+   ],
+   "rows": 4,
+   "columns": 24,
+   "seam": 96,
+   "degrees": 60,
+   "yoff": 16,
+   "dust": {
+    "colour": [
+     120,
+     118,
+     84
+    ]
+   },
+   "clouds": {
+    "row": 1,
+    "frames": 4,
+    "period": 16,
+    "billow": 1.4,
+    "wave": 110,
+    "picture": "hills",
+    "bounce": true,
+    "water": {
+     "kind": "meadow",
+     "row": 3,
+     "from": 22,
+     "ripple": 1.6,
+     "wave": 46,
+     "gust": 300,
+     "sheen": 0.1
+    }
+   },
+   "painted": [
+    "fossil",
+    "tooth",
+    "raptor",
+    "ammonite",
+    "dandelion"
+   ],
+   "materials": {
+    "cliff": {
+     "box": [
+      585,
+      205,
+      715,
+      245
+     ],
+     "tiles": 3,
+     "lift": 0.3,
+     "soften": 0.3
+    },
+    "cliff_dark": {
+     "box": [
+      560,
+      238,
+      700,
+      262
+     ],
+     "tiles": 3,
+     "lift": 0.4,
+     "soften": 0.3
+    }
+   },
+   "tuft_blades": "green",
+   "scenery": {
+    "tile_size": 200,
+    "seed": 14,
+    "light": {
+     "azimuth": 220,
+     "elevation": 45,
+     "ambient": [
+      0.72,
+      0.74,
+      0.78
+     ],
+     "sun": [
+      0.55,
+      0.52,
+      0.42
+     ],
+     "foot_dark": 0
+    },
+    "trex": {
+     "at": [
+      0,
+      1130
+     ],
+     "turn": 20,
+     "length": 440,
+     "gape": 22,
+     "sink": 8
+    },
+    "rib_cages": [
+     {
+      "at": [
+       300,
+       990
+      ],
+      "turn": 60,
+      "ribs": 11,
+      "height": 230,
+      "width": 110,
+      "spacing": 48
+     }
+    ],
+    "skeletons": [
+     {
+      "at": [
+       140,
+       1020
+      ],
+      "turn": 20,
+      "length": 440,
+      "skull": 130
+     }
+    ],
+    "bones": [
+     [
+      30,
+      960,
+      "femur",
+      150,
+      20
+     ],
+     [
+      215,
+      940,
+      "femur",
+      120,
+      110
+     ],
+     [
+      345,
+      930,
+      "claw",
+      50
+     ],
+     [
+      95,
+      990,
+      "claw",
+      44
+     ],
+     [
+      12,
+      960,
+      "tooth",
+      40
+     ],
+     [
+      250,
+      960,
+      "tooth",
+      36
+     ],
+     [
+      275,
+      1000,
+      "vertebra",
+      50
+     ],
+     [
+      60,
+      1010,
+      "vertebra",
+      44
+     ]
+    ],
+    "ammonites": [
+     [
+      60,
+      960,
+      80,
+      30
+     ],
+     [
+      160,
+      940,
+      65,
+      35
+     ],
+     [
+      235,
+      1060,
+      95,
+      30
+     ],
+     [
+      320,
+      960,
+      70,
+      35
+     ],
+     [
+      95,
+      1150,
+      100,
+      25
+     ]
+    ],
+    "boulders": [
+     [
+      40,
+      1160,
+      45,
+      0.35
+     ],
+     [
+      75,
+      1060,
+      28,
+      0.3
+     ],
+     [
+      200,
+      1180,
+      55,
+      0.35
+     ],
+     [
+      250,
+      1020,
+      32,
+      0.3
+     ],
+     [
+      330,
+      1190,
+      40,
+      0.3
+     ],
+     [
+      170,
+      1150,
+      30,
+      0.3
+     ]
+    ],
+    "tufts": {
+     "count": 140,
+     "near": 880,
+     "far": 1500,
+     "size": 100,
+     "colour": [
+      1.0,
+      1.04,
+      0.96
+     ],
+     "tex": [
+      "tuft",
+      "dandelion"
+     ],
+     "keep_out": [
+      [
+       0,
+       1130,
+       300
+      ],
+      [
+       300,
+       990,
+       300
+      ],
+      [
+       140,
+       1020,
+       260
+      ]
+     ]
+    }
+   },
+   "grass": {
+    "period": 450,
+    "count": 24,
+    "size": 44,
+    "rank": 980,
+    "seed": 14,
+    "colour": [
+     1.0,
+     1.02,
+     0.95
+    ],
+    "tex": [
+     "tuft",
+     "dandelion"
+    ]
+   },
+   "feathers": {
+    "shape": "fluff",
+    "count": 24,
+    "near": 300,
+    "far": 2200,
+    "height": 2200,
+    "length": 70,
+    "fall": 10,
+    "colour": [
+     255,
+     255,
+     250
+    ]
+   }
+  },
+  "kazuya": {
+   "stage": 21,
+   "source": 0,
+   "base": 0,
+   "panorama": "eternal-darkness-panorama.png",
+   "crop": [
+    0,
+    40,
+    2000,
+    623
+   ],
+   "rows": 6,
+   "columns": 20,
+   "seam": 48,
+   "degrees": 72,
+   "yoff": -40,
+   "floor_base": 8,
+   "floor_tint": [
+    0.3,
+    0.27,
+    0.3
+   ],
+   "fighter_light": 0.58,
+   "fighter_tint": [
+    1.12,
+    0.86,
+    0.66
+   ],
+   "fighter_flicker": 0.14,
+   "flicker": {
+    "frames": 24,
+    "period": 3,
+    "reach": 24,
+    "depth": 0.18,
+    "bright": 170,
+    "fires": [
+     [
+      1265,
+      575,
+      0.4
+     ]
+    ],
+    "rain": {
+     "windows": [
+      [
+       235,
+       210,
+       325,
+       360
+      ],
+      [
+       745,
+       165,
+       875,
+       395
+      ],
+      [
+       1655,
+       70,
+       1720,
+       150
+      ],
+      [
+       1625,
+       290,
+       1785,
+       525
+      ]
+     ],
+     "slant": 0.12,
+     "density": 0.22,
+     "dash": 4,
+     "colour": [
+      56,
+      64,
+      86
+     ]
+    }
+   },
+   "lightning": {
+    "like": "workspace/ttt1-import/stages/arcade-baek.ast",
+    "windows": {
+     "rects": [
+      [
+       235,
+       210,
+       325,
+       360
+      ],
+      [
+       745,
+       165,
+       875,
+       395
+      ],
+      [
+       1655,
+       70,
+       1720,
+       150
+      ],
+      [
+       1625,
+       290,
+       1785,
+       525
+      ]
+     ],
+     "glow": 8,
+     "spill": 0.5
+    },
+    "levels": [
+     0.6,
+     1.0
+    ],
+    "variants": [
+     0,
+     1,
+     1
+    ],
+    "flash": [
+     0.35,
+     [
+      0.85,
+      0.9,
+      1.15
+     ]
+    ]
+   },
+   "webs": {
+    "at": [
+     [
+      985,
+      300,
+      60,
+      "tr"
+     ],
+     [
+      1610,
+      300,
+      70,
+      "tl"
+     ],
+     [
+      70,
+      300,
+      55,
+      "tl"
+     ],
+     [
+      612,
+      455,
+      45,
+      "tl"
+     ],
+     [
+      998,
+      455,
+      45,
+      "tr"
+     ],
+     [
+      1795,
+      300,
+      55,
+      "tr"
+     ]
+    ],
+    "colour": [
+     150,
+     150,
+     160
+    ],
+    "alpha": 0.4
+   },
+   "weave": {
+    "cell": [
+     2,
+     15
+    ],
+    "radius": 26,
+    "centre": [
+     32,
+     30
+    ],
+    "steps": 18,
+    "hold": 30,
+    "gone": 12,
+    "period": 30,
+    "colour": [
+     160,
+     160,
+     172
+    ],
+    "alpha": 0.55
+   },
+   "scenery": {
+    "tile_size": 800,
+    "seed": 21,
+    "light": {
+     "azimuth": 0,
+     "elevation": 90,
+     "ambient": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "sun": [
+      0,
+      0,
+      0
+     ]
+    },
+    "flash": {
+     "level": 128,
+     "colour": [
+      150,
+      164,
+      210
+     ]
+    },
+    "flash_patches": [
+     [
+      20,
+      380,
+      170,
+      330
+     ],
+     [
+      335,
+      420,
+      170,
+      330
+     ]
+    ]
+   },
+   "bats": {
+    "count": 3,
+    "radius": [
+     700,
+     1300
+    ],
+    "height": [
+     -600,
+     -300
+    ],
+    "speed": 50,
+    "centre": [
+     900,
+     400
+    ],
+    "scale": 0.6,
+    "rank": 1009,
+    "flutter": 110,
+    "spiders": {
+     "count": 3,
+     "near": 250,
+     "far": 700,
+     "scale": 1.5,
+     "rank": 980,
+     "hang": 2,
+     "low": -110
+    }
+   }
   }
  },
- "_frames": "tools/t2_remake_stage.py classic_cfg(): the old in-game panorama (from the user's picture, measured once, 2026-11-04) against the Classic frame's (Tekken 2's panorama, its rows twice): its x times new width / old width after the turn \"shift\", its y to a * y + b (\"y\"); \"old\" its size, \"hd\" the user's picture's (the recipes' \"crop\" is in it)",
+ "_frames": "tools/t2_remake_stage.py classic_cfg(): the old in-game panorama (from the user's picture, measured once, 2026-11-04) against the Classic frame's (Tekken 2's panorama, its rows twice): its x times new width / old width after the turn \"shift\", its y to a * y + b (\"y\"); \"old\" its size, \"hd\" the user's picture's (the recipes' \"crop\" is in it); \"lift\" texels the picture higher in the frame, its foot out of the floor (London's buses, the user's, 2026-11-08)",
  "frames": {
   "jack2": {
    "shift": 0,
@@ -4548,6 +6172,7 @@
   },
   "pjack": {
    "shift": 1502,
+   "lift": 50,
    "y": [
     1.455,
     48

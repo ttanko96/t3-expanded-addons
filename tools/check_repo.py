@@ -19,7 +19,10 @@ ADDON = Path(__file__).resolve().parents[1]
 FORBIDDEN_SUFFIXES = {'.bin', '.cue', '.chd', '.iso', '.img', '.mdf', '.exe', '.dll', '.zip', '.7z', '.rar',
                       '.ast', '.bgm', '.xa', '.tim', '.tmd', '.vab', '.t3pv', '.cap', '.rgba'}
 MAX_BYTES = 512 * 1024
-ALLOWED_BIG = set()                   # paths (relative, posix) a reviewer has cleared
+# paths (relative, posix) a reviewer has cleared: the Remake's generator,
+# the old fork's tools/t2_arcade_stage.py ported (source, its 23 stages'
+# recipes' code, no game data; 2026-11-07)
+ALLOWED_BIG = {'tools/t2_remake_stage.py'}
 PATCHES = 'tools/data/t2-remake-patches'    # the Remake's picture patches: checked apart
 
 

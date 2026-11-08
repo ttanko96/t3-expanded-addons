@@ -9,12 +9,16 @@
  * objects move too fast and too visibly with the camera, they do not look
  * set down on the stage; not fixed, but less" (the user, 2026-11-05, D16).
  *
- * So the scenery follows an anchor of ours instead: a point of the world
- * that catches up with the engine's point slowly (FOLLOW of the distance a
- * stage frame) and never lags more than LEASH behind it; at a round's start,
- * or a jump (a new fight), it is the point itself. In a fight the scenery
- * stays nearly where it stands while the fighters move about it; when they
- * walk away it drifts after them.
+ * So the scenery follows an anchor of ours instead: a point of the world.
+ * D16 let it catch up slowly (1/240 a stage frame, 3 m at most behind);
+ * it then slid on over the floor for seconds after a sidestep: "the
+ * objects slide with the floor when the characters sidestep; as on Paul's
+ * stage, make them bound" (the user, 2026-11-08, "A: fixed + leash"). Now
+ * it stands: only when the fighters' point is more than LEASH from it is it
+ * pushed along, by just as much (as Paul's walls follow, the whole way;
+ * Tekken 3 hides it on an even gravel floor); at a round's start, or a jump
+ * (a new fight), it is the point itself. And, as the Church's, the scenery
+ * is not turned by the fight's axis (below).
  *
  * How: for the call of the PS1's stage routine (0x8006D014, src/tekken2/
  * tmst_tekken2_mirror.c; the engine draws the arcade stage as it returns),
@@ -39,13 +43,15 @@ const int16_t *tmst_tekken2_walls(int *n, int *radius);
 enum { P1_X = 0x800aa190, P1_Z = 0x800aa198, P2_X = 0x800aba1c, P2_Z = 0x800aba24, HISTORY_P1 = 0x800a08f8,
        HISTORY_P2 = 0x800a0938, FIXED_STAGE = 0x800afaa1, PAUSED = 0x80095494, PHASE = 0x800ae224,
        SCREEN = 0x800ae204, AXIS = 0x800a9188 };
-static const double FOLLOW = 1.0 / 240.0;  /* of the distance, a stage frame (at 30 a second: about 8 s to close most of it) */
-static const double LEASH = 3000.0;        /* world units (1000 a metre), at most behind the point */
+static const double LEASH = 4000.0;        /* world units (1000 a metre): the point this far, the scenery stands
+                                              (the Church's measure: 4 m off the middle, none of it dropped) */
 static const double JUMP = 6000.0;         /* farther: a new fight or round, the anchor is the point */
 
 static double ax, az;
 static int anchored, moved, last_phase = -1;
 static int32_t dx, dz;
+/* The axis (both kinds): */
+static int frozen, axis_saved, axis_step;
 /* A stage fixed to the floor (FIXW: the Church, the user's, 2026-11-05: "the
  * fixed position, upstream-independent, on this stage with its objects"),
  * as the old fork's stage_anchor: its anchor the multiple of the floor's
@@ -57,8 +63,10 @@ static int32_t dx, dz;
  * yaw - axis), then, as the routine comes back from its axis step
  * (0x8006E1B8, v0 the step, at 0x8006D110: tmst_tekken2_anchor_step), minus
  * the step, so that the routine's add leaves it 0 for the drawing; given
- * back after, the step added (the fight's axis goes on as it would). */
-static int fixed, axis_saved, axis_step;
+ * back after, the step added (the fight's axis goes on as it would).
+ * The Remake's other stages the same (frozen): standing in the world, they
+ * must not turn round the fighters either. */
+static int fixed;
 
 /* The point the engine's stage follows (tile_matrix's pick). */
 static void engine_point(int *x, int *z) {
@@ -87,6 +95,13 @@ static void shift(int32_t sx, int32_t sz) {
     }
 }
 
+static void freeze(void) {
+    axis_saved = (int)psx_mod_read_word(AXIS); axis_step = 0;
+    psx_mod_write_word(AXIS, 0);
+    frozen = 1;
+    moved = 1;
+}
+
 /* As the stage routine starts: the anchor a step on, the fighters moved to it. */
 int tmst_tekken2_anchor_begin(void) {
     static int off = -1;        /* bench: TMST_T2_ANCHOR=0, the engine's own point (the before of a before / after) */
@@ -111,24 +126,19 @@ int tmst_tekken2_anchor_begin(void) {
         last_phase = phase;
         dx = (int32_t)lround(ax) - px; dz = (int32_t)lround(az) - pz;
         shift(dx, dz);
-        axis_saved = (int)psx_mod_read_word(AXIS); axis_step = 0;
-        psx_mod_write_word(AXIS, 0);
-        moved = 1;
+        freeze();
         return 1;
     }
     double ex = px - ax, ez = pz - az, d = sqrt(ex * ex + ez * ez);
     if (!anchored || d > JUMP || (phase < 6 && last_phase >= 6)) {
         ax = px; az = pz; anchored = 1;
-    } else if (!psx_mod_read_word(PAUSED)) {
-        ax += ex * FOLLOW; az += ez * FOLLOW;
-        ex = px - ax; ez = pz - az; d = sqrt(ex * ex + ez * ez);
-        if (d > LEASH) { ax = px - ex * LEASH / d; az = pz - ez * LEASH / d; }
+    } else if (!psx_mod_read_word(PAUSED) && d > LEASH) {
+        ax = px - ex * LEASH / d; az = pz - ez * LEASH / d;
     }
     last_phase = phase;
     dx = (int32_t)lround(ax) - px; dz = (int32_t)lround(az) - pz;
-    if (!dx && !dz) return 0;
     shift(dx, dz);
-    moved = 1;
+    freeze();
     return 1;
 }
 
@@ -182,18 +192,21 @@ void tmst_tekken2_anchor_end(void) {
     if (!moved) return;
     moved = 0;
     shift(-dx, -dz);
-    if (fixed) {        /* the axis back, its step on (0 now if the step came through us) */
+    if (frozen) {       /* the axis back, its step on (0 now if the step came through us) */
         int now = (int)psx_mod_read_word(AXIS);
         psx_mod_write_word(AXIS, (uint32_t)((axis_saved + axis_step + now) & 0xFFF));
+        frozen = 0;
+    }
+    if (fixed) {
         fixed = 0;
         if (!psx_mod_read_word(PAUSED)) collide();
     }
 }
 
-/* The stage routine back from its axis step (0x8006D110, v0 the step): for
- * a fixed stage the axis made 0 by the routine's own add. */
+/* The stage routine back from its axis step (0x8006D110, v0 the step): the
+ * axis made 0 by the routine's own add. */
 void tmst_tekken2_anchor_step(uint32_t v0) {
-    if (!moved || !fixed) return;
+    if (!moved || !frozen) return;
     axis_step = (int)v0;
     psx_mod_write_word(AXIS, (uint32_t)(-(int)v0 & 0xFFF));
 }

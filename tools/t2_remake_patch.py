@@ -4,7 +4,7 @@ keyed to the Tekken 2 disc.
 
     python tools/t2_remake_patch.py apply [--disc <Tekken 2 disc>]
     python tools/t2_remake_patch.py check
-    python tools/t2_remake_patch.py make --export <folder of the *-full.zip> [--disc ...]   (developers)
+    python tools/t2_remake_patch.py make --export <folder of the *-full.zip> [--export ...] [--disc ...]   (developers)
 
 The Remake's backgrounds are the user's own pictures, painted over Tekken 2's
 panoramas (the old fork's stage zips, pictures/*.png). They are not in git
@@ -226,13 +226,14 @@ def check(paths: list[Path] | None = None) -> list[str]:
     return errors
 
 
-def make(export: Path, discs: list[Path], say=print) -> None:
-    """(Developers) the patches of the pictures in export's *-full.zip
-    (pictures/), keyed to the given discs (the first one's key the content key)."""
+def make(exports: list[Path], discs: list[Path], say=print) -> None:
+    """(Developers) the patches of the pictures in the exports' *-full.zip
+    (pictures/; a later export's picture over an earlier one's of the same
+    name), keyed to the given discs (the first one's key the content key)."""
     from PIL import Image
     want = wanted()
     found = {}
-    for z in sorted(export.glob('*-full.zip')):
+    for z in [z for export in exports for z in sorted(export.glob('*-full.zip'))]:
         with zipfile.ZipFile(z) as f:
             for info in f.infolist():
                 name = info.filename.rsplit('/', 1)[-1]
@@ -270,7 +271,8 @@ def main(argv=None) -> int:
     a.add_argument('--root', type=Path, default=classic.EXPANDED, help='the Expanded folder')
     sub.add_parser('check', help='the patches as check_repo checks them')
     m = sub.add_parser('make', help='(developers) the patches from the stage zips')
-    m.add_argument('--export', type=Path, required=True, help='the folder of the *-full.zip')
+    m.add_argument('--export', type=Path, action='append', required=True,
+                   help='a folder of the *-full.zip (more: the later ones win)')
     m.add_argument('--disc', type=Path, action='append', default=[], help='a Tekken 2 disc (more: more versions)')
     args = ap.parse_args(argv)
     if args.cmd == 'check':

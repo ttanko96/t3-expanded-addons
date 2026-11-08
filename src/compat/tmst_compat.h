@@ -43,6 +43,12 @@ int tmst_compat_widescreen_margin(void);
  * where a frame's edge goes. The margin above without the compositor. */
 int tmst_compat_widescreen_side(void);
 
+/* Unknown (the TTT1 guest whose wolf draws in the upper VRAM half) is one
+ * of the fight's two fighters, as the loading screen names them: the
+ * fight's packs are read after that (tekken3_ttt1_roster.c, weak; 0
+ * without guests). */
+int tmst_compat_unknown_fights(void);
+
 /* The T3 arcade stage the Expanded's stage engine draws in place of the
  * PS1's (0..12, its arena), or -1: none (the PS1's own, a TTT stage, or a
  * release without the engine; tekken3_arcade_stages_t3_stage, weak). */

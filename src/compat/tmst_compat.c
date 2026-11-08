@@ -1,6 +1,7 @@
 /* TMST compat (tmst_compat.h): the features found at build time. */
 #include "tmst_compat.h"
 #include "gpu.h"
+#include "mod_plugins.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,21 @@ int tmst_compat_vram_read(int x, int y, int w, int h, uint16_t *out) {
     for (int row = 0; row < h; row++)
         for (int col = 0; col < w; col++) out[(size_t)row * (size_t)w + (size_t)col] = gr_vram_read(x + col, y + row);
     return 1;
+}
+
+/* src/tekken3_ttt1_roster.c (weak: a release without guests has no Unknown):
+ * the loading screen's fighters (0x800ADD5C + 2 * player, written before
+ * the fight's packs are read; in Team Battle each member's again, before
+ * the player's guest identity follows), a guest's key by its ID. */
+extern const char *tekken3_guest_key(unsigned id) __attribute__((weak));
+enum { LOADING_FIGHTERS = 0x800add5c };
+int tmst_compat_unknown_fights(void) {
+    if (!tekken3_guest_key) return 0;
+    for (unsigned p = 0; p < 2; p++) {
+        const char *key = tekken3_guest_key(psx_mod_read_half(LOADING_FIGHTERS + 2 * p));
+        if (key && !strcmp(key, "unknown")) return 1;
+    }
+    return 0;
 }
 
 extern int tekken3_arcade_stages_t3_stage(void) __attribute__((weak));

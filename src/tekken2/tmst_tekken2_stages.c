@@ -62,6 +62,13 @@
  * with its floor's kind made 1 (NIGHT, followed as a version). None of the
  * stage's own there (drawn() says no): the game's light on the fighters.
  *
+ * Unknown in the fight (the loading screen's fighters; tmst_compat): a
+ * "wolf_cut" stage's Remake pack for her, stageNNw.ast (its background's
+ * top cut, off her wolf), the whole stageNN.ast otherwise (the user's,
+ * 2026-11-08). The pack held follows her: Team Battle's next member, or
+ * Survival's next opponent on the same arena, has the engine read the pack
+ * again (fight_start(): the switch, as for another stage).
+ *
  * GAME OPTION's TEKKEN 2 STAGES row: CLASSIC, REMAKE. REMAKE draws the
  * Classic's packs while mods/t2-stages/remake has none (the user's choice,
  * 2026-11-03). The choices are kept beside the memory card in t2-stages.txt
@@ -126,7 +133,7 @@ static const char *const version_labels[VERSIONS] = { "CLASSIC", "REMAKE" };
 /* What the engine holds for an arena: the game's own pack, the empty one, or
  * Tekken 2's stage n (0..22). */
 enum { HELD_NONE = -3, HELD_BLANK = -2, HELD_REAL = -1 };
-enum { NO_DIM = 0x80, CHASE_MAX = 8, CHASE_FRAMES = 8, ANIMS_MAX = 8 };
+enum { NO_DIM = 0x80, CHASE_MAX = 8, CHASE_FRAMES = 8, ANIMS_MAX = 32 };   /* ANIMS_MAX: Eternal Darkness 15 (its lights in short runs) */
 static const double TAU = 6.283185307179586;
 
 int __real_tekken3_stage_source(void);
@@ -158,6 +165,10 @@ static uint64_t draw = 0x9e3779b97f4a7c15u;
  * fights on the same stage); the arena it last tried; a switch under way
  * (the arena read meanwhile, the fight's) */
 static int held_arena = -1, held = HELD_NONE, held_version = CLASSIC, tried = -1;
+/* The Remake pack held is a "wolf_cut" stage's for Unknown (stageNNw.ast);
+ * fight_extras() read that one. */
+static int held_wolf, extras_wolf;
+static void fight_extras(void);
 static int switch_want = -1, switch_to = -1, switch_back = -1, switch_frames, checked;
 static int dark_call;                    /* in the engine's floor, the dark arena's byte cleared meanwhile */
 /* src/tekken2/tmst_tekken2_extras.c: the Remake's extras (ANI2..4, DUST,
@@ -309,6 +320,20 @@ static const uint8_t *section(const uint8_t *b, long size, const char *id, uint3
     return NULL;
 }
 
+/* A "wolf_cut" stage's Remake pack for Unknown's fights (stageNNw.ast: its
+ * background's top cut, off her wolf; tools/t2_remake_stages.py wolf_name()),
+ * when she is one of the fight's fighters and the stage has one: 1, its path
+ * into out (out may be NULL). The whole one otherwise. */
+static int wolf_pack(int stage, char *out, size_t size) {
+    if (stage < 0 || !tmst_compat_unknown_fights()) return 0;
+    char name[64], path[1100];
+    snprintf(name, sizeof name, "%s/stage%02dw.ast", version_words[REMAKE], stage);
+    our_path(name, path, sizeof path);
+    if (!there(path)) return 0;
+    if (out) snprintf(out, size, "%s", path);
+    return 1;
+}
+
 /* Our pack of Tekken 2's stage as arena n's (loaded.ast): the engine checks
  * that the header's number is the arena it asked for. NIGHT: the Classic's,
  * its floor (FLOR's first halfword, the kind) lit round each fighter, as the
@@ -319,6 +344,7 @@ static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     char from[1100], to[1100];
     long size = 0;
     pack_path(held_as == NIGHT ? CLASSIC : held_as, stage, from, sizeof from);
+    int wolf = held_as == REMAKE && wolf_pack(stage, from, sizeof from);
     uint8_t *b = read_all(from, &size);
     if (!b) return NULL;
     uint16_t number = (uint16_t)n;
@@ -331,7 +357,11 @@ static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     int ok = f && fwrite(b, 1, (size_t)size, f) == (size_t)size;
     if (f) fclose(f);
     free(b);
-    return ok ? __tmst_chain_fopen(to, mode) : NULL;
+    if (!ok) return NULL;
+    held_wolf = wolf;
+    if (stage == fight && wolf != extras_wolf) fight_extras();      /* Unknown come in (or gone) since */
+    if (wolf) tmst_log("tekken2: Unknown in the fight: %s's pack for her (its background's top cut)", names[stage]);
+    return __tmst_chain_fopen(to, mode);
 }
 
 /* An empty pack for arena n (blank.ast): nothing to draw (no far background
@@ -501,6 +531,8 @@ static void fight_extras(void) {
     anims = 0;
     tmst_tekken2_extras_clear();
     pack_path(drawn_version(), fight, path, sizeof path);
+    /* the pack the engine gets (hand_over()): its animations' places are its own */
+    extras_wolf = drawn_version() == REMAKE && wolf_pack(fight, path, sizeof path);
     uint8_t *b = read_all(path, &size);
     if (!b) return;
     uint32_t len = 0;
@@ -784,7 +816,11 @@ static void fight_start(void) {
     int arena = psx_mod_read_half(ARENA);
     if (arena < 0 || arena > LAST_ARENA || psx_mod_read_byte(NO_STAGE)) return;
     int want = our_fight() ? fight : HELD_REAL, as = held_wanted();
-    int stale = held_arena == arena && (held != want || (want >= 0 && held_version != as));
+    /* (a "wolf_cut" stage's: the whole pack held and Unknown come in, or
+     * hers and she gone: Team Battle's next member, Survival's next
+     * opponent, on the same arena; wolf_pack()) */
+    int stale = held_arena == arena && (held != want || (want >= 0 && held_version != as) ||
+                                        (want >= 0 && as == REMAKE && held_wolf != wolf_pack(fight, NULL, 0)));
     int refused = want >= 0 && tried == arena && held_arena != arena;
     if (!stale && !refused) return;
     /* an arena the engine will load: not this one, not the one it holds, not
@@ -796,10 +832,12 @@ static void fight_start(void) {
     if (to < 0) return;
     switch_back = arena;
     switch_want = to;
-    tmst_log("tekken2: the engine holds %s (%s) for arena %d, %s (%s) wanted: arena %d until it loads that one",
+    int wolf = want >= 0 && as == REMAKE && wolf_pack(fight, NULL, 0);
+    tmst_log("tekken2: the engine holds %s (%s%s) for arena %d, %s (%s%s) wanted: arena %d until it loads that one",
              held == HELD_REAL ? "the game's pack" : held == HELD_BLANK ? "the empty pack" : held >= 0 ? names[held]
-             : "nothing", held >= 0 ? held_words[held_version] : "-", arena,
-             want >= 0 ? names[want] : "the game's", want >= 0 ? held_words[as] : "-", switch_want);
+             : "nothing", held >= 0 ? held_words[held_version] : "-", held >= 0 && held_wolf ? ", Unknown's" : "", arena,
+             want >= 0 ? names[want] : "the game's", want >= 0 ? held_words[as] : "-", wolf ? ", Unknown's" : "",
+             switch_want);
 }
 
 /* The switch's arena, read by the engine this very frame: as the PS1's

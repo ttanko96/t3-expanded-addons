@@ -75,7 +75,8 @@ class Patch(unittest.TestCase):
 
     def test_the_recipes_pictures(self):
         want = tp.wanted()
-        self.assertEqual(len(want), 18)                 # 17 panoramas and Hong Kong's sign
+        self.assertEqual(len(want), 23)                 # 22 panoramas and Hong Kong's sign
+        self.assertEqual(want['eternal-darkness-panorama.png'], 21)
         self.assertEqual(want['hong-kong-neon-text.png'], 5)
         self.assertEqual(want['kyoto-sunset-panorama.png'], 15)
 
