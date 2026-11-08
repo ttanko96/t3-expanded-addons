@@ -37,6 +37,11 @@ int tmst_tournament_fight_stage(unsigned mode, int *stage);
  * key, the Jukebox category ("t2-console" ...) and piece ("t2-paul.bgm",
  * "xa-42"); 0 none. Asked from src/jukebox/tmst_jukebox.c. */
 int tmst_tournament_fight_music(const char **key, const char **cat, const char **name);
+/* src/tekken2/tmst_tekken2_stages.c: a VS or Practice fight on a Tekken 2
+ * stage from the STAGE line, its own piece the same way (key "t2-stage",
+ * "t2-console" or "t2-arcade" by OPTION's music mode); 0 none. Asked from
+ * src/jukebox/tmst_jukebox.c. */
+int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name);
 /* src/jukebox/tmst_jukebox.c: the coming fight's piece (the opponent's
  * Jukebox choice, a tournament's piece) started now, ahead of the game's,
  * at the player's music volume: Tournament Mode's boss intro plays under it.

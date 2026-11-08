@@ -42,7 +42,12 @@
  * their last game, their take) and only shows ours (the line wrapper). A take
  * on TEKKEN 2 arms the line; the fight that loads next in its mode (their
  * fight hook) is ours: the stage source says Tekken 3's (the TTT music and
- * stage stay out); the music stays the fighter's.
+ * stage stay out); the music is the stage's own (its owner's theme, the
+ * Jukebox plays it: tmst_tekken2_fight_music), unless the player chose one
+ * for the opponent. Their GAME RANDOM (any
+ * stage of their games) draws from Tekken 2's 23 too, as many lots as stages:
+ * the line seen on it (GAME, RANDOM) the last time it showed, their draw
+ * made, one of ours taken in its place.
  *
  * The pack's own sections (the engine reads only its own): T2FX, the
  * fighters' light (SetBackColor, 0x800826E8, dimmed on the dark stages, as the
@@ -141,6 +146,7 @@ int __real_tekken3_stage_ttt_stage(void);
 void __real_tekken3_stage_select_fight(unsigned mode);
 int __real_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stage, int *arena);
 int __real_tekken3_stage_select_arena(void);
+int __real_tekken3_stage_select_music(void);
 uint16_t __real_tekken3_stage_select_input(int player, uint16_t buttons);
 int __real_tekken3_stage_select_line(const char **label, const char **name, int *arrows);
 /* fopen is chained (addon.cmake): the Expanded's Android runtime wraps it
@@ -157,8 +163,13 @@ static int t2[LINES];                    /* TEKKEN 2 on the line (theirs on DEFA
 static int chosen[LINES] = { -1, -1 };   /* its stage, -1 RANDOM */
 static int on_stage[LINES];              /* its STAGE step */
 static int armed[LINES];                 /* taken on TEKKEN 2: the next fight of that mode */
+static int their_random[LINES];          /* their GAME RANDOM, when the line last showed */
+/* Their stages, for RANDOM's lots: Tekken 3's 24, TTT's 15 with its packs
+ * (src/tekken3_stage_select.c's catalogue). */
+enum { THEIR_T3 = 24, THEIR_TTT = 15 };
 static int version = CLASSIC;
 static int fight = -1, fight_mode = -1, moving;   /* the fight's stage, its mode; arena 9 written */
+static int line_fight;                             /* the fight's stage the STAGE line's (its music ours) */
 static uint64_t draw = 0x9e3779b97f4a7c15u;
 /* the engine's pack: the arena it holds one for, what it is (of Tekken 2's,
  * which version: CLASSIC or REMAKE, switched in GAME OPTION between two
@@ -686,24 +697,34 @@ int tmst_stage_forced_arena(void) {
 /* From the routine that picks the fight's arena (0x8004F3B0), each fight. */
 void __wrap_tekken3_stage_select_fight(unsigned mode) {
     __real_tekken3_stage_select_fight(mode);
-    fight = fight_mode = -1; moving = 0; forced_mode = -1; forced_held = 0;
+    fight = fight_mode = -1; moving = 0; line_fight = 0; forced_mode = -1; forced_held = 0;
     int tournament_stage, tournament = tmst_tournament_fight_stage(mode, &tournament_stage);
     if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage); return; }
     if (!ready()) {
         if (tournament == TMST_TSTAGE_T2) tmst_log("tekken2: tournament fight, Tekken 2's stages off: the system's stage");
         return;
     }
-    int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1;
+    int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1, theirs = 0;
     const char *e = getenv("TMST_T2_STAGE");
     if (e && *e) stage = atoi(e) % STAGES;
     else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
-    else if (line >= 0 && armed[line]) stage = chosen[line] >= 0 ? chosen[line] : pick(STAGES);
+    else if (line >= 0 && armed[line]) { stage = chosen[line] >= 0 ? chosen[line] : pick(STAGES); line_fight = 1; }
+    else if (line >= 0 && their_random[line]) {      /* their GAME RANDOM: ours among the lots */
+        int source, ttt, arena;
+        if (__real_tekken3_stage_select_choice(mode, &source, &ttt, &arena)) {
+            const char *t = getenv("TEKKEN3_STAGES_TTT");
+            int n = THEIR_T3 + (tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_TTT) || (t && *t == '1') ? THEIR_TTT : 0);
+            int lot = pick(n + STAGES);
+            if (lot < STAGES) { stage = lot; theirs = line_fight = 1; }
+        }
+    }
     if (line >= 0) armed[line] = 0;
     if (stage < 0) return;
     fight = stage; fight_mode = (int)mode; moving = 1;
     fight_extras();
     tmst_log("tekken2: mode %u fight on Tekken 2's %s (stage %d, %s, arena %d)%s%s", mode, names[stage], stage,
-             version_words[drawn_version()], T2_ARENA, line >= 0 && chosen[line] < 0 && !(e && *e) ? ", RANDOM" : "",
+             version_words[drawn_version()], T2_ARENA,
+             theirs ? ", their GAME RANDOM" : line >= 0 && chosen[line] < 0 && !(e && *e) ? ", RANDOM" : "",
              tournament == TMST_TSTAGE_T2 ? ", the tournament's" : "");
 }
 /* The same arena for the guests' correction (src/tekken3_ttt1_roster.c) and
@@ -711,6 +732,37 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
 int __wrap_tekken3_stage_select_arena(void) {
     if (forced_mode >= 0 && forced_held) return forced_arena;
     return fight >= 0 && moving ? T2_ARENA : __real_tekken3_stage_select_arena();
+}
+/* ... and none of their drawn stage's music (their GAME RANDOM's lot ours):
+ * the fighter's. */
+int __wrap_tekken3_stage_select_music(void) {
+    return fight >= 0 && moving ? -1 : __real_tekken3_stage_select_music();
+}
+
+/* The stage's own piece, as Tekken 3's and TTT's on the STAGE line (the
+ * user's, 2026-11-08): its owner's theme (tmst_tournament_stages.c's), in
+ * the game's music mode (OPTION: arranged the Console's, arcade the
+ * Arcade's). The Jukebox plays it unless the player chose a piece for the
+ * opponent; without Tekken 2 Content's Music its categories are off and the
+ * fighter's piece plays. */
+static const char *const music_console[STAGES] = {
+    "bruce.bgm", "t2-wang.bgm", "t2-jun.bgm", "t2-paul.bgm", "t2-king.bgm", "t2-lei.bgm", "t2-heihachi.bgm",
+    "t2-yoshimitsu.bgm", "jack2.bgm", "t2-law.bgm", "t2-kunimitsu.bgm", "t2-nina.bgm", "t2-armor-king.bgm", "lee.bgm",
+    "t2-kuma.bgm", "t2-ganryu.bgm", "t2-anna.bgm", "t2-roger.bgm", "pjack.bgm", "michelle.bgm", "t2-baek.bgm",
+    "t2-kazuya.bgm", "devil.bgm" };
+static const char *const music_arcade[STAGES] = {
+    "t2-bruce.bgm", "t2-wang.bgm", "t2-jun.bgm", "t2-paul.bgm", "t2-king.bgm", "t2-lei.bgm", "t2-heihachi.bgm",
+    "t2-yoshimitsu.bgm", "t2-jack-2.bgm", "t2-law.bgm", "t2-kunimitsu.bgm", "t2-nina.bgm", "t2-armor-king.bgm",
+    "t2-lee.bgm", "t2-kuma.bgm", "t2-ganryu.bgm", "t2-anna.bgm", "t2-roger.bgm", "t2-pjack.bgm", "t2-michelle.bgm",
+    "t2-baek.bgm", "t2-kazuya.bgm", "t2-devil.bgm" };
+enum { MUSIC_OPTION = 0x80097f05 };   /* OPTION's music: 0 arranged, 1 arcade */
+int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name) {
+    if (!line_fight || fight < 0 || fight >= STAGES || psx_mod_read_word(MODE) != (uint32_t)fight_mode) return 0;
+    int arcade = psx_mod_read_byte(MUSIC_OPTION) == 1;
+    *key = "t2-stage";
+    *cat = arcade ? "t2-arcade" : "t2-console";
+    *name = arcade ? music_arcade[fight] : music_console[fight];
+    return 1;
 }
 int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stage, int *arena) {
     if (forced_mode >= 0 && (unsigned)forced_mode == mode) {
@@ -742,6 +794,7 @@ uint16_t __wrap_tekken3_stage_select_input(int player, uint16_t buttons) {
     const char *label, *name; int arrows;
     int kind = __real_tekken3_stage_select_line(&label, &name, &arrows), line = kind - 1;
     if (!kind) on_stage[LINE_VS] = on_stage[LINE_PRACTICE] = 0;
+    else their_random[line] = !strcmp(label, "GAME") && !strcmp(name, "RANDOM");
     if (!kind || (line == LINE_PRACTICE && p)) return __real_tekken3_stage_select_input(player, buttons | kept[p]);
     int game_step = !strcmp(label, "GAME"), at_default = game_step && !strcmp(name, "DEFAULT");
     if (t2[line] && !at_default) { t2[line] = on_stage[line] = 0; save(); }   /* theirs moved on */
@@ -951,6 +1004,9 @@ int32_t tmst_tekken2_fixed_period(void) { return 0; }
 const int16_t *tmst_tekken2_walls(int *n, int *radius) { *n = *radius = 0; return NULL; }
 void tmst_tekken2_stage_entry(void) {}
 int tmst_stage_forced_arena(void) { return -1; }
+int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name) {
+    (void)key; (void)cat; (void)name; return 0;
+}
 
 static void activate(void) {
     if (tmst_guard("tmst.tekken2.stages", TMST_NEED_ACTIVATION))

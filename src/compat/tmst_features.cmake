@@ -41,6 +41,7 @@ function(tmst_detect_features out)
             "tekken3_stage_select.h|tekken3_stage_select_input(int player, uint16_t buttons)"
             "tekken3_stage_select.h|tekken3_stage_select_line(const char **label"
             "tekken3_stage_select.h|tekken3_stage_select_arena(void)"
+            "tekken3_stage_select.h|tekken3_stage_select_music(void)"
             "tekken3_stage_select.h|tekken3_stage_select_choice(unsigned mode, int *source")
         string(REPLACE "|" ";" _p "${_pair}")
         list(GET _p 0 _file)
