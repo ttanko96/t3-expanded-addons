@@ -95,6 +95,9 @@ static struct {
     int feather_shape, feather_on;
     uint16_t paper_tpage, paper_clut;
     uint8_t paper_u, paper_v, paper_w, paper_h;
+    /* FTHR shape 6 (Nowhere Desert): the dust devil's puff (its u, v, width,
+     * height on the tumbleweeds' page), its colour, devils (0 or 1) */
+    uint8_t devil_u, devil_v, devil_w, devil_h, devil_rgb[3], devils;
     int ffly_on;
     int16_t ffly[6];
     uint16_t ffly_tpage, ffly_clut;
@@ -109,6 +112,10 @@ static struct {
     int16_t *diya_at;
     int16_t diya_pool, diya_level;
     XAnim xanim[XANIMS];
+    /* FLIT (Eternal Darkness): the lightning's light on the floor, a
+     * palette's VRAM x, y and its 16 colours lit; black while no flash */
+    int flit_on, flit_was;
+    uint16_t flit_x, flit_y, flit_lit[16];
 } s_pack;
 
 /* The objects' sections: T2OB (the old OBJS: u32 models, each u16 vertices,
@@ -139,7 +146,11 @@ static struct {
     int grass_period;
     int ship_on;
     int16_t ship[7];
-    int16_t gull[14];
+    /* GULL: ... then the critters' kind (0 crabs, 1 rabbits, 2 pigeons, 3
+     * Nowhere Desert's lizards, 4 Eternal Darkness's spiders); then the
+     * critters of them, the last, that hang on a thread (the 5th model) and
+     * the lowest they come down to (cm, up negative) */
+    int16_t gull[16];
 } s_obj;
 
 /* The lightning (FARV the lit skies, LGHT the flashes, THND the thunder;
@@ -339,9 +350,10 @@ static void objects_load(const uint8_t *b, long size) {
         s_obj.ship_on = s_obj.ship[3] > 0 && s_obj.ship[1] != s_obj.ship[2];
     }
     if ((o = section(b, size, "GULL", &len)) && len >= 16) {
-        memcpy(s_obj.gull, o, len >= 28 ? 28 : len >= 26 ? 26 : len >= 24 ? 24 : len >= 18 ? 18 : 16);
+        memcpy(s_obj.gull, o, len >= 32 ? 32 : len >= 28 ? 28 : len >= 26 ? 26 : len >= 24 ? 24 : len >= 18 ? 18 : 16);
         if (s_obj.gull[0] < 0 || s_obj.gull[0] > 8) s_obj.gull[0] = 0;
         if (s_obj.gull[9] < 0 || s_obj.gull[0] + s_obj.gull[9] > 8) s_obj.gull[9] = 0;
+        if (s_obj.gull[14] < 0 || s_obj.gull[14] > s_obj.gull[9]) s_obj.gull[14] = 0;
     }
 }
 
@@ -358,9 +370,14 @@ void tmst_tekken2_extras_load(const uint8_t *b, long size) {
     if ((o = section(b, size, "FTHR", &len)) && len >= 15) {
         memcpy(s_pack.feather, o, 12); memcpy(s_pack.feather_rgb, o + 12, 3);
         if (len >= 18) { int16_t sh; memcpy(&sh, o + 16, 2); s_pack.feather_shape = sh; }
-        if ((s_pack.feather_shape == 3 || s_pack.feather_shape == 5) && len >= 26) {
+        if ((s_pack.feather_shape == 3 || s_pack.feather_shape == 5 || s_pack.feather_shape == 6 ||
+             s_pack.feather_shape == 7) && len >= 26) {
             memcpy(&s_pack.paper_tpage, o + 18, 2); memcpy(&s_pack.paper_clut, o + 20, 2);
             s_pack.paper_u = o[22]; s_pack.paper_v = o[23]; s_pack.paper_w = o[24]; s_pack.paper_h = o[25];
+        }
+        if (s_pack.feather_shape == 6 && len >= 34) {
+            s_pack.devil_u = o[26]; s_pack.devil_v = o[27]; s_pack.devil_w = o[28]; s_pack.devil_h = o[29];
+            memcpy(s_pack.devil_rgb, o + 30, 3); s_pack.devils = o[33];
         }
         s_pack.feather_on = 1;
     }
@@ -411,11 +428,15 @@ void tmst_tekken2_extras_load(const uint8_t *b, long size) {
             o += 2u * r[2] * r[3];
         }
     }
+    if ((o = section(b, size, "FLIT", &len)) && len >= 36) {
+        memcpy(&s_pack.flit_x, o, 2); memcpy(&s_pack.flit_y, o + 2, 2); memcpy(s_pack.flit_lit, o + 4, 32);
+        s_pack.flit_on = 1; s_pack.flit_was = -1;
+    }
     objects_load(b, size);
     storm_load(b, size);
     glass_load(b, size);
     own_tiles_load(b, size);
-    s_pack.loaded = s_pack.dust_on || s_pack.feather_on || s_pack.ffly_on || s_pack.rain_on || s_pack.diya[0] > 0 ||
+    s_pack.loaded = s_pack.flit_on || s_pack.dust_on || s_pack.feather_on || s_pack.ffly_on || s_pack.rain_on || s_pack.diya[0] > 0 ||
                     s_pack.xanim[0].frames || s_pack.xanim[1].frames || s_pack.xanim[2].frames || s_obj.nlayout ||
                     s_storm.npat || glass_on() || own_tiles_on();
     if (s_pack.loaded) {
@@ -759,12 +780,16 @@ static void feather_spawn(Feather *f, int strewn) {
 static void strewn_petals(const Gte *g);
 static void newspapers(const Gte *g);
 static void wind_dust(const Gte *g);
+static void desert_wind(const Gte *g);
+static void dandelion_seeds(const Gte *g);
 
 static void feathers(const Gte *g) {
     if (!s_pack.feather_on) return;
     if (s_pack.feather_shape == 2 || s_pack.feather_shape == 4) { strewn_petals(g); return; }
     if (s_pack.feather_shape == 3) { newspapers(g); return; }
     if (s_pack.feather_shape == 5) { wind_dust(g); return; }
+    if (s_pack.feather_shape == 6) { desert_wind(g); return; }
+    if (s_pack.feather_shape == 7) { dandelion_seeds(g); return; }
     const int16_t *c = s_pack.feather;
     int n = c[0] < 0 ? 0 : c[0] > FEATHER_MAX ? FEATHER_MAX : c[0];
     if (!n || c[3] <= 200) return;
@@ -1581,6 +1606,241 @@ static void wind_dust(const Gte *g) {
     }
 }
 
+/* ---- FTHR shape 7: the Hills' dandelion seeds (count, distance from the
+ * fighters' midpoint min and max, the highest they fly, size, sink (1/16
+ * mm a frame); colour, halved (0x80 the picture's own); their picture as
+ * shape 3's): drifting across the fight on the wind in gusts, bobbing up
+ * and down as they go, sinking slowly, rocking a little under their
+ * parachutes; one blown too far downwind (or down at the grass) comes in
+ * again from upwind. World units (mm, x 16). The old fork's e454a7e. ---- */
+static void dandelion_seed_in(Feather *f, int mx, int mz) {
+    const int16_t *c = s_pack.feather;
+    const double wx = 0.94, wz = 0.34;
+    double across = ((rnd() & 0xFFF) / 4095.0 - 0.5) * 1.6 * c[2];
+    feather_spawn(f, 1);
+    f->x = (int)((mx - wx * c[2] * 0.95 - wz * across) * 16);
+    f->z = (int)((mz - wz * c[2] * 0.95 + wx * across) * 16);
+    f->y = -(400 + (c[3] > 500 ? rnd() % (c[3] - 400) : 0)) * 16;
+}
+
+static void dandelion_seeds(const Gte *g) {
+    const int16_t *c = s_pack.feather;
+    int n = c[0] < 0 ? 0 : c[0] > FEATHER_MAX ? FEATHER_MAX : c[0];
+    if (!n || !s_pack.paper_w || c[3] <= 500) return;
+    const double wx = 0.94, wz = 0.34;               /* the wind's way */
+    int mx = ((int)psx_mod_read_word(P1_X) + (int)psx_mod_read_word(P2_X)) / 2;
+    int mz = ((int)psx_mod_read_word(P1_Z) + (int)psx_mod_read_word(P2_Z)) / 2;
+    if (!s_feather_seen) {                           /* the round's start: all about already */
+        for (s_nfeather = 0; s_nfeather < n; s_nfeather++) feather_spawn(&s_feather[s_nfeather], 1);
+        s_feather_seen = 1;
+    }
+    if (!paused())
+        for (int i = 0; i < s_nfeather; i++) {
+            Feather *f = &s_feather[i];
+            f->sway += f->sway_rate; f->turn += f->turn_rate * 0.25; f->spin += f->spin_rate;
+            double gust = 0.55 + 0.45 * sin(f->turn * 0.6 + i);
+            f->x += (int)(16 * (4 + 9 * gust) * wx); f->z += (int)(16 * (4 + 9 * gust) * wz);
+            f->y += (int)(f->vy * (0.3 + 1.2 * sin(f->sway)) - 16 * 3 * (gust > 0.9 ? gust - 0.9 : 0) * 10);
+            if (f->y < -c[3] * 16) f->y = -c[3] * 16;
+            double dx = f->x / 16.0 - mx, dz = f->z / 16.0 - mz;
+            if (f->y > -60 * 16 || dx * wx + dz * wz > c[2] || dx * dx + dz * dz > 1.7 * c[2] * c[2]) dandelion_seed_in(f, mx, mz);
+        }
+    int near_z = g->t[2];
+    uint32_t col = 0;
+    for (int j = 0; j < 3; j++) col |= (uint32_t)(s_pack.feather_rgb[j] / 2) << (8 * j);
+    for (int i = 0; i < s_nfeather; i++) {
+        const Feather *f = &s_feather[i];
+        int sx, sy, sz, tx, tz;
+        world_tile(f->x / 16, f->z / 16, &tx, &tz);
+        rtps(g, tx / 10, f->y / 160, tz / 10, &sx, &sy, &sz);
+        if (sz < 32 || off_x(sx, 32) || sy < -32 || sy > 512) continue;
+        double hx = (c[4] / 2.0 * g->h) / (10.0 * sz);
+        if (hx < 0.8) continue;
+        if (hx < 1.5) hx = 1.5;                       /* far off: a speck, still there */
+        double turn = 0.3 * sin(f->spin * 3);
+        int hy = (int)(hx * 20 / 12);
+        int cx = (int)(hx * cos(turn)), cy = (int)(hx * sin(turn) * 20 / 12);
+        int ddx = (int)(-hy * sin(turn) * 12 / 20), ddy = (int)(hy * cos(turn));
+        const int x[4] = { sx - cx - ddx, sx + cx - ddx, sx - cx + ddx, sx + cx + ddx };
+        const int y[4] = { sy - cy - ddy, sy + cy - ddy, sy - cy + ddy, sy + cy + ddy };
+        tex_quad(main_ot(sz < near_z ? 40 : 1009), 0x2C000000u | col, x, y, s_pack.paper_clut, s_pack.paper_tpage,
+                 s_pack.paper_u, s_pack.paper_v, s_pack.paper_u + s_pack.paper_w - 1u, s_pack.paper_v + s_pack.paper_h - 1u);
+    }
+}
+
+/* ---- FTHR shape 6: Nowhere Desert's tumbleweeds and dust devil (count,
+ * distance min and max, the devil's height, a tumbleweed's size, the
+ * devil's puff size (mm); the tumbleweeds' colour; their picture as shape
+ * 3's, then the puff's u, v, width, height, the devil's colour, devils).
+ * The tumbleweeds roll before the wind round the fight in gusts, bouncing
+ * now and then, turning as they roll; a fighter stepping by kicks one off,
+ * gone too far one blows in from upwind. Now and then a dust devil rises
+ * further off (puffs of dust whirling up a leaning funnel, added), drifts
+ * with the wind, a tumbleweed it catches whirled round and lifted, and
+ * dies down again. World units (mm). The old fork's e454a7e. ---- */
+#define WEED_MAX 6
+typedef struct { double x, y, z, vx, vy, vz, roll, size, phase; } Weed;
+static Weed s_weed[WEED_MAX];
+static int s_nweed, s_weed_seen;
+static unsigned s_weed_t;
+static struct { double x, z, phase; int age, life, wait, on; } s_devil;
+
+static double devil_env(void) {
+    if (!s_devil.on) return 0;
+    double in = s_devil.age / 150.0, out = (s_devil.life - s_devil.age) / 200.0;
+    double e = in < out ? in : out;
+    return e < 0 ? 0 : e > 1 ? 1 : e;
+}
+
+static void weed_blow_in(Weed *w, int mx, int mz, int anywhere) {
+    const int16_t *c = s_pack.feather;
+    double a = anywhere ? (rnd() & 0xFFF) * (6.2831853 / 4096.0)
+                        : s_wind + 3.14159265 + ((rnd() & 0xFF) / 255.0 - 0.5) * 1.4;
+    int r = anywhere ? c[1] + (c[2] > c[1] ? rnd() % (c[2] - c[1]) : 0) : c[2];
+    w->x = mx + r * sin(a); w->z = mz + r * cos(a);
+    w->y = 0; w->vx = w->vz = 0; w->vy = 0;
+    w->size = c[4] * (0.75 + (rnd() & 0xFF) / 255.0 * 0.5);
+    w->roll = (rnd() & 0xFFF) * (6.2831853 / 4096.0);
+    w->phase = (rnd() & 0xFFF) * (6.2831853 / 4096.0);
+}
+
+static void devil_rise(int mx, int mz) {
+    const int16_t *c = s_pack.feather;
+    double a = (rnd() & 0xFFF) * (6.2831853 / 4096.0), r = c[2] * (0.8 + (rnd() & 0xFF) / 255.0 * 0.7);
+    s_devil.x = mx + r * sin(a); s_devil.z = mz + r * cos(a);
+    s_devil.phase = (rnd() & 0xFFF) * (6.2831853 / 4096.0);
+    s_devil.age = 0; s_devil.life = 900 + rnd() % 700; s_devil.on = 1;
+}
+
+/* a puff of the picture at a screen point, turned, sized (pixels), added */
+static void devil_puff(int sx, int sy, int hx, double turn, double level, int ot) {
+    int hy = hx * 20 / 12;
+    uint32_t col = 0;
+    for (int j = 0; j < 3; j++) {
+        int v = (int)(s_pack.devil_rgb[j] * level);
+        col |= (uint32_t)(v > 255 ? 255 : v < 0 ? 0 : v) << (8 * j);
+    }
+    int cx = (int)(hx * cos(turn)), cy = (int)(hx * sin(turn) * 20 / 12);
+    int dx = (int)(-hy * sin(turn) * 12 / 20), dy = (int)(hy * cos(turn));
+    const int x[4] = { sx - cx - dx, sx + cx - dx, sx - cx + dx, sx + cx + dx };
+    const int y[4] = { sy - cy - dy, sy + cy - dy, sy - cy + dy, sy + cy + dy };
+    tex_quad(main_ot((unsigned)ot), 0x2E000000u | col, x, y, s_pack.paper_clut, s_pack.paper_tpage | 0x20u,
+             s_pack.devil_u, s_pack.devil_v, s_pack.devil_u + s_pack.devil_w - 1u, s_pack.devil_v + s_pack.devil_h - 1u);
+}
+
+static void desert_wind(const Gte *g) {
+    const int16_t *c = s_pack.feather;
+    int n = c[0] < 0 ? 0 : c[0] > WEED_MAX ? WEED_MAX : c[0];
+    if (!s_pack.paper_w) return;
+    int fx[2] = {(int)psx_mod_read_word(P1_X), (int)psx_mod_read_word(P2_X)};
+    int fz[2] = {(int)psx_mod_read_word(P1_Z), (int)psx_mod_read_word(P2_Z)};
+    int mx = fx[0] + (fx[1] - fx[0]) / 2, mz = fz[0] + (fz[1] - fz[0]) / 2;
+    if (!s_weed_seen) {
+        s_wind = (rnd() & 0xFFF) * (6.2831853 / 4096.0);
+        for (s_nweed = 0; s_nweed < n; s_nweed++) weed_blow_in(&s_weed[s_nweed], mx, mz, 1);
+        memset(&s_devil, 0, sizeof s_devil);
+        s_devil.wait = 200 + rnd() % 600;
+        s_weed_seen = 1;
+    }
+    double wx = sin(s_wind), wz = cos(s_wind);
+    if (!paused()) {
+        s_weed_t++;
+        s_wind += 0.0006 * sin(s_weed_t * 0.002);                     /* the wind turning slowly */
+        if (s_pack.devils) {
+            if (s_devil.on) {
+                /* drifting with the wind, meandering */
+                s_devil.x += wx * 7 + wz * 3 * sin(s_weed_t * 0.004 + s_devil.phase);
+                s_devil.z += wz * 7 - wx * 3 * sin(s_weed_t * 0.004 + s_devil.phase);
+                if (++s_devil.age >= s_devil.life) { s_devil.on = 0; s_devil.wait = 600 + rnd() % 1200; }
+            } else if (--s_devil.wait <= 0) devil_rise(mx, mz);
+        }
+        double env = devil_env();
+        for (int i = 0; i < s_nweed; i++) {
+            Weed *w = &s_weed[i];
+            double gust = 0.55 + 0.3 * sin(s_weed_t * 0.009 + w->phase) + 0.15 * sin(s_weed_t * 0.027 + 2 * w->phase);
+            double speed = 6 + 30 * gust;
+            w->vx += (wx * speed - w->vx) * 0.02;
+            w->vz += (wz * speed - w->vz) * 0.02;
+            for (int q = 0; q < 2; q++) {
+                int y = (int)psx_mod_read_word(q ? P2_Y : P1_Y);
+                double dx = w->x - fx[q], dz = w->z - fz[q], d = sqrt(dx * dx + dz * dz);
+                if (d < 600 && y > -1200 && w->y > -300) {
+                    if (d < 1) { dx = 1; d = 1; }
+                    w->vx += 14 * dx / d; w->vz += 14 * dz / d; w->vy = -(16 + rnd() % 10);
+                }
+            }
+            if (env > 0.2) {
+                /* caught by the devil: whirled round it, drawn in and lifted */
+                double dx = w->x - s_devil.x, dz = w->z - s_devil.z, d = sqrt(dx * dx + dz * dz);
+                if (d < 1400 && d > 1) {
+                    double k = env * (1 - d / 1400);
+                    w->vx += k * (3.2 * -dz / d - 1.2 * dx / d);
+                    w->vz += k * (3.2 * dx / d - 1.2 * dz / d);
+                    if (w->y > -c[3] * 0.4) w->vy -= 2.0 * k;
+                }
+            }
+            w->vy += 1.0;                                             /* falling */
+            w->x += w->vx; w->y += w->vy; w->z += w->vz;
+            if (w->y >= 0) {
+                w->y = 0;
+                w->vy = w->vy > 5 ? -w->vy * 0.45 : 0;                 /* a bounce */
+                if (speed > 22 && !(rnd() % 50)) w->vy = -(6 + rnd() % 12);
+            }
+            w->roll += hypot(w->vx, w->vz) / (w->size * 0.5);
+            double dx = w->x - mx, dz = w->z - mz;
+            if (dx * dx + dz * dz > 2.25 * c[2] * c[2]) weed_blow_in(w, mx, mz, 0);
+        }
+    }
+    /* the camera looking steeply down (the continue screen's): none drawn,
+     * they would stand up off the floor under it */
+    if (g->r[2][1] > 0x800 || g->r[2][1] < -0x800) return;
+    int near_z = g->t[2];
+    uint32_t wcol = (uint32_t)s_pack.feather_rgb[0] | (uint32_t)s_pack.feather_rgb[1] << 8 |
+                    (uint32_t)s_pack.feather_rgb[2] << 16;
+    for (int i = 0; i < s_nweed; i++) {
+        const Weed *w = &s_weed[i];
+        int sx, sy, sz, tx, tz, ex, ey, ez;
+        world_tile((int)w->x, (int)w->z, &tx, &tz);
+        rtps(g, tx / 10, (int)(w->y - w->size * 0.45) / 10, tz / 10, &sx, &sy, &sz);
+        if (sz < 300 || off_x(sx, 96) || sy < -96 || sy > 560) continue;   /* none right by the camera */
+        int hx = (int)((w->size * 0.5 * (double)g->h) / (10.0 * sz)), hy = hx * 20 / 12;
+        if (hx < 2) continue;
+        /* turning the way it rolls across the screen */
+        world_tile((int)(w->x + 40 * w->vx), (int)(w->z + 40 * w->vz), &tx, &tz);
+        rtps(g, tx / 10, (int)(w->y - w->size * 0.45) / 10, tz / 10, &ex, &ey, &ez);
+        double turn = (ex >= sx ? 1 : -1) * w->roll + 0.3;
+        int cx = (int)(hx * cos(turn)), cy = (int)(hx * sin(turn) * 20 / 12);
+        int dx = (int)(-hy * sin(turn) * 12 / 20), dy = (int)(hy * cos(turn));
+        const int x[4] = { sx - cx - dx, sx + cx - dx, sx - cx + dx, sx + cx + dx };
+        const int y[4] = { sy - cy - dy, sy + cy - dy, sy - cy + dy, sy + cy + dy };
+        tex_quad(main_ot(sz < near_z ? 40 : 1009), 0x2C000000u | wcol, x, y, s_pack.paper_clut, s_pack.paper_tpage,
+                 s_pack.paper_u, s_pack.paper_v, s_pack.paper_u + s_pack.paper_w - 1u, s_pack.paper_v + s_pack.paper_h - 1u);
+    }
+    double env = devil_env();
+    if (env < 0.03 || !s_pack.devil_w) return;
+    /* the devil: puffs whirling up a funnel, narrow at the foot, wide and
+     * faint at the top, its axis swaying; a skirt of dust whirling low */
+    const int levels = 14;
+    double H = c[3], t = s_weed_t;
+    for (int k = -4; k < levels; k++) {
+        double sl = k < 0 ? 0.02 : (double)k / (levels - 1);
+        double sway = H * 0.1 * sl * sin(t * 0.011 + s_devil.phase + 2.2 * sl);
+        double ax = s_devil.x + wz * sway + wx * H * 0.06 * sl, az = s_devil.z - wx * sway + wz * H * 0.06 * sl;
+        double r = k < 0 ? H * 0.11 : 60 + H * 0.2 * pow(sl, 1.5);
+        double th = t * (k < 0 ? 0.2 : 0.13 * (1.3 - 0.6 * sl)) + (k + 4) * 2.4;
+        double x = ax + r * cos(th), z = az + r * sin(th), y = -H * sl - (k < 0 ? 120 : 0);
+        int sx, sy, sz, tx, tz;
+        world_tile((int)x, (int)z, &tx, &tz);
+        rtps(g, tx / 10, (int)y / 10, tz / 10, &sx, &sy, &sz);
+        if (sz < 64 || off_x(sx, 160) || sy < -160 || sy > 600) continue;
+        double size = c[5] * (k < 0 ? 1.3 : 0.45 + 1.3 * sl);
+        int hx = (int)((size * (double)g->h) / (10.0 * sz));
+        if (hx < 2) continue;
+        double level = env * (k < 0 ? 0.8 : 1.0 - 0.6 * sl) * (0.75 + 0.25 * sin(th * 1.7));
+        devil_puff(sx, sy, hx, th * 0.5 + k * 0.7 + 0.3, level, sz < near_z ? 40 : 1009);
+    }
+}
+
 /* ==== the objects (T2OB, T2RT, T2OA: the old fork's OBJS, ROTT, OBJA) ==== */
 
 /* the arcade's memory as s16 halves, by address, so the port reads as the
@@ -2183,7 +2443,7 @@ static void rabbit_step(int k, int slot) {
     Rabbit *r = &s_rabbit[k];
     r->t++;
     /* the fighters, in the tiles' frame (cm) */
-    int pigeon = g[13] == 2;
+    int pigeon = g[13] == 2, spider = g[13] == 4, lizard = g[13] == 3 || spider;
     int fx[2], fz[2];
     world_tile((int)psx_mod_read_word(P1_X), (int)psx_mod_read_word(P1_Z), &fx[0], &fz[0]);
     world_tile((int)psx_mod_read_word(P2_X), (int)psx_mod_read_word(P2_Z), &fx[1], &fz[1]);
@@ -2191,7 +2451,7 @@ static void rabbit_step(int k, int slot) {
         double dx = r->x - fx[i] / 10.0, dz = r->z - fz[i] / 10.0;
         if (dx * dx + dz * dz < 280.0 * 280.0 && !r->fast) {
             r->want = atan2(dx, dz);
-            r->hops = pigeon ? 2 + gull_rand() % 2 : 4 + gull_rand() % 3; r->fast = 1; r->rest = 0;
+            r->hops = pigeon || lizard ? 2 + gull_rand() % 2 : 4 + gull_rand() % 3; r->fast = 1; r->rest = 0;
             if (!r->f) r->f = 1;
         }
     }
@@ -2205,12 +2465,18 @@ static void rabbit_step(int k, int slot) {
     /* turn toward where it wants to go (quickly, before hopping) */
     double turn = remainder(r->want - r->yaw, 6.2831853);
     r->yaw += turn * 0.25;
-    double y = 0, pitch = 0;
+    double y = 0, pitch = 0, wiggle = 0;
     if (r->f) {
         double t = (double)r->f / HOP_FRAMES;
-        double step = pigeon ? (r->fast ? 9.0 : 1.1) : r->fast ? 4.4 : 2.8;
+        double step = spider ? (r->fast ? 7.0 : 2.6) : lizard ? (r->fast ? 8.0 : 4.0) : pigeon ? (r->fast ? 9.0 : 1.1)
+                    : r->fast ? 4.4 : 2.8;
         r->x += sin(r->yaw) * step; r->z += cos(r->yaw) * step;
-        if (pigeon && !r->fast) {
+        if (spider) {
+            wiggle = 0.07 * sin(r->t * 2.3);                             /* scuttling: eight legs' jitter */
+            y = -0.6 * fabs(sin(r->t * 1.7));
+        } else if (lizard) {
+            wiggle = 0.3 * sin(4 * 3.14159265 * t);                      /* the body swinging as it runs */
+        } else if (pigeon && !r->fast) {
             y = -1.5 * fabs(sin(2 * 3.14159265 * t));                    /* two steps */
             pitch = 0.12 * sin(4 * 3.14159265 * t);                      /* the head nodding */
         } else {
@@ -2220,7 +2486,8 @@ static void rabbit_step(int k, int slot) {
         if (++r->f > HOP_FRAMES) {
             r->f = 0;
             if (--r->hops > 0) r->f = 1;
-            else { r->fast = 0; r->rest = pigeon ? 30 + gull_rand() % 200 : 90 + gull_rand() % 420; }
+            else { r->fast = 0; r->rest = pigeon ? 30 + gull_rand() % 200 : spider ? 40 + gull_rand() % 260
+                                                   : lizard ? 200 + gull_rand() % 600 : 90 + gull_rand() % 420; }
         }
     } else if (r->hops > 0 && fabs(turn) < 0.2) {
         r->f = 1;
@@ -2230,8 +2497,12 @@ static void rabbit_step(int k, int slot) {
             r->rest = 60 + gull_rand() % 240;
         } else {
             r->want = r->yaw + ((gull_rand() % 200) - 100) * 0.008;
-            r->hops = pigeon ? 2 + gull_rand() % 6 : 1 + gull_rand() % 4;
+            r->hops = pigeon ? 2 + gull_rand() % 6 : spider ? 2 + gull_rand() % 5 : 1 + gull_rand() % 4;
         }
+    } else if (spider) {
+        if ((r->t / 30 + k) % 4 == 0) wiggle = 0.05 * sin(r->t * 0.6);  /* feeling about, still */
+    } else if (lizard) {
+        if ((r->t / 40 + k) % 6 == 0) pitch = -0.12 * fabs(sin(r->t * 0.25));   /* push-ups, its head up */
     } else if ((r->t / 50 + k) % 5 == 0) {
         pitch = 0.18 + 0.05 * sin(r->t * 0.9);             /* nibbling the grass */
     } else if (pigeon && (r->t / 30 + k) % 3 == 0) {
@@ -2239,15 +2510,55 @@ static void rabbit_step(int k, int slot) {
     }
     s_pos[4 * slot] = (int16_t)r->x; s_pos[4 * slot + 1] = (int16_t)y; s_pos[4 * slot + 2] = (int16_t)r->z;
     s_ang[4 * slot] = (int16_t)(int)(pitch * 4096.0 / 6.2831853);
-    s_ang[4 * slot + 1] = (int16_t)((int)(r->yaw * 4096.0 / 6.2831853) & 0xFFF);
+    s_ang[4 * slot + 1] = (int16_t)((int)((r->yaw + wiggle) * 4096.0 / 6.2831853) & 0xFFF);
     s_ang[4 * slot + 2] = 0;
     s_gull_pose[slot] = 3;
 }
+
+/* Eternal Darkness's spiders on their threads (GULL's hanging critters,
+ * the last of them; the 5th model, its thread up out of sight): each comes
+ * down slowly somewhere round the fight, hangs a while turning on the
+ * thread, then climbs back up and waits above before the next. The old
+ * fork's e454a7e. */
+typedef struct { double x, z, y, yaw; int mode, wait; } Dangler;
+static Dangler s_dangle[8];
+#define DANGLE_TOP -1600.0
+
+static void dangle_place(Dangler *d) {
+    const int16_t *g = s_obj.gull;
+    double a = ((int)(gull_rand() % 1600) - 800) * (6.2831853 / 4096.0);    /* beyond the fight (the camera on -z) */
+    double r = g[10] + (g[11] > g[10] ? gull_rand() % (g[11] - g[10]) : 0);
+    d->x = r * sin(a); d->z = r * cos(a);
+    d->y = DANGLE_TOP; d->mode = 0; d->wait = 120 + gull_rand() % 600;
+    d->yaw = (gull_rand() & 0xFFF) * (6.2831853 / 4096.0);
+}
+
+static void dangle_step(int k, int slot) {
+    const int16_t *g = s_obj.gull;
+    Dangler *d = &s_dangle[k];
+    double low = g[15] < 0 ? g[15] : -90;
+    switch (d->mode) {
+    case 0: if (--d->wait <= 0) d->mode = 1; break;                       /* above, out of sight */
+    case 1: d->y += 2.2 + 0.4 * sin(d->y * 0.05);                        /* coming down */
+            if (d->y >= low) { d->y = low; d->mode = 2; d->wait = 200 + gull_rand() % 500; } break;
+    case 2: d->yaw += 0.006 * sin(d->wait * 0.02);                        /* hanging, turning a little */
+            if (--d->wait <= 0) d->mode = 3; break;
+    default: d->y -= 3.5;                                                 /* climbing back up */
+            if (d->y <= DANGLE_TOP) dangle_place(d);
+    }
+    double bob = d->mode == 2 ? 1.5 * sin(d->wait * 0.07) : 0;
+    s_pos[4 * slot] = (int16_t)d->x; s_pos[4 * slot + 1] = (int16_t)(d->y + bob); s_pos[4 * slot + 2] = (int16_t)d->z;
+    s_ang[4 * slot] = 0; s_ang[4 * slot + 1] = (int16_t)((int)(d->yaw * 4096.0 / 6.2831853) & 0xFFF); s_ang[4 * slot + 2] = 0;
+    s_gull_pose[slot] = 4;
+}
+
+static int danglers(void) { return s_obj.nmodels >= 5 && !s_obj.grass_period ? s_obj.gull[14] : 0; }
 
 static void gull_init(void) {
     const int16_t *g = s_obj.gull;
     memset(s_gull, 0, sizeof s_gull); memset(s_gull_pose, 0, sizeof s_gull_pose);
     if (g[13] >= 1) rabbit_init(); else crab_init();
+    for (int k = 0; k < danglers(); k++) { dangle_place(&s_dangle[k]); s_dangle[k].wait = 60 + gull_rand() % 400; }
     for (int k = 0; k < g[0]; k++) {
         s_gull[k].ang = (gull_rand() & 0xFFF) * (6.2831853 / 4096.0);
         s_gull[k].r = g[1] + (g[2] > g[1] ? gull_rand() % (g[2] - g[1]) : 0);
@@ -2263,8 +2574,10 @@ static void gull_init(void) {
 
 static void gull_step(void) {
     int flock = s_obj.gull[8];
-    for (int k = 0; k < s_obj.gull[9]; k++)
+    int walking = s_obj.gull[9] - danglers();
+    for (int k = 0; k < walking; k++)
         if (s_obj.gull[13] >= 1) rabbit_step(k, s_obj.gull[0] + k); else crab_step(k, s_obj.gull[0] + k);
+    for (int k = 0; k < danglers(); k++) dangle_step(k, s_obj.gull[0] + walking + k);
     for (int k = 0; k < s_obj.gull[0]; k++) {
         Gull *b = &s_gull[k];
         if (flock > 0 && k > 0) {
@@ -2786,6 +3099,7 @@ static void round_start(void) {
     s_nmote = 0; s_dust_seen = 0;
     s_nfeather = 0; s_feather_seen = 0; s_npetal = 0; s_petal_seen = 0; s_npaper = 0; s_paper_seen = 0;
     s_nwisp = 0; s_wisp_seen = 0; s_wisp_t = 0;
+    s_nweed = 0; s_weed_seen = 0; s_weed_t = 0;
     s_nffly = 0; s_ffly_seen = 0; s_ffly_t = 0;
     s_ndrop = 0; s_rain_seen = 0;
     diya_reset();
@@ -2810,6 +3124,16 @@ void tmst_tekken2_extras_tick(void) {
         if (xa->mode == 1 && xa->frame + 1u >= xa->frames) continue;      /* all lit: held till the next round */
         xa->frame = (xa->frame + 1) % xa->frames;
         (void)psx_mod_gpu_high_vram_upload(xa->x, xa->y, xa->w, xa->h, xa->pix + (size_t)xa->frame * xa->w * xa->h);
+    }
+    if (s_pack.flit_on) {
+        /* FLIT: the lightning's light on the floor, its palette lit while a
+         * flash is (the old fork's anim_tick, e454a7e) */
+        int lit = s_bolt_on && s_bolt >= 0;
+        if (lit != s_pack.flit_was) {
+            static const uint16_t black[16];
+            (void)psx_mod_gpu_high_vram_upload(s_pack.flit_x, s_pack.flit_y, 16, 1, lit ? s_pack.flit_lit : black);
+            s_pack.flit_was = lit;
+        }
     }
     int over = round_over();
     if (s_was_over && !over) round_start();      /* the next round starts */

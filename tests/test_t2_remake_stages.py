@@ -111,10 +111,12 @@ class Frame(unittest.TestCase):
     def test_frames_for_every_remake(self):
         data = json.loads((ADDON / 'tools/data/t2_remake_stages.json').read_text(encoding='utf-8'))
         for owner, cfg in data['arcade'].items():
-            if not cfg.get('night'):
+            if not cfg.get('night') and owner not in rs.OWN_FRAME:
                 self.assertIn(owner, data['frames'], owner)
         by_stage = rs.owners()
-        self.assertEqual(sorted(by_stage), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 15, 16, 17, 18, 19, 20, 22])
+        self.assertEqual(sorted(by_stage), list(range(23)))
+        # the old fork's last five in their own frame (the user's, 2026-11-07)
+        self.assertEqual(sorted(gen.stage_of(k) for k in rs.OWN_FRAME), [10, 11, 12, 14, 21])
 
 
 class WolfCut(unittest.TestCase):
@@ -128,7 +130,7 @@ class WolfCut(unittest.TestCase):
 
     def test_the_stages(self):
         by_owner = {k: gen.stage_of(k) for k in rs.WOLF_CUT}
-        self.assertEqual(sorted(by_owner.values()), [1, 5, 8, 9, 13, 15, 19])
+        self.assertEqual(sorted(by_owner.values()), [1, 5, 8, 9, 13, 15, 19, 21])
 
     def test_on_wolf(self):
         def vram(*rects):
@@ -448,11 +450,12 @@ class Bugfix(unittest.TestCase):
     def test_light_section(self):
         for stage in range(23):
             parts = dict(rs.ours(stage, {}))
-            if stage in rs.DARK_LIGHT:
+            if stage in rs.DARK_LIGHT or stage in rs.REMAKE_DARK:
                 self.assertNotIn(b'T2LT', parts)
             else:
                 self.assertEqual(struct.unpack('<2H', parts[b'T2LT']), (rs.DAY_ARENA, 0))
         self.assertEqual(rs.DARK_LIGHT, {4, 6, 7, 16, 21, 22})  # Church, Pagoda, Forest, Taj, Eternal, Mirror (D15 b)
+        self.assertEqual(rs.REMAKE_DARK, {12})                  # Nowhere Desert's Remake at night (D3 a, 2026-11-07)
         s = (ADDON / 'src/tekken2/tmst_tekken2_stages.c').read_text(encoding='utf-8')
         self.assertIn('"T2LT"', s)
         self.assertIn('LIGHT_TABLE = 0x80096c78', s)
@@ -462,8 +465,9 @@ class Bugfix(unittest.TestCase):
         """The Classic lit as the Remake (the user's, 2026-11-05): T2LT on the
         same stages, the dark ones dimmed as the Remake's recipe dims them."""
         recipe = json.loads((ADDON / 'tools/data/t2_remake_stages.json').read_text(encoding='utf-8'))
+        # (not the last five's own night light, 2026-11-07: the Classic's stays)
         light = {stage: cfg.get('fighter_light') for stage, cfg in
-                 ((gen.stage_of(owner), cfg) for owner, cfg in recipe['arcade'].items())}
+                 ((gen.stage_of(owner), cfg) for owner, cfg in recipe['arcade'].items() if owner not in rs.OWN_FRAME)}
         for stage in range(23):
             lay = classic.layout(stage)
             if stage in classic.DARK_LIGHT:
@@ -488,7 +492,7 @@ class Bugfix(unittest.TestCase):
             self.skipTest('no Remake packs made here')
         for path in made:
             stage, parts = int(path.name[5:7]), dict(rs.sections(path.read_bytes()))
-            self.assertEqual(b'T2LT' in parts, stage not in rs.DARK_LIGHT, path.name)
+            self.assertEqual(b'T2LT' in parts, stage not in rs.DARK_LIGHT and stage not in rs.REMAKE_DARK, path.name)
 
     def test_grass_round(self):
         c = (ADDON / 'src/tekken2/tmst_tekken2_extras.c').read_text(encoding='utf-8')
@@ -528,16 +532,28 @@ class Bugfix(unittest.TestCase):
             f = dict(rs.sections(path.read_bytes()))[b'FLOR']
             self.assertLessEqual(max(f[4008:4108]), 9, path.name)
 
+    def test_frame_lift(self):
+        """A frame's "lift": the user's picture that many texels higher
+        (London: its buses out of the sand; its sea waving as the Beach's)."""
+        self.assertEqual(gen.frame_y({'y': [1.5, 48]}), (1.5, 48))
+        self.assertEqual(gen.frame_y({'y': [1.5, 48], 'lift': 50}), (1.5, -2))
+        data = json.loads((ADDON / 'tools/data/t2_remake_stages.json').read_text(encoding='utf-8'))
+        self.assertEqual(data['frames']['pjack']['lift'], 50)
+        self.assertEqual(data['arcade']['pjack']['sea']['row'], 5)
+
     def test_scenery_anchor(self):
-        """D16: the scenery follows an anchor of ours (the fighters moved to it
-        for the stage routine's call, given back after the extras)."""
+        """The scenery stands at an anchor of ours (the fighters moved to it
+        for the stage routine's call, given back after the extras): pushed
+        only past the leash, unturned by the axis (2026-11-08, "A")."""
         c = (ADDON / 'src/tekken2/tmst_tekken2_anchor.c').read_text(encoding='utf-8')
-        for key in ('FOLLOW = 1.0 / 240.0', 'LEASH = 3000.0', 'shift(dx, dz);', 'shift(-dx, -dz);',
+        for key in ('LEASH = 4000.0', '} else if (!psx_mod_read_word(PAUSED) && d > LEASH) {', 'shift(dx, dz);', 'shift(-dx, -dz);',
                     'HISTORY_P1 + 8 + 16 * k', 'TMST_T2_ANCHOR',
                     # the Church fixed to the floor (FIXW): grid anchor, unturned, its walls (COLL)
                     'fabs(m[k] - *a[k]) > P / 10 * 6', 'psx_mod_write_word(AXIS, 0);', 'ROOT_P1 = 0x800a9228',
-                    'if (!psx_mod_read_word(PAUSED)) collide();'):
+                    'if (!psx_mod_read_word(PAUSED)) collide();', 'if (!moved || !frozen) return;'):
             self.assertIn(key, c)
+        self.assertNotIn('FOLLOW', c)
+        self.assertEqual(c.count('freeze();'), 2)
         m = (ADDON / 'src/tekken2/tmst_tekken2_mirror.c').read_text(encoding='utf-8')
         self.assertLess(m.index('anchored = tmst_tekken2_anchor_begin();'), m.index('        tmst_tekken2_stage_entry();'))
         self.assertLess(m.index('tmst_tekken2_extras_draw(cpu); }'), m.index('tmst_tekken2_anchor_end();'))
@@ -612,3 +628,183 @@ class Bugfix(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LastFive(unittest.TestCase):
+    """The old fork's last five (2026-11-07): their own frame, their
+    animations' frames and lights' palettes past the VRAM, Eternal
+    Darkness's top rows cut rather than the wolf's room taken."""
+
+    def tearDown(self):
+        gen.RESERVED[:] = []
+        gen.PALETTE_RAM = False
+
+    def test_own_cutter(self):
+        base = {'crop': [0, 40, 2000, 640], 'rows': 6, 'yoff': -40, 'weave': {'cell': [2, 15]},
+                'flicker': {'fires': [[1265, 575, 0.4]], 'rain': {'windows': [[1, 70, 9, 150], [1, 210, 9, 360]]}},
+                'lightning': {'windows': {'rects': [[1, 70, 9, 150], [1, 120, 9, 360]]}}, 'webs': {'at': [[985, 300, 60, 'tr']]}}
+        make = rs.own_cutter(base)
+        self.assertIs(make(0), base)
+        c = make(1)
+        self.assertEqual((c['crop'], c['rows'], c['yoff'], c['weave']['cell']), ([0, 140, 2000, 640], 5, -8, [1, 15]))
+        self.assertEqual(c['flicker']['rain']['windows'], [[1, 210, 9, 360]])          # 10 pixels left: gone
+        self.assertEqual(c['lightning']['windows']['rects'], [[1, 140, 9, 360]])       # clipped
+        self.assertEqual(base['rows'], 6)                                              # its own recipe kept
+        self.assertIsNone(make(3))                                                     # the web's row: no
+        self.assertIsNone(make(6))
+
+    def test_palette_frames(self):
+        vr = gen.Vram()
+        frames = [[[f] * 16, [f + 1] * 16] for f in range(3)]
+        self.assertEqual(gen.palette_frames(vr, 400, frames), [399, 398, 397])          # the old fork's packs
+        gen.RESERVED[:] = [(0, 0, 1, 1)]
+        self.assertEqual(gen.palette_frames(gen.Vram(), 400, frames), [399, 398, 397])  # the Pagoda's: as they were
+        gen.PALETTE_RAM = True
+        vr = gen.Vram()
+        places = gen.palette_frames(vr, 400, frames)
+        self.assertTrue(all(y >= 1024 for _, y in places))
+        x, y = places[2]
+        self.assertEqual([int(v) for v in vr.v[y, x:x + 32]], [2] * 16 + [3] * 16)
+
+    def test_frames_out_palette_rows_and_shown_frame(self):
+        def rect(x, y, w, h, v):
+            return struct.pack('<4H', x, y, w, h) + struct.pack(f'<{w * h}H', *([v] * (w * h)))
+        vram = (b'VRAM', struct.pack('<I', 4) + rect(16, 512, 16, 64, 7) + rect(0, 4608, 32, 1, 8) + rect(0, 4609, 32, 1, 9)
+                + rect(0, 4672, 16, 64, 5))
+        ani = (b'ANI4', struct.pack('<6H', 640, 1000, 32, 1, 3, 2) + struct.pack('<4H', 0, 4608, 0, 4609) + struct.pack('<H', 0))
+        web = (b'ANI3', struct.pack('<6H', 16, 512, 16, 64, 30, 2) + struct.pack('<4H', 16, 512, 0, 4672) + struct.pack('<H', 0))
+        out = dict(rs.frames_out([vram, ani, web]))
+        self.assertNotIn(b'ANI4', out)
+        t = out[b'T2AN']
+        self.assertEqual(struct.unpack_from('<I', t)[0], 2)
+        self.assertEqual(struct.unpack_from('<4s7H', t, 4), (b'ANI4', 640, 1000, 32, 1, 3, 2, 2))
+        self.assertEqual(struct.unpack_from('<64H', t, 4 + 20 + 4), tuple([8] * 32 + [9] * 32))
+        self.assertEqual(struct.unpack_from('<I', out[b'VRAM'])[0], 1)               # the picture stays
+
+    def test_made_last_five(self):
+        made = [ADDON / f'workspace/t2-stages/remake/stage{st:02d}.ast' for st in (10, 11, 12, 14, 21)]
+        if not all(p.is_file() for p in made):
+            self.skipTest('no Remake packs made here')
+        for path in made:
+            pack = path.read_bytes()
+            parts = dict(rs.sections(pack))
+            if b'T2OB' not in parts:
+                self.skipTest('the Classic copies (no tekken3.zip)')
+            # Eternal Darkness's whole: the wolf's area too (stage21w.ast hers, WolfVariant)
+            wolf = (path.with_name(rs.wolf_name(path.name))).is_file()
+            if not wolf:
+                self.assertEqual(rs.on_wolf(pack), 0, path.name)
+            self.assertIsNotNone(rs.font_place(pack, wolf=not wolf), path.name)
+            self.assertIn(b'T2AN', parts, path.name)
+            self.assertFalse(set(parts) & {b'ANIM', b'ANI2', b'ANI4'}, path.name)
+            v = parts[b'VRAM']
+            n, o = struct.unpack_from('<I', v)[0], 4
+            for _ in range(n):
+                x, y, w, h = struct.unpack_from('<4H', v, o)
+                o += 8 + 2 * w * h
+                self.assertLessEqual(y + h, 1024, path.name)
+
+    def test_runtime_room(self):
+        s = (ADDON / 'src/tekken2/tmst_tekken2_stages.c').read_text(encoding='utf-8')
+        self.assertIn('ANIMS_MAX = 32', s)
+
+    def test_runtime_parts(self):
+        """Phase 2: the old fork's e454a7e runtime parts of the last five."""
+        c = (ADDON / 'src/tekken2/tmst_tekken2_extras.c').read_text(encoding='utf-8')
+        for part in ('static void desert_wind(const Gte *g)', 'static void dandelion_seeds(const Gte *g)',
+                     'if (s_pack.feather_shape == 6) { desert_wind(g); return; }',
+                     'if (s_pack.feather_shape == 7) { dandelion_seeds(g); return; }',
+                     'int16_t gull[16];', 'static void dangle_step(int k, int slot)',
+                     'spider = g[13] == 4, lizard = g[13] == 3 || spider', 'section(b, size, "FLIT", &len)',
+                     'int lit = s_bolt_on && s_bolt >= 0;'):
+            self.assertIn(part, c)
+        made = ADDON / 'workspace/t2-stages/remake'
+        if not (made / 'stage21.ast').is_file():
+            self.skipTest('no Remake packs made here')
+        parts = {st: dict(rs.sections((made / f'stage{st:02d}.ast').read_bytes())) for st in (12, 14, 21)}
+        if b'T2OB' not in parts[21]:
+            self.skipTest('the Classic copies (no tekken3.zip)')
+        self.assertEqual(struct.unpack_from('<h', parts[12][b'FTHR'], 16)[0], 6)        # tumbleweeds
+        self.assertGreaterEqual(len(parts[12][b'FTHR']), 34)
+        self.assertEqual(struct.unpack_from('<h', parts[14][b'FTHR'], 16)[0], 7)        # dandelions
+        gull = struct.unpack_from('<16h', parts[21][b'GULL'])
+        self.assertEqual(gull[13], 4)                                                     # spiders
+        self.assertTrue(0 < gull[14] <= gull[9])                                          # some on threads
+        self.assertEqual(struct.unpack_from('<h', parts[12][b'GULL'], 26)[0], 3)         # lizards
+        self.assertGreaterEqual(len(parts[21][b'FLIT']), 36)
+
+
+class WolfVariant(unittest.TestCase):
+    """A "wolf_cut" stage's two packs (the user's, 2026-11-08): stageNNw.ast,
+    its background's top cut, while Unknown fights; stageNN.ast whole."""
+
+    def tearDown(self):
+        gen.RESERVED[:] = []
+
+    def test_wolf_name(self):
+        self.assertEqual(rs.wolf_name('stage21.ast'), 'stage21w.ast')
+
+    def test_full_fitted(self):
+        import tempfile
+        seen = []
+        cells = gen.pack.HIT_EFFECT_64_CELLS
+
+        def build(owner, src, tekken3, out, cfg, letters=True):
+            seen.append((list(gen.RESERVED), tuple(gen.pack.HIT_EFFECT_64_CELLS)))
+            if rs.WOLF in gen.RESERVED:
+                raise SystemExit('the pictures do not fit the high half of the VRAM')
+            rects = [(640, 512, 16, 64)] if letters else                 [(x, y, 16, 64) for x in range(0, 1024, 16) for y in range(512, 1024, 64)]
+            out.write_bytes(pack([(b'VRAM', struct.pack('<I', len(rects)) + b''.join(rect(*r, 1) for r in rects))]))
+            return {'far_cells': '20 x 6'}
+        real = gen.build
+        gen.build = build
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                temp = Path(tmp) / 'x.part'
+                report, wolf, cfg = rs.full_fitted('kazuya', None, None, temp, lambda cut: {'rows': 6 - cut})
+                self.assertEqual((wolf, cfg['rows']), ('used', 6))
+                self.assertIn(b'VRAM', dict(rs.sections(report['_pack'])))
+                self.assertFalse(temp.exists())
+                # the letters' room kept, from the palettes too, then given back
+                self.assertTrue(all(rs.FONT_ROOM in r and rs.FONT_ROOM in c for r, c in seen))
+                self.assertEqual(gen.pack.HIT_EFFECT_64_CELLS, cells)
+                # the letters left no place: none
+                gen.build = lambda *a: build(*a, letters=False)
+                self.assertIsNone(rs.full_fitted('kazuya', None, None, temp, lambda cut: {'rows': 6 - cut}))
+                self.assertEqual(gen.pack.HIT_EFFECT_64_CELLS, cells)
+        finally:
+            gen.build = real
+
+    def test_runtime(self):
+        s = (ADDON / 'src/tekken2/tmst_tekken2_stages.c').read_text(encoding='utf-8')
+        for part in ('"%s/stage%02dw.ast"', 'static int wolf_pack(int stage, char *out, size_t size)',
+                     'int wolf = held_as == REMAKE && wolf_pack(stage, from, sizeof from);',
+                     'held_wolf != wolf_pack(fight, NULL, 0)', 'extras_wolf = drawn_version() == REMAKE && wolf_pack('):
+            self.assertIn(part, s)
+        c = (ADDON / 'src/compat/tmst_compat.c').read_text(encoding='utf-8')
+        self.assertIn('tekken3_guest_key(psx_mod_read_half(LOADING_FIGHTERS + 2 * p))', c)
+        self.assertIn('!strcmp(key, "unknown")', c)
+
+    def test_hills_on_the_floor(self):
+        """Hills' picture down to the floor's far edge (the user's, 2026-11-08)."""
+        self.assertEqual(gen.DATA['arcade']['alex']['yoff'], 16)
+
+    def test_made_packs(self):
+        made = ADDON / 'workspace/t2-stages/remake'
+        stages = sorted(gen.stage_of(k) for k in rs.WOLF_CUT)
+        paths = [made / f'stage{st:02d}.ast' for st in stages]
+        if not all(p.is_file() for p in paths):
+            self.skipTest('no Remake packs made here')
+        if b'T2OB' not in dict(rs.sections(paths[-1].read_bytes())):
+            self.skipTest('the Classic copies (no tekken3.zip)')
+        for path in paths:
+            whole = path.read_bytes()
+            hers = path.with_name(rs.wolf_name(path.name))
+            if hers.is_file():
+                cut = hers.read_bytes()
+                self.assertEqual(rs.on_wolf(cut), 0, hers.name)
+                self.assertIsNotNone(rs.font_place(cut), hers.name)
+                self.assertIsNotNone(rs.font_place(whole, wolf=False), path.name)
+            else:
+                self.assertEqual(rs.on_wolf(whole), 0, path.name)
+                self.assertIsNotNone(rs.font_place(whole), path.name)

@@ -44,7 +44,7 @@ requires_feature = "tekken2"
 [[feature]]
 id = "stages"
 name = "Stages"
-description = "Tekken 2's 23 stages (Classic: its panorama and floor), made by Setup TMST.cmd from your Tekken 2 disc and drawn by the game's stage engine as Tekken 3 arcade's are (keep the Arcade Stages feature on; tekken3.zip is not needed for the Classic). Remake: 18 of them remade, with scenery, animations, new painted backgrounds, falling petals and leaves, insects, rain, grass, birds and other animals, lightning (built with the Expanded setup's tekken3.zip). Pick them as TEKKEN 2 on the STAGE line of VS and Practice (Stage Select on); GAME OPTION's TEKKEN 2 STAGES row picks the version. Needs Tekken 2 Content. Restart after changing."
+description = "Tekken 2's 23 stages (Classic: its panorama and floor), made by Setup TMST.cmd from your Tekken 2 disc and drawn by the game's stage engine as Tekken 3 arcade's are (keep the Arcade Stages feature on; tekken3.zip is not needed for the Classic). Remake: all 23 remade, with scenery, animations, new painted backgrounds, falling petals and leaves, insects, rain, grass, birds and other animals, lightning (built with the Expanded setup's tekken3.zip). Pick them as TEKKEN 2 on the STAGE line of VS and Practice (Stage Select on); GAME OPTION's TEKKEN 2 STAGES row picks the version. Needs Tekken 2 Content. Restart after changing."
 group = "TMST / Tekken 2 Content"
 default_enabled = false
 

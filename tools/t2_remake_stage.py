@@ -151,6 +151,16 @@ def like_pack(name: str) -> Path:
     return Path(LIKE.get(name, name))
 PACK_STAGE = 200                     # a pack's stage number: 200 + Tekken 2 stage (no Tekken 3 stage's special cases)
 CLUT_ROW0 = 100                      # palettes laid out from this row of the low half (pack.Relocation moves them up)
+# Palettes a low half row (pack.Relocation moves a row as one run); the
+# add-on's tools/t2_remake_stages.py makes it shorter for a stage whose runs
+# find no room in a full high half otherwise (16: any slot's width)
+CLUT_RUN = 64
+# (the add-on's) the Pagoda lights' palettes (pagoda_lights(): eyes or rain,
+# candles) in runs of this many, each its own animation; None: one run each
+PG_CHUNK = None
+# (the add-on's) palette_frames() past the VRAM (tools/t2_remake_stages.py:
+# the old fork's last five only, the other stages' packs as they were)
+PALETTE_RAM = False
 RAM_SLOT = 64 * 64                   # (the add-on's) Vram.ram()'s first slot: far past the VRAM (y 4608)
 
 
@@ -162,7 +172,7 @@ class Vram:
         self.v = np.zeros((1024, 1024), np.uint16)
         self.rects, self.slot, self.cluts = [], 0, 0
         self.holes = []                  # slots skipped by reserve(), taken first
-        self.clut_run = 64               # palettes a row (pack.Relocation moves each row as one run)
+        self.clut_run = CLUT_RUN         # palettes a row (pack.Relocation moves each row as one run)
         self.blocked = set()             # slots another's textures hold (King's helicopter: block())
         # (the add-on's) an animation's frames kept out of the VRAM: in ram(),
         # pictures go to slots from RAM_SLOT on (y 1024 on, past the VRAM),
@@ -323,6 +333,8 @@ def panorama_picture(cfg: dict, vram: np.ndarray, rec: dict) -> np.ndarray:
         img = np.asarray(Image.open(hd(cfg['panorama'])).convert('RGB')).astype(float)
         if cfg.get('erase'):
             img = erase(img, cfg['erase'])
+        if cfg.get('webs'):
+            img = painted_webs(img, cfg['webs'])
         if cfg.get('squeeze'):
             # "squeeze" [y0, y1, y2]: the sky's rows y0..y1 pressed into
             # y2..y1, all above them moved down as much, the top its first
@@ -376,6 +388,20 @@ def panorama_picture(cfg: dict, vram: np.ndarray, rec: dict) -> np.ndarray:
         rows = cfg.get('rows', round(img.shape[0] / 64))
         cols = cfg.get('columns', round(img.shape[1] * rows * 64 / img.shape[0] / 64))
         img = np.asarray(Image.fromarray(img.astype(np.uint8)).resize((cols * 64, rows * 64), Image.LANCZOS)).astype(float)
+        if cfg.get('bank'):
+            # "bank" {"height" pixels, "colour"}: the near shore along the
+            # picture's foot, grass to the floor's (Cambodia's lake beyond
+            # the fight), its top ragged with tufts and reeds
+            h, rnd = cfg['bank']['height'], np.random.default_rng(cfg['bank'].get('seed', 7))
+            w = img.shape[1]
+            top = h + 1.5 * np.sin(np.arange(w) * 0.21) + rnd.uniform(0, 2.5, w)
+            reeds = rnd.uniform(0, 1, w) < 0.12
+            top = top + reeds * rnd.uniform(3, 8, w)
+            depth = img.shape[0] - np.arange(img.shape[0])[:, None]          # rows up from the foot
+            on = depth <= top[None]
+            grass = np.array(cfg['bank'].get('colour', [44, 98, 32]), float)
+            shade = (0.75 + 0.35 * rnd.uniform(0, 1, img.shape[:2])) * (0.85 + 0.25 * np.clip((top[None] - depth) / max(1, h), 0, 1))
+            img = np.where(on[..., None], grass[None, None] * shade[..., None], img)
         seam = cfg.get('seam', 0)
         if seam:
             # The right end fades into the left's beginning, mirrored: the
@@ -393,9 +419,176 @@ def panorama_picture(cfg: dict, vram: np.ndarray, rec: dict) -> np.ndarray:
             # when the fight starts (the launch pad's shuttle behind them)
             width = (cfg['crop'][2] - cfg['crop'][0]) if cfg.get('crop') else img.shape[1]
             img = np.roll(img, int(round(cfg['roll'] * img.shape[1] / width)), axis=1)
+        if cfg.get('twice'):
+            # "twice": the picture side by side with itself, a whole turn of
+            # the ring (no repeat): what is drawn after (the moon) is there once
+            img = np.concatenate([img, img], axis=1)
+        if cfg.get('moon'):
+            # the moon drawn on last (the cloud row's frames draw it again
+            # over their billowing clouds: moon_over())
+            cfg['_moonless'] = img.copy()
+            img = moon_over(img, cfg['moon'], 0.0)
         return img
     pano = t2_stage.panorama(vram, rec).astype(float)
     return np.repeat(pano, 2, axis=0)
+
+
+def web_strands(cx: float, cy: float, radius: float, corner: str | None, seed: int) -> tuple[list, list]:
+    """A spider's web as strands, (radials, spiral): each a list of
+    polylines ((x, y) points), centre (cx, cy), "radius" pixels; corner
+    "tl", "tr", "bl", "br": a corner web, its centre in that corner, only
+    the quarter into the room (its strands sagging), else a whole orb web.
+    The spiral's polylines in the order a spider lays them (outward in)."""
+    rnd = np.random.default_rng(seed)
+    if corner:
+        a0 = {'tl': 0.0, 'tr': 90.0, 'br': 180.0, 'bl': 270.0}[corner]
+        angles = np.radians(a0 + np.linspace(4, 86, 7) + rnd.uniform(-3, 3, 7))
+    else:
+        n = 13
+        angles = np.radians(np.arange(n) * 360 / n + rnd.uniform(-7, 7, n))
+    # screen: x right, y down; angle 0 is right, 90 down
+    lens = radius * rnd.uniform(0.8, 1.05, len(angles))
+    radials = [[(cx, cy), (cx + l * np.cos(a), cy + l * np.sin(a))] for a, l in zip(angles, lens)]
+    spiral = []
+    rings = np.linspace(0.95, 0.18, 9 if corner else 11)
+    for k, f in enumerate(rings):
+        pts = [(cx + f * l * np.cos(a), cy + f * l * np.sin(a)) for a, l in zip(angles, lens)]
+        if not corner:
+            pts.append(pts[0])
+        # each span sagging a little between the radials (down)
+        line = []
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            for t in np.linspace(0, 1, 5)[:-1]:
+                sag = 0.06 * f * radius * 4 * t * (1 - t) * (1.0 if corner else 0.4)
+                line.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t + sag))
+        line.append(pts[-1])
+        spiral.append(line)
+    return radials, spiral
+
+
+def draw_strands(size: tuple, lines: list, colour, alpha: float, ss: int = 4, width: float = 1.0) -> np.ndarray:
+    """The strands drawn thin and soft: RGBA (float, alpha 0..1) of size
+    (w, h), supersampled ss times."""
+    from PIL import ImageDraw
+    w, h = size
+    im = Image.new('L', (w * ss, h * ss), 0)
+    d = ImageDraw.Draw(im)
+    for line in lines:
+        d.line([(x * ss, y * ss) for x, y in line], fill=255, width=max(1, int(round(width * ss * 0.6))))
+    a = np.asarray(im.resize((w, h), Image.BOX), float) / 255 * alpha
+    out = np.zeros((h, w, 4))
+    out[..., :3] = np.array(colour, float)
+    out[..., 3] = np.clip(a, 0, 1)
+    return out
+
+
+def painted_webs(img: np.ndarray, spec: dict) -> np.ndarray:
+    """"webs" {"at": [[x, y, radius, corner], ...] pixels of the player's
+    picture (corner "tl", "tr", "bl", "br", or "" an orb web), "colour",
+    "alpha"}: cobwebs in the corners of Eternal Darkness's hall, strung on
+    the picture."""
+    out = img.copy()
+    colour, alpha = spec.get('colour', [150, 150, 160]), spec.get('alpha', 0.4)
+    for k, (x, y, r, corner) in enumerate(spec['at']):
+        x0, y0 = int(max(0, x - r - 4)), int(max(0, y - r - 4))
+        x1, y1 = int(min(img.shape[1], x + r + 4)), int(min(img.shape[0], y + r + 4))
+        rad, spi = web_strands(x - x0, y - y0, r, corner or None, 300 + k)
+        layer = draw_strands((x1 - x0, y1 - y0), rad + spi, colour, alpha, width=1.4)
+        a = layer[..., 3:]
+        out[y0:y1, x0:x1] = out[y0:y1, x0:x1] * (1 - a) + layer[..., :3] * a
+    return out
+
+
+def weave_frames(pic: np.ndarray, spec: dict) -> tuple[tuple, list[np.ndarray], list[int]]:
+    """"weave" {"cell": [row, column] of the far background, "radius",
+    "centre" [x, y] in it, "steps", "hold", "gone", "colour", "alpha"}: a
+    spider spinning its orb web in one cell of the picture: the frame
+    threads first, then the spiral round and round, the spider (a dark
+    speck with legs) where it is spinning; the web held a while, then
+    torn away and gone a while. Returns the cell, its (colours, indices)
+    as shown first, and per frame of the loop its indices (in the same
+    16 colours)."""
+    row, col = spec['cell']
+    base = pic[64 * row:64 * row + 64, 64 * col:64 * col + 64].astype(float)
+    cx, cy = spec.get('centre', [32, 32])
+    rad, spi = web_strands(cx, cy, spec.get('radius', 26), None, spec.get('seed', 77))
+    colour, alpha = spec.get('colour', [160, 160, 172]), spec.get('alpha', 0.55)
+    # the spinning in steps: each radial, then the spiral a span at a time
+    pieces = [[r] for r in rad]
+    for line in spi:
+        for k in range(0, len(line) - 1, 4):
+            pieces.append([line[k:k + 5]])
+    steps = spec.get('steps', 40)
+    cut = np.linspace(0, len(pieces), steps + 1).round().astype(int)[1:]
+    def frame(n_pieces: int, spider_at=None, torn: float = 0.0) -> np.ndarray:
+        lines = [l for p in pieces[:n_pieces] for l in p]
+        if torn:
+            rnd = np.random.default_rng(int(torn * 100))
+            lines = [l for l in lines if rnd.uniform() > torn]
+        img = base.copy()
+        if lines:
+            layer = draw_strands((64, 64), lines, colour, alpha, ss=4, width=1.0)
+            a = layer[..., 3:]
+            img = img * (1 - a) + layer[..., :3] * a
+        if spider_at is not None:
+            sx, sy = spider_at
+            yy, xx = np.mgrid[0:64, 0:64]
+            body = np.hypot((xx - sx) / 1.3, yy - sy) < 1.6
+            legs = (np.abs(yy - sy) < 0.7) & (np.abs(xx - sx) < 3.2) | (np.abs(xx - sx) < 0.7) & (np.abs(yy - sy) < 2.4)
+            img[legs] = img[legs] * 0.3 + np.array([20, 16, 14]) * 0.7
+            img[body] = [14, 10, 10]
+        return img
+    last = lambda n: pieces[n - 1][-1][-1] if n else (cx, cy)
+    frames = [frame(n, last(n)) for n in cut]
+    full = frame(len(pieces))
+    hold = [full] * spec.get('hold', 30)
+    torn = [frame(len(pieces), None, t) for t in (0.3, 0.6, 0.85)]
+    gone = [frame(0)] * spec.get('gone', 12)
+    loop = gone + frames + hold + torn
+    colours, _ = sixteen(np.concatenate([full, frame(len(pieces), (cx, cy))]))
+    shown = rgb_of(np.array(colours, np.uint16))
+    idx = [((f.reshape(-1, 1, 3) - shown[None]) ** 2).sum(2).argmin(1).reshape(64, 64) for f in loop]
+    return (row, col), colours, idx
+
+
+def moon_over(img: np.ndarray, spec: dict, t: float, behind=None) -> np.ndarray:
+    """The moon on the night sky ("moon": "x", "y" its middle in the
+    panorama picture's pixels, "radius", "halo" the glow's radius, "colour",
+    "halo_colour", "lining" the clouds' silver near it, "breath" the
+    glow's waver over the frames): a pale disc, its seas faintly darker,
+    the clouds over it hiding it as thick as they are (their light against
+    the sky's, "sky" its brightness), lit at their edges near it; the glow
+    added round it, t the frame's phase (0: the shown picture)."""
+    h, w = img.shape[:2]
+    cx, cy, r = spec['x'], spec['y'], spec.get('radius', 9)
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    dx = (xx - cx + w / 2) % w - w / 2
+    d = np.hypot(dx, yy - cy)
+    lum = img @ np.array([0.3, 0.5, 0.2])
+    cover = np.clip((lum - spec.get('sky', 18)) / spec.get('thick', 45), 0, 1)
+    rnd = np.random.default_rng(spec.get('seed', 3))
+    seas = np.zeros((h, w))
+    for _ in range(5):
+        sx, sy, sr = rnd.uniform(-0.5, 0.5) * r, rnd.uniform(-0.5, 0.5) * r, rnd.uniform(0.2, 0.45) * r
+        seas = np.maximum(seas, np.clip(1 - np.hypot(dx - sx, yy - cy - sy) / sr, 0, 1))
+    disc = np.clip(r + 0.5 - d, 0, 1)
+    moon = np.array(spec.get('colour', [238, 234, 214]), float)[None, None] * (1 - 0.14 * seas)[..., None]
+    a = (disc * (1 - 0.85 * cover))[..., None]
+    out = img * (1 - a) + moon * a
+    breath = 1 + spec.get('breath', 0.1) * np.sin(t)
+    if spec.get('breath_rows'):
+        # breathing only inside the animated row, none at its edges
+        y0, y1 = spec['breath_rows']
+        breath = 1 + (breath - 1) * (np.sin(np.pi * np.clip((yy - y0) / (y1 - y0), 0, 1)) ** 1.5)[..., None]
+    R = spec.get('halo', 5 * r)
+    # the glow and the lining cut off far from it (nothing changed there:
+    # "twice" lays those cells once)
+    glow = np.exp(-(np.maximum(d - r, 0) / R) ** 2) * (d > r - 1) * (d < r + 2.5 * R)
+    breath = np.broadcast_to(np.asarray(breath, float), (h, w, 1)) if np.ndim(breath) else breath
+    out = out + glow[..., None] * np.array(spec.get('halo_colour', [40, 44, 60]), float) * breath
+    lining = cover * np.exp(-(np.maximum(d - r, 0) / (2.2 * R)) ** 2) * (d < r + 4 * R)
+    out = out + lining[..., None] * np.array(spec.get('lining', [70, 74, 86]), float) * breath
+    return np.clip(out, 0, 255)
 
 
 def grade(img: np.ndarray, spec: dict) -> np.ndarray:
@@ -452,18 +645,40 @@ def far_background(cfg: dict, base: scene.FarBg, pic: np.ndarray, vr: Vram, sea:
     rows, cols = pic.shape[0] // 64, pic.shape[1] // 64
     desc, cluts = [[0] * cols for _ in range(rows)], [[0] * cols for _ in range(rows)]
     sea_row = (cfg.get('sea') or cfg.get('pool') or cfg.get('clouds') or cfg.get('water'))['row'] if sea is not None else -1
-    order = [r for r in range(rows) if r != sea_row] + ([sea_row] if sea is not None else [])
+    # "clouds" "water": Cambodia's lake row animated as well, laid after
+    # the cloud row (the two one rectangle, its picture after them)
+    lake_row = cfg.get('clouds', {}).get('water', {}).get('row', -1) if sea is not None else -1
+    order = [r for r in range(rows) if r not in (sea_row, lake_row)] + ([sea_row] if sea is not None else []) +         ([lake_row] if lake_row >= 0 else [])
+    # "twice" (the picture side by side with itself): a cell of the second
+    # half the same as the first half's is that one (only where the moon
+    # is do they differ); the sea row's cells laid are then the first
+    # half's and the second's that differ ("_sea_cols": their columns)
+    half = cols // 2 if cfg.get('twice') else 0
+    same = lambda r, c: half and c >= half and np.array_equal(pic[64 * r:64 * r + 64, 64 * c:64 * c + 64],
+                                                             pic[64 * r:64 * r + 64, 64 * (c - half):64 * (c - half) + 64])
+    laid = {r: [c for c in range(cols) if not same(r, c)] for r in range(rows)}
+    if half:
+        cfg['_sea_cols'] = laid[sea_row] if sea_row >= 0 else None
+    start = None
     for r in order:
-        start = vr.reserve(cols + after_sea(cfg)) if r == sea_row else None
+        if r == sea_row:
+            start = vr.reserve(len(laid[r]) * (2 if lake_row >= 0 else 1) + after_sea(cfg))
+        elif r == lake_row:
+            start += cols
+        else:
+            start = None
         for c in range(cols):
+            if c not in laid[r]:
+                desc[r][c], cluts[r][c] = desc[r][c - half], cluts[r][c - half]
+                continue
             if cfg.get('night'):        # nothing drawn (colour 0): the black band under it
                 colours, idx = [0] * 16, np.zeros((64, 64), np.uint16)
             elif own and (r, c) in own:
                 colours, idx = own[r, c]
             else:
                 colours, idx = sixteen(pic[64 * r:64 * r + 64, 64 * c:64 * c + 64])
-            x, y, (cx, cy) = vr.picture(idx, colours, at=None if start is None else start + c)
-            if r == sea_row:
+            x, y, (cx, cy) = vr.picture(idx, colours, at=None if start is None else start + laid[r].index(c))
+            if r in (sea_row, lake_row):
                 sea.append((idx, colours, (cx, cy), (x, y)))
             desc[r][c], cluts[r][c] = cell_desc(x, y), (cy << 6 | cx >> 4)
     fb = copy.deepcopy(base)
@@ -488,6 +703,8 @@ def after_sea(cfg: dict) -> int:
     "water" its picture and the steam."""
     if cfg.get('clouds') and not cfg['clouds'].get('extras', True):
         return 0                     # Serene Forest's leaves alone
+    if cfg.get('clouds', {}).get('picture') in ('cambodia', 'athens', 'desert', 'hills'):
+        return 1                     # Cambodia's (Athens', Nowhere Desert's) picture, no smoke
     return 2 if cfg.get('pool', {}).get('spray') or cfg.get('clouds') or cfg.get('water') else 1
 
 
@@ -852,11 +1069,15 @@ def cloud_frames(cells: list, row: np.ndarray, spec: dict) -> list:
     indices change): the row's picture (row, RGB) drawn aside and up by a
     slow wave of "billow" pixels running along it, nothing at the row's
     top and foot (the rows over and under it stand still), each cell then
-    taken back to its own palette. Returns per frame the cells' indices."""
+    taken back to its own palette; "foot" pixels: from that row down it
+    stands still (Cambodia's tree line under the clouds). Returns per frame
+    the cells' indices."""
     n, amp, length = spec.get('frames', 6), spec.get('billow', 1.6), spec.get('wave', 110)
     h, w = row.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(float)
     taper = np.sin(np.pi * (yy + 0.5) / h) ** 1.5
+    if spec.get('foot'):
+        taper = np.sin(np.pi * np.clip((yy + 0.5) / spec['foot'], 0, 1)) ** 1.5
     out = [[] for _ in range(n)]
     for f in range(n):
         t = 2 * np.pi * f / n
@@ -868,9 +1089,15 @@ def cloud_frames(cells: list, row: np.ndarray, spec: dict) -> list:
         x1, y1 = (x0 + 1) % w, np.minimum(y0 + 1, h - 1)
         img = (row[y0, x0] * (1 - fx) * (1 - fy) + row[y0, x1] * fx * (1 - fy) + row[y1, x0] * (1 - fx) * fy
                + row[y1, x1] * fx * fy)
+        if spec.get('moon'):
+            # the moon still, the clouds billowing over it, its halo breathing
+            full = np.zeros((64 * (spec['moon_row'] + 1), w, 3))
+            full[-64:] = img
+            img = moon_over(full, spec['moon'], t, behind=row)[-64:]
         for c, (idx, colours, *_) in enumerate(cells):
             shown = rgb_of(np.array(colours, np.uint16))
-            part = img[:, 64 * c:64 * c + 64].reshape(-1, 3)
+            cc = spec['cols'][c] if spec.get('cols') else c          # "twice": the cell's column in the row
+            part = img[:, 64 * cc:64 * cc + 64].reshape(-1, 3)
             out[f].append(((part[:, None] - shown[None]) ** 2).sum(2).argmin(1).reshape(64, 64).astype(np.uint16))
     return out
 
@@ -1042,6 +1269,287 @@ def great_wall_frames(n: int) -> tuple[list[int], list]:
     return colours, frames
 
 
+PALM_FROND = ((0, 31), (0, 31))              # the Cambodia picture: a sugar palm's fan (rows, cols)
+LOTUS_FLOWER = ((0, 15), (32, 47))           # a lotus flower seen from the side, a leaf on its stalk (cols 48..63)
+LOTUS_LEAF = ((0, 15), (48, 63))
+LOTUS_POND = ((32, 63), (0, 63))             # a patch of lotus pond seen from above
+
+
+def cambodia_frames(n: int) -> tuple[list[int], list]:
+    """Cambodia's picture as the wind plays (Szechwan's place:
+    szechwan_frames()): n frames, one palette. Rows 0..31 columns 0..31 a
+    sugar palm's fan leaf, its leaflets spreading from the stalk at the
+    foot's middle, their split tips stirring in the wind; rows 0..15
+    columns 32..47 a lotus flower (pink, its petals cupped round the
+    yellow heart) and 48..63 a lotus leaf held up on its stalk; rows 16..31
+    columns 48..63 a raindrop (RAIN_COLS, DIYA_ROWS: as the Taj Mahal's);
+    rows 32..63 a patch of lotus pond seen from above, dark water, round
+    leaves and a few flowers, its edge ragged (on nothing). Colour 0
+    nothing; 1..4 the fan's greens, 5 its stalk; 6, 7 the lotus leaves; 8..10
+    pink; 11 yellow; 12, 13 the raindrop; 14, 15 the pond's water."""
+    pal = [(0, 0, 0), (36, 70, 30), (58, 98, 40), (86, 124, 50), (128, 150, 70), (104, 86, 52), (52, 100, 46),
+           (96, 146, 70), (176, 70, 112), (226, 124, 164), (246, 200, 218), (238, 196, 62), (236, 242, 250),
+           (176, 190, 210), (24, 42, 46), (44, 70, 76)]
+    colours = [0] + [0x8000 | int(c) for c in bgr555(np.array(pal[1:], float))]
+    yy, xx = np.mgrid[0:64, 0:64].astype(float)
+    rnd = np.random.default_rng(95)
+    # the pond: still, the same in every frame
+    pond = np.zeros((32, 64), np.uint16)
+    py, px = yy[32:] - 47.5, xx[32:] - 31.5
+    edge = np.hypot(px / 31, py / 15.5) + 0.06 * np.sin(np.arctan2(py, px) * 7) + 0.03 * rnd.normal(0, 1, (32, 64))
+    water = edge < 0.98
+    pond[water] = np.where((xx[32:] + 2 * yy[32:]).astype(int)[water] % 9 == 0, 15, 14)
+    for _ in range(14):
+        cx, cy, r = rnd.uniform(6, 58), rnd.uniform(4, 28), rnd.uniform(3, 5.5)
+        d = np.hypot(xx[32:] - cx, yy[32:] - 32 - cy)
+        notch = np.abs(np.arctan2(yy[32:] - 32 - cy, xx[32:] - cx) - rnd.uniform(-3, 3)) < 0.25
+        leaf = (d < r) & ~notch & water
+        pond[leaf] = np.where(d[leaf] < r * 0.55, 7, 6)
+    for _ in range(4):
+        cx, cy = rnd.uniform(10, 54), rnd.uniform(6, 26)
+        d = np.hypot(xx[32:] - cx, yy[32:] - 32 - cy)
+        pond[d < 2.4] = 9
+        pond[d < 1.2] = 11
+    # the lotus flower: petals cupped up round the heart
+    fy, fx = yy[:16, 32:48] - 15, xx[:16, 32:48] - 39.5
+    flower = np.zeros((16, 16), np.uint16)
+    for a, rx in ((0.0, 2.6), (-0.55, 2.4), (0.55, 2.4), (-1.0, 2.0), (1.0, 2.0)):
+        u = fx * np.cos(a) + (fy + 5) * np.sin(a)
+        v = -fx * np.sin(a) + (fy + 5) * np.cos(a)
+        petal = (u / rx) ** 2 + (v / 6.2) ** 2 < 1
+        flower[petal] = np.where(v[petal] < -2, 10, np.where(np.abs(u[petal]) > rx * 0.6, 8, 9))
+    flower[(np.abs(fx) < 0.7) & (fy > -1)] = 6
+    flower[np.hypot(fx, fy + 6.5) < 1.2] = 11
+    # the leaf on its stalk: a wide shallow cup seen from the side
+    ly, lx = yy[:16, 48:64] - 15, xx[:16, 48:64] - 55.5
+    leaf = np.zeros((16, 16), np.uint16)
+    cup = (np.abs(lx) < 7.5) & (ly > -12 + 0.06 * lx ** 2) & (ly < -9 + 0.04 * lx ** 2)
+    leaf[cup] = np.where(ly[cup] < -10.5 + 0.05 * lx[cup] ** 2, 7, 6)
+    leaf[(np.abs(lx - 0.5) < 0.7) & (ly > -9)] = 6
+    # the raindrop: as mughal_frames()'s
+    dy, dx = yy[16:32, 48:64] - 16, xx[16:32, 48:64] - 55.5
+    head = np.hypot(dx / 2.6, (dy - 12.5) / 2.6) < 1
+    tail = (np.abs(dx) < 0.8 + 1.6 * dy / 15) & (dy >= 2) & (dy < 13)
+    drop = np.where(head, 12, np.where(tail, np.where(dy > 8, 12, 13), 0)).astype(np.uint16)
+    drop[(dy < 6) & tail & ((dy + xx[16:32, 48:64]) % 2 == 0)] = 0
+    angles = np.linspace(-1.35, 1.35, 23)
+    lengths = 27 + 3 * rnd.uniform(-1, 1, len(angles))
+    phases = rnd.uniform(0, 2 * np.pi, len(angles))
+    frames = []
+    for f in range(n):
+        t = 2 * np.pi * f / n
+        idx = np.zeros((64, 64), np.uint16)
+        # the fan: leaflets from the stalk's end (15.5, 29), each a narrow
+        # pleat, its tip split and stirring, the pleats light and dark in turn
+        oy, ox = yy[:32, :32] - 29, xx[:32, :32] - 15.5
+        r, a = np.hypot(ox, oy), np.arctan2(ox, -oy)
+        fan = np.zeros((32, 32), np.uint16)
+        for k, (a0, ln, ph) in enumerate(zip(angles, lengths, phases)):
+            stir = 0.05 * np.sin(t + ph) * np.clip((r - 14) / 12, 0, 1)
+            near = np.abs(a - a0 - stir) < 0.055 + 0.01 * (r < 8)
+            tip = r > ln - 4
+            split = tip & (np.abs(a - a0 - stir) < 0.012)
+            on = near & (r > 2.5) & (r < ln) & ~split
+            fan[on] = (1 + k % 2) + (r[on] > 0.5 * ln) * (1 + (k % 3 == 0))
+        fan[(np.abs(ox) < 1.2) & (oy > -2) & (oy < 3)] = 5
+        idx[:32, :32] = fan
+        idx[:16, 32:48] = flower
+        idx[:16, 48:64] = leaf
+        idx[16:32, 48:64] = drop
+        idx[32:] = pond
+        frames.append(idx)
+    return colours, frames
+
+
+OLIVE_SPRAY = ((0, 31), (0, 31))             # the Athens picture: an olive spray (rows, cols)
+OLIVE_BOUGH = ((32, 63), (0, 63))            # a wider bough of olive leaves
+GREEK_FLAG = ((0, 20), (32, 63))             # the Greek flag, waving
+
+
+def athens_frames(n: int) -> tuple[list[int], list]:
+    """Athens' picture as the wind plays (cambodia_frames()'s place): n
+    frames, one palette. Rows 0..31 columns 0..31 a clump of olive leaves
+    on its twig, dense, lit from above, shaded deep inside, the leaves
+    stirring and turning their silver undersides up now and then; rows
+    32..63 a wider bough of such clumps; rows 0..20 columns 32..63 the Greek flag
+    (nine blue and white stripes, the white cross on blue in its corner),
+    waving from the pole at its left, the wave growing toward its free
+    end, its folds light and dark. Colour 0 nothing; 1..4 the olive
+    leaves (shaded, mid, lit, silver), 5 the twigs, 6 and 13 the shade deep
+    in the clumps, 12 a silver leaf's light midrib; 7..9 the flag's blue
+    (shown, in a fold, lit), 10, 11 its white."""
+    pal = [(0, 0, 0), (58, 74, 50), (86, 102, 66), (118, 132, 92), (164, 174, 150), (88, 78, 62), (38, 52, 36),
+           (16, 92, 176), (10, 62, 128), (60, 132, 210), (242, 242, 238), (186, 192, 204), (200, 208, 190), (70, 88, 56),
+           (0, 0, 0), (0, 0, 0)]
+    colours = [0] + [0x8000 | int(c) for c in bgr555(np.array(pal[1:], float))]
+    rnd = np.random.default_rng(111)
+
+    def clump(h: int, w: int, blobs: list, count: int):
+        # blobs: [(cx, cy, rx, ry)] the clumps' outlines; the leaves inside
+        # them, each pointing out from its clump's middle, lit from above
+        out = []
+        while len(out) < count:
+            cx, cy, rx, ry = blobs[int(rnd.integers(len(blobs)))]
+            r, a = np.sqrt(rnd.uniform(0, 1)), rnd.uniform(0, 2 * np.pi)
+            px, py = cx + rx * r * np.cos(a), cy + ry * r * np.sin(a)
+            if not (1 <= px < w - 1 and 1 <= py < h - 1): continue
+            d = np.arctan2(py - cy, px - cx) + rnd.normal(0, 0.6)
+            lit = np.clip(0.5 - (py - cy) / (2 * ry) + rnd.normal(0, 0.18), 0, 1)
+            out.append((px, py, d, rnd.uniform(3.6, 5.6), rnd.uniform(1.0, 1.5), rnd.uniform(0, 2 * np.pi), lit, r))
+        return sorted(out, key=lambda l: -l[7])              # the outer leaves first, the inner over them
+
+    def draw(h: int, w: int, blobs: list, leaves: list, stalk, t: float) -> np.ndarray:
+        yy, xx = np.mgrid[0:h, 0:w].astype(float)
+        idx = np.zeros((h, w), np.uint16)
+        for cx, cy, rx, ry in blobs:                         # the shade deep in the clumps
+            inner = np.hypot((xx - cx) / (rx * 0.8), (yy - cy) / (ry * 0.8)) < 1
+            low = yy > cy - 1
+            idx[inner] = np.where(low[inner], np.where((xx[inner] + 3 * yy[inner]) % 7 < 3, 13, 6), 2)
+        x0, y0, x1, y1 = stalk
+        for s in np.linspace(0, 1, 30):
+            idx[np.hypot(xx - x0 - (x1 - x0) * s, yy - y0 - (y1 - y0) * s) < 1.4 - 0.7 * s] = 5
+        for px, py, d, ln, wd, ph, lit, _ in leaves:
+            a = d + 0.25 * np.sin(t + ph)
+            u = (xx - px) * np.cos(a) + (yy - py) * np.sin(a)
+            v = -(xx - px) * np.sin(a) + (yy - py) * np.cos(a)
+            leaf = (u > -0.5) & (u < ln) & (np.abs(v) < wd * np.sin(np.pi * np.clip((u + 0.5) / (ln + 0.5), 0, 1)) ** 0.6)
+            if np.sin(t + ph) > 0.82:                        # turned over in the wind: silver
+                idx[leaf] = 4 if lit > 0.45 else 3
+                idx[leaf & (np.abs(v) < 0.3)] = 12
+            else:
+                idx[leaf] = 1 + int(round(lit * 2))
+        return idx
+
+    blobs_a = [(16, 14, 14, 11), (10, 19, 8, 7), (23, 19, 8, 7)]
+    blobs_b = [(17, 16, 15, 12), (45, 14, 16, 11), (31, 19, 13, 9), (56, 20, 7, 7)]
+    leaves_a, leaves_b = clump(32, 32, blobs_a, 190), clump(32, 64, blobs_b, 380)
+    # the flag: 32 x 21, its stripes and the canton as Greece's
+    fh, fw = 21, 32
+    fy, fx = np.mgrid[0:fh, 0:fw].astype(float)
+    frames = []
+    for f in range(n):
+        t = 2 * np.pi * f / n
+        idx = np.zeros((64, 64), np.uint16)
+        idx[:32, :32] = draw(32, 32, blobs_a, leaves_a, (16, 31, 15, 20), t)
+        idx[32:, :] = draw(32, 64, blobs_b, leaves_b, (30, 31, 32, 20), t)
+        u = fx / (fw - 1)
+        phase = 2 * np.pi * 1.3 * u - t
+        sy = fy - 2.2 * u * np.sin(phase)
+        sx = fx - 0.8 * u * (1 - np.cos(phase))
+        on = (sy >= 0) & (sy < fh) & (sx >= 0)
+        stripe = np.clip((sy * 9 / fh).astype(int), 0, 8)
+        canton = (sy < 5 * fh / 9) & (sx < 5 * fh / 9)
+        cy, cx = 5 * fh / 18, 5 * fh / 18
+        cross = canton & ((np.abs(sy - cy) < fh / 18) | (np.abs(sx - cx) < fh / 18))
+        white = np.where(canton, cross, stripe % 2 == 1)
+        fold = np.cos(phase) * u
+        flag = np.where(white, np.where(fold < -0.35, 11, 10), np.where(fold < -0.35, 8, np.where(fold > 0.45, 9, 7)))
+        idx[:fh, 32:32 + fw] = np.where(on, flag, 0).astype(np.uint16)
+        frames.append(idx)
+    return colours, frames
+
+
+TUMBLEWEED = (0, 0, 32, 32)                  # the Nowhere Desert picture: a tumbleweed (u, v, width, height)
+DESERT_PUFF = (32, 0, 16, 16)                # and a puff of dust (the dust devil's: FTHR shape 6)
+
+
+def desert_frames(n: int) -> tuple[list[int], list]:
+    """Nowhere Desert's picture (athens_frames()'s place): n frames, all
+    the same (the runtime turns and moves what is in it). Rows 0..31
+    columns 0..31 a tumbleweed, a ball of dry tangled twigs, its outer
+    shell thicker, lit from above, on nothing; rows 0..15 columns 32..47 a
+    soft puff of dust (grey, added: the dust devil). Colour 0 nothing; 1..4
+    the twigs, dark to light; 5..7 the dust."""
+    pal = [(0, 0, 0), (84, 66, 46), (124, 98, 66), (162, 134, 92), (198, 172, 124), (40, 38, 36), (84, 80, 74),
+           (140, 132, 120)] + [(0, 0, 0)] * 8
+    colours = [0] + [0x8000 | int(c) for c in bgr555(np.array(pal[1:], float))]
+    rnd = np.random.default_rng(121)
+    idx = np.zeros((64, 64), np.uint16)
+    weed = np.zeros((32, 32), np.uint16)
+    yy, xx = np.mgrid[0:32, 0:32].astype(float)
+    weed[np.hypot(xx - 15.5, yy - 15.5) < 11.5] = 1          # the dark tangle deep inside
+    weed[(np.hypot(xx - 15.5, yy - 15.5) < 11.5) & (rnd.uniform(0, 1, (32, 32)) < 0.25)] = 0
+    for _ in range(420):
+        r = 14.5 * np.sqrt(rnd.uniform(0.0, 1.0)) ** 0.5
+        a = rnd.uniform(0, 2 * np.pi)
+        x, y = 15.5 + r * np.cos(a), 15.5 + r * np.sin(a)
+        d, bend = rnd.uniform(0, 2 * np.pi), rnd.normal(0, 0.25)
+        shade = int(np.clip(round(2.5 - 1.6 * (y - 15.5) / 15 + rnd.normal(0, 0.6)), 1, 4))
+        for _ in range(int(rnd.integers(4, 10))):
+            ix, iy = int(round(x)), int(round(y))
+            if np.hypot(x - 15.5, y - 15.5) < 15.5 and 0 <= ix < 32 and 0 <= iy < 32:
+                weed[iy, ix] = shade
+            d += bend
+            x, y = x + np.cos(d), y + np.sin(d)
+    idx[:32, :32] = weed
+    yy, xx = np.mgrid[0:16, 0:16].astype(float)
+    k = np.exp(-((xx - 7.5) / 5.4) ** 2 - ((yy - 7.5) / 5.4) ** 2) * (0.75 + 0.25 * rnd.uniform(0, 1, (16, 16)))
+    idx[:16, 32:48] = np.where(k < 0.16, 0, np.where(k < 0.38, 5, np.where(k < 0.64, 6, 7)))
+    return colours, [idx.copy() for _ in range(n)]
+
+
+HILLS_FLUFF = (0, 0, 16, 16)                 # the Hills picture: a dandelion's seed (FTHR shape 7)
+
+
+def hills_frames(n: int) -> tuple[list[int], list]:
+    """The Hills' picture (athens_frames()'s place): n frames, all the
+    same. Rows 0..15 columns 0..15 a dandelion's seed: its white parachute
+    of fine hairs spread from the top of a thin beak, the brown seed at
+    the foot; nothing round it."""
+    S = 64
+    yy, xx = np.mgrid[0:S, 0:S].astype(float) / 4
+    rgba = np.zeros((S, S, 4))
+    cx, cy = 7.5, 5.0
+    r, a = np.hypot(xx - cx, yy - cy), np.arctan2(yy - cy, xx - cx)
+    hairs = (np.abs(np.sin(a * 11)) < 0.22) & (r < 5.2) & (yy < cy + 1.2)
+    hairs |= (r < 1.1)
+    tips = (np.abs(r - 4.9) < 0.6) & (yy < cy + 1.5)
+    rgba[hairs | tips] = (244, 244, 236, 255)
+    beak = (np.abs(xx - cx) < 0.35) & (yy > cy) & (yy < 12.5)
+    rgba[beak] = (210, 206, 190, 255)
+    seed = np.hypot((xx - cx) / 0.8, (yy - 13.4) / 1.6) < 1
+    rgba[seed] = (120, 86, 52, 255)
+    small = np.asarray(Image.fromarray(rgba.astype(np.uint8)).resize((16, 16), Image.LANCZOS), float)
+    pic = np.zeros((64, 64, 4))
+    pic[:16, :16] = small
+    pic[..., 3] = np.where(pic[..., 3] >= 90, 255, 0)
+    colours, idx = see_through(pic)
+    return colours, [idx.astype(np.uint16) for _ in range(n)]
+
+
+def meadow_frames(cells: list, row: np.ndarray, spec: dict) -> list:
+    """The Hills' grass row as the wind runs over it ("clouds" "water" with
+    "kind" "meadow"): only the grass sways (green or straw coloured, not
+    the grey rock nor the sky), from "from" down, more toward the row's
+    foot; gusts ("gust" pixels apart) sweep along it, where one is the
+    blades bent further and paler ("sheen"). Each cell's own 16 colours,
+    only its indices change. Returns per frame the cells' indices."""
+    n, amp, y0 = spec.get('frames', 6), spec.get('ripple', 1.5), spec.get('from', 20)
+    h, w = row.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    grow = np.clip((yy - y0 + 1) / max(1, h - y0), 0, 1) * (yy >= y0)
+    mx, mn = row.max(2), row.min(2)
+    grass = (mx - mn > 28) & (row[..., 1] > row[..., 2] * 1.15)
+    out = [[] for _ in range(n)]
+    for f in range(n):
+        t = 2 * np.pi * f / n
+        gust = 0.5 + 0.5 * np.cos(2 * np.pi * xx / spec.get('gust', 300) - t)
+        dx = amp * (0.3 + grow) * grow * (0.35 + 0.65 * gust) * np.sin(2 * t - 2 * np.pi * xx / spec.get('wave', 46) + 0.5 * yy)
+        sx = (xx - dx) % w
+        x0 = np.floor(sx).astype(int) % w
+        fx = (sx - np.floor(sx))[..., None]
+        yi = yy.astype(int)
+        img = row[yi, x0] * (1 - fx) + row[yi, (x0 + 1) % w] * fx
+        img = img * (1 + spec.get('sheen', 0.1) * gust * grow)[..., None]
+        moved = grass & grass[yi, x0] & (grow > 0)
+        for c, (idx, colours, *_) in enumerate(cells):
+            shown = rgb_of(np.array(colours, np.uint16))
+            part = img[:, 64 * c:64 * c + 64].reshape(-1, 3)
+            new = ((part[:, None] - shown[None]) ** 2).sum(2).argmin(1).reshape(64, 64)
+            out[f].append(np.where(moved[:, 64 * c:64 * c + 64], new, idx).astype(np.uint16))
+    return out
+
+
 def cloud_animation(cfg: dict, cloud: list, vr: Vram, pic: np.ndarray) -> tuple:
     """Szechwan's one animation: the cloud row (cloud_frames()) and, in the
     two slots after it, the flags' and butterfly's picture
@@ -1052,7 +1560,7 @@ def cloud_animation(cfg: dict, cloud: list, vr: Vram, pic: np.ndarray) -> tuple:
     spec = cfg['clouds']
     n = spec.get('frames', 6)
     r = spec['row']
-    waves = cloud_frames(cloud, pic[64 * r:64 * r + 64], spec)
+    waves = cloud_frames(cloud, pic[64 * r:64 * r + 64], spec) if spec.get('picture') not in ('cambodia', 'athens', 'desert', 'hills') else None
     x0, y0 = cloud[0][3]
     if not spec.get('extras', True):
         # the row alone (Serene Forest's crowns swaying)
@@ -1063,6 +1571,33 @@ def cloud_animation(cfg: dict, cloud: list, vr: Vram, pic: np.ndarray) -> tuple:
                 vr.picture(waves[f][c], None, at=g + c, clut=cell[2])
             places.append(((g % 64) * 16, 512 + (g // 64) * 64))
         return None, (x0, y0), places, None
+    if spec.get('picture') in ('cambodia', 'athens', 'desert', 'hills'):
+        # Cambodia's: the cloud row and the lake row ("water", water_frames())
+        # side by side, its picture (cambodia_frames()) after them, no
+        # smoke; "bounce": the frames played forth and back (fewer of them);
+        # Athens': the cloud row alone, its picture athens_frames();
+        # Nowhere Desert's: the cloud row, the moon over it (cloud_frames()
+        # draws it again on each frame), its picture desert_frames()
+        lake = spec.get('water')
+        cols = len(cloud) // 2 if lake else len(cloud)
+        row = cfg['_moonless'][64 * r:64 * r + 64] if cfg.get('moon') else pic[64 * r:64 * r + 64]
+        waves = cloud_frames(cloud[:cols], row, dict(spec, moon=cfg.get('moon'), moon_row=r, cols=cfg.get('_sea_cols')))
+        ripples = (meadow_frames if lake and lake.get('kind') == 'meadow' else water_frames)(
+            cloud[cols:], pic[64 * lake['row']:64 * lake['row'] + 64], dict(lake, frames=n)) if lake else [[] for _ in range(n)]
+        fcolours, flags = {'cambodia': cambodia_frames, 'desert': desert_frames, 'hills': hills_frames}.get(spec['picture'], athens_frames)(n)
+        x0, y0 = cloud[0][3]
+        at = (y0 - 512) // 64 * 64 + x0 // 16
+        shown = vr.picture(flags[0], fcolours, at=at + len(cloud))
+        places = []
+        for f in range(n):
+            g = vr.frame_run(len(cloud) + 1)        # (the add-on's: past the VRAM, T2AN)
+            for c, cell in enumerate(cloud):
+                vr.picture((waves[f] + ripples[f])[c], None, at=g + c, clut=cell[2])
+            vr.picture(flags[f], None, at=g + len(cloud), clut=shown[2])
+            places.append(((g % 64) * 16, 512 + (g // 64) * 64))
+        if spec.get('bounce'):
+            places += places[-2:0:-1]
+        return shown, (x0, y0), places, None
     # the Great Wall's banners, fire, dragonfly and dust in the flags' place
     wall = spec.get('picture') == 'great-wall'
     fcolours, flags = (great_wall_frames if wall else szechwan_frames)(n)
@@ -1485,11 +2020,229 @@ def borrowed(spec: dict, arc, vr: Vram) -> list:
     return out
 
 
+# --- Hills: Alex's, a bone bed of dinosaurs in the grass -----------------------
+# The painted pictures (painted() "trex", "raptor", "ammonite", "fossil"):
+# drawn big, brought down; the skulls and the ammonite with holes (colour 0).
+
+from PIL import ImageDraw, ImageFilter  # noqa: E402
+
+FOSSIL = (204, 186, 146)
+
+
+def soft_noise(rnd, h, w, passes=2):
+    n = rnd.normal(0, 1, (h, w))
+    for _ in range(passes):
+        n = (n + np.roll(n, 1, 0) + np.roll(n, 1, 1) + np.roll(n, -1, 0) + np.roll(n, -1, 1)) / 5
+    return (n - n.mean()) / n.std()
+
+
+def skull_rgba(size: int, seed: int, kind: str = 'trex', grass: bool = True) -> np.ndarray:
+    """A dinosaur's skull seen from the side, its nose to the left, its jaw
+    open (drawn 4 times bigger, then brought down): the bone fossil tan,
+    lit from above, its openings (the eye's, the big one before it, the
+    nostril, the one behind the eye, the jaw's) holes; teeth along both
+    jaws; "grass": its foot sunk in grass blades."""
+    S = 4 * size
+    k = S / 128.0
+    P = lambda pts: [(x * k, y * k) for x, y in pts]
+    rnd = np.random.default_rng(seed)
+    if kind == 'trex':
+        upper = [(4, 62), (5, 50), (12, 42), (30, 36), (50, 30), (70, 24), (86, 18), (100, 17), (112, 21), (121, 30),
+                 (126, 43), (125, 56), (119, 65), (106, 63), (84, 66), (60, 67), (36, 67), (18, 66), (8, 64)]
+        lower = [(115, 60), (123, 68), (120, 78), (106, 85), (84, 94), (58, 101), (34, 106), (20, 108), (17, 103),
+                 (30, 96), (52, 88), (76, 79), (98, 70)]
+        holes = [('e', 93, 35, 6, 6.5, 0), ('e', 66, 46, 12, 6.5, -0.3), ('e', 13, 50, 4, 2.6, -0.2),
+                 ('e', 110, 44, 5.5, 9, 0.2), ('e', 92, 78, 8, 3, -0.35)]
+        teeth_u = [(x, 66 + 0.02 * (x - 8)) for x in range(11, 90, 8)]
+        teeth_l = [(x, 107 - (x - 20) * 0.27) for x in range(25, 92, 8)]
+        tooth = 11
+    else:                                            # a raptor's: long and low
+        upper = [(4, 62), (6, 56), (20, 50), (44, 44), (70, 38), (92, 36), (108, 38), (120, 46), (122, 56),
+                 (116, 64), (96, 63), (64, 64), (34, 65), (12, 64)]
+        lower = [(112, 61), (120, 68), (114, 76), (90, 82), (60, 88), (30, 92), (12, 93), (10, 88), (30, 84),
+                 (60, 77), (90, 70)]
+        holes = [('e', 98, 46, 7.5, 7, 0), ('e', 66, 52, 10, 5, -0.15), ('e', 14, 56, 3.5, 2.2, 0),
+                 ('e', 115, 52, 3.5, 6, 0)]
+        teeth_u = [(x, 64.5) for x in range(10, 90, 7)]
+        teeth_l = [(x, 92 - (x - 12) * 0.28) for x in range(16, 88, 7)]
+        tooth = 6
+    a = Image.new('L', (S, S), 0)
+    d = ImageDraw.Draw(a)
+    d.polygon(P(upper), fill=255)
+    d.polygon(P(lower), fill=255)
+    for x, y in teeth_u:
+        t = tooth * rnd.uniform(0.7, 1.1)
+        d.polygon(P([(x - 2.8, y - 1), (x + 2.8, y - 1), (x + 0.8, y + t)]), fill=255)
+    for x, y in teeth_l:
+        t = tooth * rnd.uniform(0.6, 1.0)
+        d.polygon(P([(x - 2, y + 1), (x + 2, y + 1), (x - 0.4, y - t)]), fill=255)
+    holemask = Image.new('L', (S, S), 0)
+    hd = ImageDraw.Draw(holemask)
+    yy, xx = np.mgrid[0:S, 0:S] / k
+    hole = np.zeros((S, S), bool)
+    for _, cx, cy, rx, ry, rot in holes:
+        u = (xx - cx) * np.cos(rot) + (yy - cy) * np.sin(rot)
+        v = -(xx - cx) * np.sin(rot) + (yy - cy) * np.cos(rot)
+        hole |= (u / rx) ** 2 + (v / ry) ** 2 < 1
+    alpha = np.asarray(a, float) / 255 * ~hole
+    # the bone: tan, darker low down and round its holes, cracks, earth in it
+    noise = soft_noise(rnd, S, S, 3)
+    fine = soft_noise(rnd, S, S, 1)
+    base = np.array(FOSSIL, float)
+    img = base[None, None] * (1 + 0.07 * noise[..., None] + 0.05 * fine[..., None])
+    img *= (1.12 - 0.35 * np.clip((yy - 20) / 90, 0, 1))[..., None]         # lit from above
+    blur = np.asarray(Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.2 * k)), float) / 255
+    img *= (0.55 + 0.45 * np.clip(blur * 1.6 - 0.3, 0, 1))[..., None]        # its edges and the holes' rims rounded off
+    # its bulk: a height from how deep inside it each point is, lit from
+    # the upper left (the cheek and the snout's ridge stand out)
+    height = np.asarray(Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5 * k)), float) / 255
+    height += 0.012 * noise * alpha
+    gy, gx = np.gradient(height * 220 / k)
+    nrm = np.dstack([-gx, -gy, np.ones_like(gx)])
+    nrm /= np.linalg.norm(nrm, axis=2, keepdims=True)
+    lit = nrm @ (np.array([-0.5, -0.7, 0.6]) / np.linalg.norm([-0.5, -0.7, 0.6]))
+    img *= np.clip(0.35 + 0.85 * lit, 0.3, 1.3)[..., None]
+    earth = np.clip(noise - 1.0, 0, 1)[..., None]
+    img = img * (1 - 0.6 * earth) + np.array([110, 84, 56], float) * 0.6 * earth
+    cracks = np.abs(np.sin((xx * 0.7 + yy * 1.3 + 9 * noise) * 2 * np.pi / 31)) < 0.025
+    img[cracks] *= 0.6
+    # the teeth paler, browner at the root
+    teethmask = np.zeros((S, S), bool)
+    tm = Image.new('L', (S, S), 0); td = ImageDraw.Draw(tm)
+    rnd2 = np.random.default_rng(seed)
+    for x, y in teeth_u:
+        t = tooth * rnd2.uniform(0.7, 1.1)
+        td.polygon(P([(x - 2.8, y + 0.5), (x + 2.8, y + 0.5), (x + 0.8, y + t)]), fill=255)
+    for x, y in teeth_l:
+        t = tooth * rnd2.uniform(0.6, 1.0)
+        td.polygon(P([(x - 2, y - 0.5), (x + 2, y - 0.5), (x - 0.4, y - t)]), fill=255)
+    teethmask = np.asarray(tm) > 0
+    img[teethmask] = img[teethmask] * 0.3 + np.array([226, 214, 170], float) * 0.7
+    out = np.zeros((S, S, 4))
+    out[..., :3], out[..., 3] = img, alpha * 255
+    small = np.asarray(Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).resize((size, size), Image.LANCZOS), float)
+    # a dark line round it (it stands out from the grass behind)
+    al = small[..., 3] >= 128
+    edge = al & ~(np.roll(al, 1, 0) & np.roll(al, -1, 0) & np.roll(al, 1, 1) & np.roll(al, -1, 1))
+    small[edge, :3] *= 0.6
+    small[..., 3] = np.where(al, 255, 0)
+    if grass:
+        g = np.random.default_rng(seed + 1)
+        h = size
+        yy2, xx2 = np.mgrid[0:h, 0:size].astype(float)
+        for _ in range(int(size * 2.2)):
+            x0, top = g.uniform(0, size), g.uniform(h * 0.74, h * 0.9)
+            lean = g.uniform(-0.35, 0.35)
+            t = np.clip((yy2 - top) / max(1, h - top), 0, 1)
+            centre = x0 + lean * (h - yy2)
+            blade = (yy2 >= top) & (np.abs(xx2 - centre) < 0.45 + 0.9 * t)
+            green = np.array([[64, 104, 38], [86, 128, 46], [110, 140, 54], [52, 86, 32], [140, 150, 70]][int(g.integers(5))], float)
+            small[blade, :3] = green * (0.8 + 0.3 * (1 - t[blade]))[:, None]
+            small[blade, 3] = 255
+        small[int(h * 0.93):, 3] = np.where(small[int(h * 0.93):, 3] > 0, 255, 0)
+    return small
+
+
+def ammonite_rgba(seed: int) -> np.ndarray:
+    """An ammonite in its stone: the coiled shell's ribs running out from
+    the middle, the coil's seam dark, a lip of the rock round it."""
+    rnd = np.random.default_rng(seed)
+    S = 256
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    x, y = (xx - 128) / 4, (yy - 128) / 4
+    r, a = np.hypot(x, y), np.arctan2(y, x)
+    noise = soft_noise(rnd, S, S, 3)
+    b = 0.17                                     # the spiral's growth: r = r0 e^(b a)
+    turns = (np.log(np.maximum(r, 0.5) / 2.0) / b - a) / (2 * np.pi)
+    whorl = turns - np.floor(turns)
+    rock = r < 30 + 1.2 * noise
+    shell = r < 27
+    out = np.zeros((S, S, 4))
+    stone = np.array([136, 120, 96], float)[None, None] * (1 + 0.08 * noise[..., None])
+    out[..., :3] = stone
+    shellc = np.array([196, 160, 112], float)[None, None] * (1 + 0.06 * noise[..., None])
+    ribs = 0.5 + 0.5 * np.cos(a * 22 + 3 * np.log(np.maximum(r, 1)))
+    shade = 0.78 + 0.22 * ribs
+    shade *= 0.72 + 0.28 * np.sin(np.pi * whorl)      # each whorl rounded
+    img = shellc * shade[..., None]
+    img[whorl < 0.07] *= 0.45                          # the coil's seam
+    img *= (1.1 - 0.2 * (y + 30) / 60)[..., None]      # lit from above
+    out[shell, :3] = img[shell]
+    out[..., 3] = rock * 255
+    small = np.asarray(Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).resize((64, 64), Image.LANCZOS), float)
+    small[..., 3] = np.where(small[..., 3] >= 128, 255, 0)
+    return small
+
+
+def dandelion_rgba(seed: int) -> np.ndarray:
+    """A clump of dandelions (a tuft's picture, on nothing): the jagged
+    leaves' rosette low down, thin pale stalks up from it, on each a yellow
+    flower or a white ball of seeds (the seeds the wind carries off)."""
+    rnd = np.random.default_rng(seed)
+    S = 256
+    yy, xx = np.mgrid[0:S, 0:S].astype(float)
+    out = np.zeros((S, S, 4))
+    for _ in range(9):                                   # the leaves, toothed, spread low
+        x0, a = rnd.uniform(90, 166), rnd.uniform(-1.2, 1.2)
+        length, width = rnd.uniform(60, 95), rnd.uniform(12, 18)
+        u = (xx - x0) * np.sin(a) - (yy - 250) * np.cos(a)
+        v = (xx - x0) * np.cos(a) + (yy - 250) * np.sin(a)
+        t = np.clip(u / length, 0, 1)
+        edge = width * (1 - t) * (0.6 + 0.4 * np.abs(np.sin(u * 0.22)))
+        leaf = (u > 0) & (u < length) & (np.abs(v) < edge)
+        g = np.array([[58, 104, 40], [72, 120, 46], [50, 92, 34]][int(rnd.integers(3))], float)
+        out[leaf, :3] = g * (0.85 + 0.25 * (1 - np.abs(v[leaf]) / np.maximum(edge[leaf], 1)))[:, None]
+        out[leaf & (np.abs(v) < 1.5), :3] = g * 1.3
+        out[leaf, 3] = 255
+    for _ in range(int(rnd.integers(3, 5))):             # the stalks and their heads
+        x0, top, lean = rnd.uniform(70, 186), rnd.uniform(26, 120), rnd.uniform(-0.25, 0.25)
+        xt = x0 + lean * (240 - top)
+        cx = x0 + lean * (240 - yy)
+        stalk = (yy > top) & (yy < 244) & (np.abs(xx - cx) < 2.6)
+        out[stalk, :3] = (150, 170, 96); out[stalk, 3] = 255
+        if rnd.uniform() < 0.55:                        # a ball of seeds: white, soft edged, its hairs radiating
+            r, a = np.hypot(xx - xt, yy - top), np.arctan2(yy - top, xx - xt)
+            ball = r < 26 * (0.92 + 0.08 * np.abs(np.sin(a * 13)))
+            out[ball, :3] = np.array([238, 238, 230], float) * (0.86 + 0.14 * np.cos(a[ball] + 2.2))[:, None]
+            out[ball & (r < 4), :3] = (160, 140, 100)
+            out[ball, 3] = 255
+        else:                                           # a flower: yellow, many narrow petals
+            r, a = np.hypot(xx - xt, (yy - top) * 1.5), np.arctan2(yy - top, xx - xt)
+            flower = r < 22 * (0.8 + 0.2 * np.abs(np.cos(a * 11)))
+            out[flower, :3] = np.array([246, 204, 30], float) * (0.85 + 0.2 * (1 - r[flower] / 22))[:, None]
+            out[flower, 3] = 255
+    small = np.asarray(Image.fromarray(out.astype(np.uint8)).resize((64, 64), Image.LANCZOS), float)
+    small[..., 3] = np.where(small[..., 3] >= 110, 255, 0)
+    return small
+
+
+def fossil_rgb(seed: int) -> np.ndarray:
+    """Fossil bone: tan, streaked along, cracked across, earth in its pits."""
+    rnd = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:64, 0:64].astype(float)
+    noise = soft_noise(rnd, 64, 64, 5)
+    img = np.array(FOSSIL, float)[None, None] * (1 + 0.05 * noise[..., None])
+    img *= (0.92 + 0.08 * np.sin((yy + 3 * noise) * 2 * np.pi / 9))[..., None]
+    img[np.abs(np.sin((xx + 4 * noise) * 2 * np.pi / 21)) < 0.035] *= 0.62
+    earth = np.clip(-noise - 1.2, 0, 1)[..., None]
+    img = img * (1 - 0.5 * earth) + np.array([104, 80, 54], float) * 0.5 * earth
+    return np.clip(img, 0, 255)
+
+
 def painted(kind: str, vr: Vram) -> list:
     """The quay's own pictures, drawn here: "iron" (a bollard's cast iron,
     black paint worn to rust), "rope" (a mooring line's twisted strands),
     "yellow" (a railing's safety paint, scratched), "lid" (a drum's top,
     rust)."""
+    if kind == 'dandelion':
+        return [vr.picture(*see_through(dandelion_rgba(170 + k))[::-1]) for k in range(2)]
+    if kind in ('raptor', 'ammonite'):
+        rgba = skull_rgba(64, 162, 'raptor', grass=False) if kind == 'raptor' else ammonite_rgba(163)
+        return [vr.picture(*see_through(np.clip(rgba, 0, 255))[::-1])]
+    if kind == 'fossil':
+        return [vr.picture(*sixteen(fossil_rgb(154 + k))[::-1]) for k in range(2)]
+    if kind == 'tooth':
+        return [vr.picture(*sixteen(np.clip(fossil_rgb(156) * 0.5 + np.array([236, 224, 184]) * 0.5, 0, 255))[::-1])]
     rnd = np.random.default_rng({'iron': 31, 'rope': 32, 'yellow': 33, 'lid': 34, 'stone': 35, 'carved': 36, 'rust': 37,
                                  'phone': 38, 'phone_roof': 39, 'crate': 40, 'crate_top': 41, 'container': 42,
                                  'barrel_blue': 43, 'barrel_red': 44, 'barrel_lid': 45, 'spool': 46, 'spool_rim': 47,
@@ -1506,7 +2259,13 @@ def painted(kind: str, vr: Vram) -> list:
                                  'hydrant': 104, 'steel': 105, 'cart_side': 106, 'canvas_blue': 107, 'canvas_yellow': 108,
                                  'tyre': 109, 'usps': 110, 'usps_side': 111, 'usps_top': 112, 'wire': 113,
                                  'manhole': 114, 'jangseung_body_f': 125, 'pew': 115, 'pew_end': 116, 'marble_dark': 117, 'frontal': 118,
-                                 'linen': 119, 'wax': 120, 'chain': 121, 'carpet': 122, 'concrete': 123, 'wall_brick': 124}[kind])
+                                 'linen': 119, 'wax': 120, 'chain': 121, 'carpet': 122, 'concrete': 123, 'wall_brick': 124,
+                                 'sandstone': 125, 'naga': 126, 'laterite': 127, 'apsara': 128, 'fig_root': 129,
+                                 'palm_trunk': 130, 'matting': 131, 'boat': 132, 'fig_leaves': 133, 'net': 134, 'reeds': 135,
+                                 'pentelic': 136, 'flute': 137, 'doric_frieze': 138, 'ionic': 139, 'architrave': 140,
+                                 'caryatid': 141, 'inscription': 142, 'odeon': 143, 'olive_bark': 144,
+                                 'redrock': 145, 'redrock_dark': 146, 'redrock_top': 147, 'petroglyph': 148, 'bone': 149,
+                                 'cholla': 150, 'pear_pad': 151, 'barbwire': 152, 'skull': 153}[kind])
     noise = rnd.normal(0, 1, (64, 64))
     for _ in range(2):
         noise = (noise + np.roll(noise, 1, 0) + np.roll(noise, 1, 1)) / 3
@@ -2224,6 +2983,381 @@ def painted(kind: str, vr: Vram) -> list:
         img *= (1 - 0.3 * streak)[..., None]
         img[:, 62:] *= 0.6
         img *= (1 - 0.25 * np.clip(noise - 1.0, 0, 1))[..., None]
+    elif kind in ('sandstone', 'naga'):
+        # Angkor's grey sandstone: a cool grey with an ochre cast, black
+        # lichen in blotches, rain streaks down it, green moss low; the
+        # naga's body its scales, rows of arcs along it
+        img = np.array([146, 138, 116], float)[None, None] * (1 + 0.09 * noise[..., None])
+        lichen = np.clip(noise - 0.9, 0, 1)[..., None]
+        img = img * (1 - 0.55 * lichen) + np.array([44, 44, 40], float) * 0.55 * lichen
+        streak = np.clip(rnd.normal(0, 1, (1, 64)).repeat(64, 0) - 0.9, 0, 1) * (1 - yy / 63)
+        img *= (1 - 0.25 * streak)[..., None]
+        moss = np.clip(noise * 0.6 + (yy / 63 - 0.75) * 3, 0, 1)[..., None]
+        img = img * (1 - 0.5 * moss) + np.array([84, 96, 52], float) * 0.5 * moss
+        if kind == 'naga':
+            arc = np.hypot((xx % 8) - 4, ((yy + 4 * ((xx // 8) % 2)) % 8) - 8)
+            img[np.abs(arc - 4) < 0.8] *= 0.62
+            img[np.abs(arc - 3) < 0.6] *= 1.12
+    elif kind == 'laterite':
+        # laterite blocks: rusty red brown, full of small dark pits
+        img = np.array([146, 86, 56], float)[None, None] * (1 + 0.1 * noise[..., None])
+        pits = rnd.uniform(0, 1, (64, 64))
+        img[pits > 0.9] *= 0.55
+        img[pits < 0.05] *= 1.18
+        img[(yy % 32) < 2] *= 0.6
+        img[((xx + 16 * ((yy // 32) % 2)) % 32) < 2] *= 0.6
+        moss = np.clip(noise - 1.0, 0, 1)[..., None]
+        img = img * (1 - 0.5 * moss) + np.array([76, 92, 46], float) * 0.5 * moss
+    elif kind == 'apsara':
+        # an apsara carved in the sandstone: a celestial dancer in low relief
+        # (a tall crown, the face, a bare body, the arms up and bent, the
+        # skirt flaring, one knee bent), a frame round her; lit from the
+        # top left: the relief's upper edges light, its lower ones dark
+        cx, h = 32.0, np.zeros((64, 64))
+
+        def blob(x0, y0, rx, ry, a=0.0):
+            u = (xx - x0) * np.cos(a) + (yy - y0) * np.sin(a)
+            v = -(xx - x0) * np.sin(a) + (yy - y0) * np.cos(a)
+            return (u / rx) ** 2 + (v / ry) ** 2 < 1
+        fig = blob(cx, 13, 3.6, 4.2) | blob(cx, 6, 2.2, 4.0) | blob(cx, 2.6, 1.0, 2.6)       # face, crown, its spire
+        fig |= blob(cx, 22, 4.2, 6.0) | blob(cx, 31, 5.0, 3.6)                               # the body, the hips
+        fig |= blob(cx - 1, 39, 9.0, 4.0) | blob(cx + 2, 44, 7.5, 3.4)                       # the flaring skirt
+        fig |= blob(cx - 5, 52, 2.0, 8.0, 0.25) | blob(cx + 6, 49, 2.0, 6.0, -0.9) | blob(cx + 3, 56, 2.0, 5.0, 0.5)
+        for side in (-1, 1):                                                             # the arms
+            fig |= blob(cx + side * 8, 18, 4.5, 1.4, side * -0.6) | blob(cx + side * 11, 12, 1.4, 4.2, side * 0.2)
+            fig |= blob(cx + side * 12, 7.5, 2.2, 1.6)                                   # the hands, bent back
+        h[fig] = 1.0
+        h[(xx < 3) | (xx > 60) | (yy < 1) | (yy > 61)] = 1.0                             # the frame
+        h = (h + np.roll(h, 1, 0) + np.roll(h, 1, 1) + np.roll(h, -1, 0) + np.roll(h, -1, 1)) / 5
+        shade = (h - np.roll(np.roll(h, 1, 0), 1, 1)) * 1.4
+        img = np.array([146, 138, 116], float)[None, None] * (0.86 + 0.14 * h[..., None]) * (1 + 0.07 * noise[..., None])
+        img *= (1 + 0.45 * shade)[..., None]
+        lichen = np.clip(noise - 1.2, 0, 1)[..., None]
+        img = img * (1 - 0.5 * lichen) + np.array([40, 40, 36], float) * 0.5 * lichen
+    elif kind == 'fig_root':
+        # a strangler fig's roots: smooth grey brown bark (darker than the
+        # sandstone they cling to), long streaks along
+        fibre = rnd.normal(0, 1, (64, 64))
+        for _ in range(5):
+            fibre = (fibre + np.roll(fibre, 1, 0) + np.roll(fibre, -1, 0)) / 3
+        fibre = (fibre - fibre.mean()) / fibre.std()
+        img = np.array([112, 96, 76], float)[None, None] * (1 + 0.1 * fibre[..., None]) * (1 + 0.04 * noise[..., None])
+        img[fibre < -1.5] *= 0.7
+    elif kind == 'palm_trunk':
+        # a sugar palm's trunk: dark grey, the old leaf bases' rings round it
+        img = np.array([84, 78, 70], float)[None, None] * (1 + 0.08 * noise[..., None])
+        ring = (yy + 2 * noise) % 9
+        img[ring < 1.5] *= 0.62
+        img[(ring > 1.5) & (ring < 3)] *= 1.15
+    elif kind == 'matting':
+        # a stilt house's walls: woven palm and bamboo matting, pale straw,
+        # the strips over and under on the slant
+        over = (((xx + yy) // 5 + (xx - yy) // 5) % 2 == 0)
+        img = np.where(over[..., None], np.array([196, 168, 112], float), np.array([156, 128, 80], float))
+        img = img * (1 + 0.06 * noise[..., None])
+        img[((xx + yy) % 5 == 0) | ((xx - yy) % 5 == 0)] *= 0.8
+    elif kind == 'boat':
+        # a wooden longtail boat's side: dark planks along, a painted band
+        # (blue, red, white) along its top
+        grain = (np.sin((yy + 2 * noise) * 2 * np.pi / 6) + 1) / 2
+        img = np.array([96, 64, 40], float)[None, None] * (0.8 + 0.25 * grain[..., None]) * (1 + 0.05 * noise[..., None])
+        img[::13] *= 0.6
+        img[:6] = (40, 76, 150)
+        img[6:9] = (186, 40, 34)
+        img[9:11] = (226, 222, 210)
+        img[:11] *= (1 + 0.05 * noise[:11, :, None])
+    elif kind in ('pentelic', 'flute', 'doric_frieze', 'ionic', 'architrave', 'caryatid', 'inscription'):
+        # Athens' Pentelic marble: white weathered to honey, a golden
+        # patina in blotches, grime run down from the top, small pits
+        base = np.array([212, 198, 172], float)
+        img = base[None, None] * (1 + 0.035 * noise[..., None])
+        patina = np.clip(noise * 0.8 + 0.2, 0, 1.4)[..., None] * 0.35
+        img = img * (1 - patina) + np.array([200, 166, 118], float) * patina
+        grime = np.clip(rnd.normal(0, 1, (1, 64)).repeat(64, 0) - 0.8, 0, 1) * (1 - yy / 80)
+        img *= (1 - 0.22 * grime)[..., None]
+        img[rnd.uniform(0, 1, (64, 64)) > 0.985] *= 0.7
+        if kind == 'flute':
+            # a Doric shaft's flutes: five across, shallow, meeting in sharp arrises
+            s = (xx + 0.5) % 12.8 / 12.8
+            img *= (0.8 + 0.28 * np.sin(np.pi * s) ** 0.6 - 0.1 * s)[..., None]
+            img[(s < 0.06) | (s > 0.96)] *= 1.12
+        elif kind == 'doric_frieze':
+            # a triglyph (its two grooves and half grooves, the guttae
+            # under it) and a weathered metope beside it
+            img[:7] *= 1.08                                     # the taenia's ledge
+            img[7:9] *= 0.62
+            for g, w in ((0.5, 1.6), (6.5, 2.4), (12.5, 2.4), (18.5, 1.6)):
+                img[11:58][np.abs(xx[11:58] - g) < w / 2] *= 0.55
+            img[9:, 20:22] *= 0.6                               # the metope set back
+            img[9:, 22:] *= 0.9
+            img[58:60, :20] *= 0.6
+            for gx in range(2, 20, 4):
+                img[60:63, gx:gx + 2] *= 0.72                   # the guttae
+        elif kind == 'ionic':
+            # an Ionic capital's face: the two volutes rolled up at its
+            # ends, the egg and dart between, the thin abacus over them;
+            # lit from the top left (relief)
+            h = np.zeros((64, 64))
+            for cx, way in ((11.5, 1), (51.5, -1)):
+                r, a = np.hypot(xx - cx, yy - 34), np.arctan2(yy - 34, xx - cx)
+                coil = (r - way * 2.2 * (a + np.pi) / np.pi) % 4.4
+                h[(r < 13) & (coil < 2.2)] = 1.0
+                h[r < 2.2] = 1.2                                # the eye
+            h[4:12, :] = 0.8                                    # the channel joining them
+            h[:4, :] = 1.2                                      # the abacus
+            egg = (np.hypot(((xx - 32) % 9 - 4.5) / 3.2, (yy - 22) / 6) < 1) & (yy > 15) & (np.abs(xx - 31.5) < 16)
+            h[egg] = 1.0
+            h = (h + np.roll(h, 1, 0) + np.roll(h, 1, 1)) / 3
+            shade = (h - np.roll(np.roll(h, 1, 0), 1, 1)) * 1.3
+            img *= (0.82 + 0.18 * h[..., None])
+            img *= (1 + 0.45 * shade)[..., None]
+        elif kind == 'architrave':
+            # an Ionic architrave's three fasciae, each over the one below
+            # it, a moulding of beads along its top
+            img[:6] *= 1.06
+            img[6:8] *= 0.6
+            img[1:5][(xx[1:5] % 4) < 2] *= 0.8
+            for top in (8, 26, 44):
+                img[top:top + 2] *= 1.12
+                img[top + 16:top + 18] *= 0.7
+        elif kind == 'caryatid':
+            # a caryatid's peplos: deep vertical folds down the skirt, a
+            # slanting fold across the breast, the braided hair on top
+            folds = np.sin(xx * 2 * np.pi / 6.4 + 0.6 * np.sin(yy / 9)) * np.clip((yy - 16) / 20, 0, 1)
+            img *= (1 + 0.16 * folds)[..., None]
+            img[10:18] *= (1 + 0.1 * np.sin((xx[10:18] + 2 * yy[10:18]) * 2 * np.pi / 7))[..., None]
+            braid = (yy < 7) & (((xx + 2 * yy) % 5) < 2)
+            img[braid] *= 0.8
+            img[:2] *= 0.85
+        elif kind == 'inscription':
+            # a decree cut in the stone in Attic capitals (the Council and
+            # the People decided...), a moulding along its top
+            img[:5] *= 1.08
+            img[5:7] *= 0.62
+            strokes = {
+                'E': [(0, 0, 0, 1), (0, 0, 1, 0), (0, .5, .8, .5), (0, 1, 1, 1)], 'D': [(0, 1, .5, 0), (.5, 0, 1, 1), (0, 1, 1, 1)],
+                'O': 'ring', 'X': [(0, 0, 1, 0), (.15, .5, .85, .5), (0, 1, 1, 1)], 'N': [(0, 1, 0, 0), (0, 0, 1, 1), (1, 1, 1, 0)],
+                'T': [(0, 0, 1, 0), (.5, 0, .5, 1)], 'H': [(0, 0, 0, 1), (1, 0, 1, 1), (0, .5, 1, .5)], 'I': [(.5, 0, .5, 1)],
+                'B': [(0, 0, 0, 1), (0, 0, .8, .25), (.8, .25, 0, .5), (0, .5, 1, .75), (1, .75, 0, 1)],
+                'Y': [(0, 0, .5, .5), (1, 0, .5, .5), (.5, .5, .5, 1)], 'L': [(0, 1, .5, 0), (.5, 0, 1, 1)],
+                'K': [(0, 0, 0, 1), (1, 0, 0, .5), (0, .5, 1, 1)], 'A': [(0, 1, .5, 0), (.5, 0, 1, 1), (.2, .6, .8, .6)],
+                'W': [(0, 1, .3, 1), (.7, 1, 1, 1), (.3, 1, 0, .4), (0, .4, .5, 0), (.5, 0, 1, .4), (1, .4, .7, 1)],
+                'M': [(0, 1, 0, 0), (0, 0, .5, .6), (.5, .6, 1, 0), (1, 0, 1, 1)],
+                'S': [(1, 0, 0, 0), (0, 0, .5, .5), (.5, .5, 0, 1), (0, 1, 1, 1)],
+                'P': [(0, 1, 0, 0), (0, 0, 1, 0), (1, 0, 1, 1)], 'Q': 'theta', 'R': [(0, 1, 0, 0), (0, 0, 1, .25), (1, .25, 0, .5)]}
+            # Greek capitals by Latin stand-ins: D delta, X xi, L lambda,
+            # W omega, P pi, Q theta, R rho, Y upsilon, H eta
+            lines = ['EDOXENTHI', 'BOYLHIKAI', 'TWIDHMWI', 'AQHNAIWN', 'PRYTANES', 'EPESTATE', 'SWKRATHS']
+            if RESERVED:                    # the add-on's: the verb whole, ἐπεστάτει ("presided")
+                lines[5] = 'EPESTATEI'
+            cut = np.zeros((64, 64), bool)
+            for row, text in enumerate(lines):
+                y0 = 10 + 7.6 * row
+                for col, ch in enumerate(text):
+                    x0 = 3.5 + 6.5 * col
+                    st = strokes[ch]
+                    if st in ('ring', 'theta'):
+                        r = np.hypot((xx - x0 - 2) / 2.2, (yy - y0 - 2.5) / 2.7)
+                        cut |= np.abs(r - 1) < 0.28
+                        if st == 'theta':
+                            cut |= (np.abs(yy - y0 - 2.5) < 0.5) & (np.abs(xx - x0 - 2) < 0.8)
+                        continue
+                    for ax, ay, bx, by in st:
+                        p0, p1 = np.array([x0 + 4 * ax, y0 + 5 * ay]), np.array([x0 + 4 * bx, y0 + 5 * by])
+                        d = p1 - p0
+                        s = np.clip(((xx - p0[0]) * d[0] + (yy - p0[1]) * d[1]) / max(1e-6, d @ d), 0, 1)
+                        cut |= np.hypot(xx - p0[0] - s * d[0], yy - p0[1] - s * d[1]) < 0.55
+            img[cut] *= 0.5
+            img[np.roll(cut, 1, 0) & ~cut] *= 1.1
+    elif kind == 'odeon':
+        # the Odeon's wall: brown poros blocks in courses, two tiers of
+        # round-headed arches, their openings dark
+        img = np.array([170, 132, 96], float)[None, None] * (1 + 0.08 * noise[..., None])
+        img[(yy % 8) < 1] *= 0.72
+        img[((xx + 8 * ((yy // 8) % 2)) % 16) < 1] *= 0.78
+        for y0, y1 in ((4, 30), (36, 62)):
+            for cx in (16, 48):
+                w = 7.5
+                opening = (np.abs(xx - cx) < w) & (yy < y1) & ((yy > y0 + w) | (np.hypot(xx - cx, yy - y0 - w) < w))
+                ring = (np.abs(xx - cx) < w + 2.5) & (yy < y1) & ((yy > y0 + w) | (np.hypot(xx - cx, yy - y0 - w) < w + 2.5))
+                img[ring & ~opening] *= 1.12
+                img[opening] = np.array([46, 34, 28], float) * (1 + 0.1 * noise[opening][:, None])
+                img[opening & (xx < cx - w + 2)] *= 0.7
+        img[34:36] *= 1.15                                      # the cornice between the tiers
+        img[36:37] *= 0.7
+    elif kind == 'olive_bark':
+        # an old olive's bark: grey brown, twisted, deep fissures spiralling
+        # up it, pale lichen in spots
+        twist = np.sin((xx + 0.45 * yy + 4 * noise) * 2 * np.pi / 13)
+        img = np.array([112, 102, 86], float)[None, None] * (0.85 + 0.2 * twist[..., None]) * (1 + 0.06 * noise[..., None])
+        img[twist < -0.75] *= 0.55
+        img[rnd.uniform(0, 1, (64, 64)) > 0.975] = (170, 168, 140)
+    elif kind in ('redrock', 'redrock_dark', 'redrock_top', 'petroglyph'):
+        # Nowhere Desert's Entrada sandstone: brick red to orange, its
+        # bedding in faint bands across, cross-bedding slanting through
+        # them, black desert varnish run down from the top in streaks, small
+        # pits; the top weathered paler, sandy; "petroglyph" a varnished face
+        # with figures pecked through to the paler rock (two bighorn sheep, a
+        # man with his arms up, a spiral, a snake, rings, a hand)
+        base = np.array([176, 88, 54], float) if kind != 'redrock_top' else np.array([194, 112, 70], float)
+        bed = (np.sin((yy + 2.5 * noise) * 2 * np.pi / 15) * 0.06
+               + np.sin((yy * 0.8 + xx * 0.35 + 3 * noise) * 2 * np.pi / 7) * 0.03)
+        img = base[None, None] * (1 + bed[..., None] + 0.06 * noise[..., None])
+        if kind != 'redrock_top':
+            streak = np.clip(rnd.normal(0, 1, (1, 64)).repeat(64, 0) * 1.2 - 0.5, 0, 1) * np.clip(1.1 - yy / 64, 0, 1)
+            img = img * (1 - 0.5 * streak[..., None]) + np.array([52, 30, 26], float) * 0.5 * streak[..., None]
+            img[(yy % 15 == 0) & (noise > -0.3)] *= 0.84
+        else:
+            img *= (1 + 0.08 * rnd.normal(0, 1, (64, 64)))[..., None]
+        img[rnd.uniform(0, 1, (64, 64)) > 0.98] *= 0.72
+        if kind == 'redrock_dark':
+            img *= 0.74
+        if kind == 'petroglyph':
+            varnish = np.clip(0.75 + 0.2 * noise, 0, 1)[..., None]
+            edge = np.clip(np.minimum.reduce([xx, yy, 63 - xx, 63 - yy]) / 5, 0, 1)[..., None]
+            img = img * (1 - 0.7 * varnish * edge) + np.array([66, 40, 34], float) * 0.7 * varnish * edge
+            cut = np.zeros((64, 64), bool)
+
+            def line(x0, y0, x1, y1, w=0.8):
+                d = np.array([x1 - x0, y1 - y0], float)
+                t = np.clip(((xx - x0) * d[0] + (yy - y0) * d[1]) / max(1e-6, d @ d), 0, 1)
+                return np.hypot(xx - x0 - t * d[0], yy - y0 - t * d[1]) < w
+            for bx, by in ((8, 12), (24, 9)):                 # two bighorn sheep, their horns curled back
+                cut |= (np.abs(xx - bx - 4) < 4.5) & (np.abs(yy - by - 2) < 1.6)
+                for lx in (bx + 0.5, bx + 2, bx + 6, bx + 7.5):
+                    cut |= line(lx, by + 3, lx, by + 7, 0.6)
+                cut |= line(bx + 8.5, by + 1, bx + 10, by - 2, 0.7)
+                cut |= np.abs(np.hypot(xx - bx - 8, yy - by + 2) - 2.2) < 0.6
+            # a man, his arms up, his fingers spread
+            for seg in ((44, 8, 44, 20, 0.9), (44, 20, 41, 26), (44, 20, 47, 26), (44, 12, 39, 10), (39, 10, 38, 6),
+                        (44, 12, 49, 10), (49, 10, 50, 6)):
+                cut |= line(*seg)
+            cut |= np.hypot(xx - 44, yy - 6) < 1.8
+            for fx in (-1, 0, 1):
+                cut |= line(38, 6, 38 + 1.2 * fx, 3.5, 0.45) | line(50, 6, 50 + 1.2 * fx, 3.5, 0.45)
+            # a spiral, a snake, rings, a hand
+            r, a = np.hypot(xx - 14, yy - 40), np.arctan2(yy - 40, xx - 14)
+            cut |= (r < 10) & (np.abs(((r - 1.4 * (a + np.pi)) % 4.4) - 2.2) < 0.7)
+            for k in range(28):
+                cut |= np.hypot(xx - 30 - k * 1.1, yy - 36 - 3 * np.sin(k * 0.55)) < 0.8
+            cut |= np.hypot(xx - 61, yy - 36) < 1.3
+            for rr in (2.5, 5.0):
+                cut |= np.abs(np.hypot(xx - 52, yy - 52) - rr) < 0.6
+            cut |= np.hypot(xx - 52, yy - 52) < 0.9
+            cut |= np.hypot((xx - 31) / 2.6, (yy - 54) / 3.0) < 1
+            for fa in np.linspace(-0.9, 0.9, 4):
+                cut |= line(31, 52, 31 + 5.5 * np.sin(fa), 52 - 5.5 * np.cos(fa), 0.7)
+            cut |= line(31, 55, 34.5, 52, 0.7)
+            peck = cut & (rnd.uniform(0, 1, (64, 64)) > 0.12)
+            img[peck] = np.array([196, 132, 92], float) * (1 + 0.08 * noise[peck][:, None])
+    elif kind == 'bone':
+        # bleached bone: chalky white, faint yellow, hairline cracks, brown
+        # in its hollows
+        img = np.array([214, 206, 184], float)[None, None] * (1 + 0.05 * noise[..., None])
+        img[np.abs(np.sin((xx * 0.6 + yy + 6 * noise) * 2 * np.pi / 23)) < 0.04] *= 0.7
+        img *= (1 - 0.18 * np.clip(-noise - 0.8, 0, 1))[..., None]
+    elif kind == 'cholla':
+        # a cholla's joints: grey green stems thick with pale spines, the
+        # joints' necks every 16 rows
+        img = np.array([104, 128, 84], float)[None, None] * (1 + 0.08 * noise[..., None])
+        img *= (0.75 + 0.3 * np.sin(np.pi * ((yy % 16) + 0.5) / 16) ** 0.5)[..., None]
+        spines = rnd.uniform(0, 1, (64, 64)) > 0.7
+        img[spines] = np.array([214, 206, 168], float) * (1 + 0.08 * noise[spines][:, None])
+        img[(yy % 16) == 0] *= 0.6
+    elif kind in ('pear_pad', 'barbwire', 'skull'):
+        out = []
+        for var in range(2 if kind == 'pear_pad' else 1):
+            rgba = np.zeros((64, 64, 4))
+            if kind == 'pear_pad':
+                # a prickly pear's pad: a flat green oval, darker at its
+                # rim, the areoles in rows with their tufts of yellow
+                # spines; the second with yellow flowers and a red fruit on
+                # its top edge
+                top = 14 if var else 3
+                ry, rx = (63 - top) / 2, 20.0
+                cy = top + ry
+                d = np.hypot((xx - 31.5) / rx, (yy - cy) / ry)
+                pad = d < 1
+                g = np.array([70, 118, 58], float) * (1.05 - 0.25 * d[..., None]) * (1 + 0.06 * noise[..., None])
+                rgba[pad, :3] = g[pad]
+                rgba[pad & (d > 0.88), :3] *= 0.75
+                rgba[pad, 3] = 255
+                areole = pad & ((((xx - 31.5) + 3 * ((yy // 7) % 2)) % 6) < 1.2) & ((yy % 7) < 1.2)
+                rgba[areole, :3] = (216, 200, 120)
+                if var:
+                    for fx in (18, 31, 44):
+                        fy = cy - ry * np.sqrt(max(0.0, 1 - ((fx - 31.5) / rx) ** 2))
+                        cup = np.hypot((xx - fx) / 5.5, (yy - fy + 4) / 5) < 1
+                        if fx == 31:
+                            rgba[cup, :3] = np.array([176, 40, 66], float) * (1 + 0.08 * noise[cup][:, None])
+                        else:
+                            rgba[cup, :3] = np.array([236, 204, 70], float) * (1 + 0.08 * noise[cup][:, None])
+                            rgba[cup & (np.hypot(xx - fx, yy - fy + 4) < 1.6), :3] = (150, 120, 40)
+                        rgba[cup, 3] = 255
+            elif kind == 'barbwire':
+                # three strands of barbed wire, each two wires twisted, a
+                # barb every 12 columns, sagging a little between the posts
+                for y0 in (10, 32, 54):
+                    yc = y0 + 2.5 * np.sin(np.pi * xx / 63)
+                    for ph in (0, np.pi):
+                        rgba[np.abs(yy - yc - 0.9 * np.sin(xx * 0.9 + ph)) < 0.7] = (92, 90, 96, 255)
+                    for bx in range(5, 64, 12):
+                        barb = (np.abs(np.abs(xx - bx) - np.abs(yy - yc)) < 0.7) & (np.abs(xx - bx) < 2.6)
+                        rgba[barb] = (110, 106, 110, 255)
+            else:
+                # a steer's skull seen from above and in front: the long
+                # face to the nose, the eye sockets dark, the horns curving
+                # out and up from the poll
+                face = (np.abs(xx - 31.5) < 9 - 4 * np.clip((yy - 20) / 40, 0, 1)) & (yy > 14) & (yy < 60)
+                face |= np.hypot((xx - 31.5) / 11, (yy - 18) / 7) < 1
+                rgba[face, :3] = np.array([214, 206, 184], float) * (1 + 0.05 * noise[face][:, None])
+                rgba[face, 3] = 255
+                for sx in (-1, 1):
+                    rgba[np.hypot((xx - 31.5 - sx * 7) / 3.2, (yy - 26) / 2.6) < 1] = (40, 30, 26, 255)
+                    t = np.linspace(0, 1, 40)
+                    for x, y, r in zip(31.5 + sx * (9 + 18 * t), 15 - 10 * t ** 2, 2.8 - 1.8 * t):
+                        rgba[np.hypot(xx - x, yy - y) < r] = (198, 184, 150, 255)
+                rgba[(np.abs(xx - 31.5) < 3) & (yy > 52) & (yy < 58)] = (60, 46, 38, 255)
+            out.append(vr.picture(*see_through(np.clip(rgba, 0, 255))[::-1]))
+        return out
+    elif kind in ('fig_leaves', 'net', 'reeds'):
+        rgba = np.zeros((64, 64, 4))
+        if kind == 'fig_leaves':
+            # a fig's crown: many dark glossy oval leaves on nothing
+            for _ in range(170):
+                x0, y0 = rnd.uniform(4, 60), rnd.uniform(4, 60)
+                a, length, width = rnd.uniform(0, np.pi), rnd.uniform(3.5, 5.5), rnd.uniform(1.8, 2.6)
+                if np.hypot(x0 - 32, y0 - 32) > 28 + 3 * np.sin(5 * np.arctan2(y0 - 32, x0 - 32)): continue
+                u = (xx - x0) * np.cos(a) + (yy - y0) * np.sin(a)
+                v = -(xx - x0) * np.sin(a) + (yy - y0) * np.cos(a)
+                leaf = (u / length) ** 2 + (v / width) ** 2 < 1
+                green = np.array([[40, 78, 32], [52, 96, 38], [70, 112, 44], [34, 64, 28]][int(rnd.integers(4))], float)
+                rgba[leaf, :3] = green * (1 + 0.15 * (v[leaf] / width))[:, None]
+                rgba[leaf & (np.abs(v) < 0.5), :3] = green * 1.3
+                rgba[leaf, 3] = 255
+        elif kind == 'net':
+            # a fishing net: knotted diamond mesh, dark twine, floats on top
+            mesh = (((xx + yy) % 8) < 1) | (((xx - yy) % 8) < 1)
+            rgba[mesh] = (70, 66, 56, 255)
+            rgba[:3] = (60, 54, 44, 255)
+            for x0 in range(4, 64, 12):
+                rgba[1:5, x0:x0 + 4] = (220, 196, 80, 255)
+        else:
+            # reeds at the water's edge: tall narrow blades, green, yellowing
+            # toward their tips, a few feathery heads
+            for _ in range(26):
+                x0, top, lean = rnd.uniform(4, 60), rnd.uniform(2, 26), rnd.uniform(-0.25, 0.25)
+                t = np.clip((yy - top) / max(1, 63 - top), 0, 1)
+                centre = x0 + lean * (63 - yy)
+                blade = (yy >= top) & (np.abs(xx - centre) < 0.5 + 1.1 * t)
+                green = np.array([[70, 118, 44], [92, 134, 52], [112, 140, 60], [60, 100, 40]][int(rnd.integers(4))], float)
+                dry = (1 - t[blade])[:, None] * 0.6
+                rgba[blade, :3] = green[None] * (1 - dry) + np.array([196, 180, 108]) * dry
+                rgba[blade, 3] = 255
+                if rnd.uniform() < 0.3:
+                    head = np.hypot((xx - (x0 + lean * (63 - top))) / 2.2, (yy - top + 3) / 4.5) < 1
+                    rgba[head] = (176, 150, 120, 255)
+        return [vr.picture(*see_through(np.clip(rgba, 0, 255))[::-1])]
     else:
         r = np.hypot(xx - 31.5, yy - 31.5)
         img = np.array([92, 56, 36], float)[None, None] * (1 + 0.15 * noise[..., None])
@@ -2251,8 +3385,11 @@ def textures(cfg: dict, vram: np.ndarray, rec: dict, vr: Vram, arc=None) -> dict
         out['jangseung_body_f'] = painted('jangseung_body_f', vr)
     colours, idx = sixteen(t2_stage.floor_tile(vram, rec['floor'][0]).astype(float))
     out['sand'] = [vr.picture(idx, colours)]
-    if cfg.get('scenery', {}).get('tree'):
+    if cfg.get('scenery', {}).get('tree') or cfg.get('scenery', {}).get('junipers'):
         out['bark'] = bark(vr)
+    for name, other in cfg.get('alias', {}).items():
+        # "alias": a picture under another name (boulder() takes "cliff")
+        out[name] = out[other]
     if cfg.get('scenery', {}).get('tufts') or cfg.get('grass'):
         blades = {'straw': STRAW, 'green': GREEN}[cfg.get('tuft_blades', 'straw')]
         out['tuft'] = [vr.picture(*see_through(tuft_side(70 + k, blades))[::-1]) for k in range(cfg.get('tuft_pictures', 3))]
@@ -3833,8 +4970,13 @@ def cypress(spec: dict, at, light: dict) -> list:
     "cypress": "height"): an octagonal pot, flaring at its lip, the tree a
     slim dark spindle, widest a third of its way up, coming to a point."""
     cx, cz = polar(at)
-    k = spec.get('height', 360) / 360
+    k = (at[2] if len(at) > 2 else spec.get('height', 360)) / 360
     turn = np.radians(at[0]) + np.pi / 8
+    if not spec.get('pot', True):
+        # "pot": false: growing out of the ground on a short trunk (Athens')
+        out = tube([(cx, 4, cz), (cx, -34 * k, cz)], [9 * k, 7 * k], 6, spec.get('bark', 'olive_bark'), light)
+        return out + turned([(y * k, r * k, (0, 63)) for y, r in ((-24, 6), (-40, 30), (-120, 46), (-205, 42), (-282, 30),
+                             (-336, 15), (-360, 1))], 8, cx, cz, 'cypress', light, turn=turn, cap=False, wrap=2)
     out = turned([(y * k, r * k, rows) for y, r, rows in ((0, 28, (56, 63)), (-8, 32, (40, 56)), (-40, 38, (8, 40)),
                    (-46, 43, (0, 8)), (-50, 40, (0, 4)))], 8, cx, cz, 'marble', light, turn=turn, cap='clay', wrap=8)
     out += turned([(y * k, r * k, (0, 63)) for y, r in ((-50, 7), (-62, 30), (-130, 44), (-210, 40), (-285, 28),
@@ -4151,14 +5293,15 @@ def battlement(spec: dict, run, light: dict, rnd) -> list:
     return out
 
 
-def wall_rubble(at, size: float, light: dict, rnd) -> list:
+def wall_rubble(at, size: float, light: dict, rnd, tex: str = 'wall_brick') -> list:
     """A brick or a lump of the parapet fallen ("rubble_bricks": [degrees,
-    distance, size]): long, tipped over, sunk in the ground."""
+    distance, size]): long, tipped over, sunk in the ground; tex its
+    picture (Cambodia's sandstone)."""
     w, d, h = size * rnd.uniform(1.5, 2.2), size * rnd.uniform(0.8, 1.1), size * rnd.uniform(0.5, 0.7)
     foot = [(-w / 2, 0, -d / 2), (w / 2, 0, -d / 2), (w / 2, 0, d / 2), (-w / 2, 0, d / 2)]
     c = posed(foot + [(x, -h, z) for x, _, z in foot], rnd.uniform(-18, 18), rnd.uniform(0, 360), at,
               h * rnd.uniform(0.15, 0.4))
-    return above_ground(box_faces(c, ['wall_brick'] * 6, light))
+    return above_ground(box_faces(c, [tex] * 6, light))
 
 
 def beacon_tower(spec: dict, light: dict) -> list:
@@ -4966,11 +6109,21 @@ def window_skies(cfg: dict, pic: np.ndarray, fb, vr: Vram) -> list:
     sat, lum = pic.max(2) - pic.min(2), pic.mean(2)
     r, g, b = pic[..., 0], pic[..., 1], pic[..., 2]
     warm = (r >= g) & (g > b + 15)                     # candlelight, the altarpiece: not glass
-    glass = (sat > w.get('colourful', 60)) & (lum > w.get('bright', 45)) & ~warm
-    glass[:w.get('from', 300)] = False
     blur = lambda m, r: np.asarray(Image.fromarray(np.clip(m * 255, 0, 255).astype(np.uint8)).filter(
         ImageFilter.GaussianBlur(r)), float) / 255
-    glass &= blur(glass.astype(float), 3) > 0.3      # the windows, not a stray pixel
+    if w.get('rects'):
+        # "rects" [[x0, y0, x1, y1], ...] pixels of the player's picture: the
+        # windows' bluish night glass there (Eternal Darkness's dark windows)
+        x0, y0, x1, y1 = cfg['crop']
+        sx, sy = pic.shape[1] / (x1 - x0), pic.shape[0] / (y1 - y0)
+        glass = np.zeros(pic.shape[:2], bool)
+        for wx0, wy0, wx1, wy1 in w['rects']:
+            glass[max(0, int((wy0 - y0) * sy)):int((wy1 - y0) * sy), max(0, int((wx0 - x0) * sx)):int((wx1 - x0) * sx)] = True
+        glass &= ((b > r + w.get('blue', 3)) | (lum > 40)) & ~warm
+    else:
+        glass = (sat > w.get('colourful', 60)) & (lum > w.get('bright', 45)) & ~warm
+        glass[:w.get('from', 300)] = False
+        glass &= blur(glass.astype(float), 3) > 0.3      # the windows, not a stray pixel
     core = np.clip(blur(glass.astype(float), 1.2) * 1.6, 0, 1)
     halo = blur(glass.astype(float), w.get('glow', 18))
     halo = np.clip(halo / max(1e-6, np.percentile(halo[glass], 50)), 0, 1)
@@ -5524,6 +6677,936 @@ def mushrooms(spec, light: dict, rnd) -> list:
     return out
 
 
+# --- Cambodian Wetlands: Khmer ruins by the lake ------------------------------
+
+def card(centre, along, up, w: float, h: float, tex: str, rows, cols, level=(0x80, 0x80, 0x80), low: float = 1.0,
+         added: bool = False) -> list:
+    """A picture standing on its foot's middle centre, w wide along the
+    unit vector along and h tall along up, seen from both sides; lit
+    flat, its foot low times as dark."""
+    c, a, u = (np.array(v, float) for v in (centre, along, up))
+    q = [c - a * w / 2 + u * h, c + a * w / 2 + u * h, c - a * w / 2, c + a * w / 2]
+    top, foot = tuple(int(v) for v in level), tuple(int(v * low) for v in level)
+    return both_ways(dict(corners=[tuple(int(round(v)) for v in p) for p in q], tex=tex, rows=rows, cols=cols, var=0,
+                          colors=[top, top, foot, foot], **({'added': True} if added else {})))
+
+
+def ruin_wall(spec: dict, light: dict, rnd) -> list:
+    """A fragment of a temple wall ("ruin_walls": {"at" [degrees,
+    distance], "yaw", "width", "height", "thick", "relief": the side toward
+    the fight carved with apsaras, "pieces"}): sandstone blocks side by
+    side, each its own height (the top broken down in steps), a moulding
+    along its foot."""
+    at, yaw = spec['at'], spec.get('yaw', 0)
+    w, h, t = spec.get('width', 300), spec.get('height', 240), spec.get('thick', 60)
+    n = spec.get('pieces', max(1, round(w / 75)))
+    place = local(at, yaw)
+    front = 'apsara' if spec.get('relief') else 'sandstone'
+    out = []
+    for k in range(n):
+        x0, x1 = -w / 2 + w * k / n, -w / 2 + w * (k + 1) / n
+        top = -h * (rnd.uniform(0.55, 0.85) if k in (0, n - 1) else rnd.uniform(0.82, 1.04))
+        c = place([(x0, 0, -t / 2), (x1, 0, -t / 2), (x1, 0, t / 2), (x0, 0, t / 2),
+                   (x0, top, -t / 2), (x1, top, -t / 2), (x1, top, t / 2), (x0, top, t / 2)])
+        inside = np.mean(np.array(c, float), 0)
+        for j, tex in ((0, 'sandstone'), (1, 'sandstone'), (3, 'sandstone')):
+            i = (j + 1) % 4
+            out.append(face(wound([c[4 + j], c[4 + i], c[j], c[i]], inside), tex, light, inside, var=k))
+        out += grid_faces(*wound([c[7], c[6], c[3], c[2]], inside), front, light, inside, size=w / n)
+        out.append(face(wound([c[4], c[5], c[7], c[6]], inside), 'sandstone', light, inside))
+    # the moulding: a lower, wider course along the foot
+    c = place([(-w / 2 - 8, 0, -t / 2 - 10), (w / 2 + 8, 0, -t / 2 - 10), (w / 2 + 8, 0, t / 2 + 10),
+               (-w / 2 - 8, 0, t / 2 + 10)] + [(x, -26, z) for x, z in ((-w / 2 - 8, -t / 2 - 10), (w / 2 + 8, -t / 2 - 10),
+                                                                       (w / 2 + 8, t / 2 + 10), (-w / 2 - 8, t / 2 + 10))])
+    out += box_faces(c, ['sandstone'] * 4 + ['sandstone', 'sandstone'], light)[:-1]
+    return out
+
+
+def naga_balustrade(spec: dict, run, light: dict) -> list:
+    """A naga balustrade ("nagas": [degrees from, degrees to, distance],
+    "naga": "height" of the posts, "body" radius): squat sandstone posts
+    carrying the serpent's scaly body along the arc, at the "from" end its
+    seven heads rising in a fan (the hood), as along Angkor's causeways."""
+    a0, a1, dist = run
+    h, rb = spec.get('height', 60), spec.get('body', 14)
+    out = []
+    n = max(2, int(round(np.radians(abs(a1 - a0)) * dist / spec.get('post', 110))))
+    for k in range(n + 1):
+        a = a0 + (a1 - a0) * k / n
+        px, pz = polar([a, dist])
+        r = np.radians(a)
+        ux, uz, vx, vz = np.cos(r), -np.sin(r), np.sin(r), np.cos(r)
+        sq = lambda half, y: [(px + half * (sx * ux + sy * vx), y, pz + half * (sx * uz + sy * vz))
+                              for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        out += box_faces(sq(15, 0) + sq(12, -h), ['sandstone'] * 4 + ['sandstone', 'sandstone'], light)[:-1]
+    m = max(4, n * 2)
+    path = [(x, -h - rb + 2, z) for x, z in (polar([a0 + (a1 - a0) * k / m, dist]) for k in range(m + 1))]
+    # the neck rising out of the body's end, bent back toward the hood
+    r = np.radians(a0)
+    tx, tz = -np.cos(r) * np.sign(a1 - a0), np.sin(r) * np.sign(a1 - a0)   # on past the "from" end
+    ex, _, ez = path[0]
+    neck = [(ex + tx * d, -h - rb + 2 - lift, ez + tz * d) for d, lift in ((22, 12), (36, 40), (40, 72))]
+    out += tube(path[::-1] + neck, [rb] * (m + 1) + [rb, rb * 0.9, rb * 0.8], 6, 'naga', light)
+    # the hood: seven heads in a fan on the neck's top, the middle one
+    # highest, turned toward the fight (in the plane along the arc)
+    cx, cy, cz = neck[-1]
+    ux, uz = tx, tz
+    for k in range(7):
+        th = np.radians(-72 + 24 * k)
+        dx, dy = np.sin(th), -np.cos(th)                    # out from the hood's middle (up is -y)
+        px, py = np.cos(th), np.sin(th)
+        R, w0, w1 = 46, 6, 11
+        q = [(cx + ux * (dx * R - px * w1), cy + dy * R - py * w1, cz + uz * (dx * R - px * w1)),
+             (cx + ux * (dx * R + px * w1), cy + dy * R + py * w1, cz + uz * (dx * R + px * w1)),
+             (cx - ux * px * w0, cy - py * w0, cz - uz * px * w0), (cx + ux * px * w0, cy + py * w0, cz + uz * px * w0)]
+        out += both_ways(face(q, 'naga', light, (cx + ex / dist * 100, cy, cz + ez / dist * 100)))
+        hx, hy, hz = cx + ux * dx * (R + 9), cy + dy * (R + 9), cz + uz * dx * (R + 9)
+        rx, rz = -uz, ux                                    # toward and away from the fight
+        c = [(hx + ux * sx * 7 + rx * sz * 7, hy + sy, hz + uz * sx * 7 + rz * sz * 7)
+             for sy in (7, -7) for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        out += box_faces(c, ['sandstone'] * 6, light)
+    return out
+
+
+def fallen_blocks(spec, light: dict, rnd) -> list:
+    """Fallen sandstone and laterite blocks ("khmer_blocks": [degrees,
+    distance, size, picture]): wall_rubble()'s, of the temple's stone."""
+    return wall_rubble(spec[:2], spec[2], light, rnd, spec[3] if len(spec) > 3 else 'sandstone')
+
+
+def laterite_steps(spec: dict, light: dict) -> list:
+    """A flight of laterite steps going nowhere ("terraces": {"at",
+    "count", "rise", "tread", "width", "top"}): steps()'s, the temple's
+    platform long gone."""
+    at, out = spec['at'], []
+    n, rise, tread, w = spec.get('count', 3), spec.get('rise', 22), spec.get('tread', 40), spec.get('width', 300)
+    for k in range(n):
+        d0, d1 = tread * k, tread * (k + 1) + (spec.get('top', 80) if k == n - 1 else 0)
+        foot = [(-w / 2, 0, d0), (w / 2, 0, d0), (w / 2, 0, d1), (-w / 2, 0, d1)]
+        c = posed(foot + [(x, -rise * (k + 1), z) for x, _, z in foot], 0, at[0], at, 0)
+        f = box_faces(c, ['laterite'] * 4 + ['laterite', 'laterite'], light)
+        f.pop()
+        out += f
+    return out
+
+
+def strangler_fig(spec: dict, light: dict, rnd) -> list:
+    """A great strangler fig ("fig": {"at", "height" of the tree, "roots",
+    "reach" of them, "crown" its radius, "leaves"}): its trunk flaring into
+    buttresses at the foot, its roots snaking away over the ground all
+    round, forking as they go; the trunk forking near the top, a wide dome
+    of small leaf clusters over it."""
+    cx0, cz0 = polar(spec['at'])
+    H, reach = spec.get('height', 650), spec.get('reach', 320)
+    out = []
+    # the roots: from up the trunk down to the ground, then winding away
+    # along it, thinner as they go, a fork off each now and then
+    for k in range(spec.get('roots', 9)):
+        a = 2 * np.pi * (k + rnd.uniform(-0.25, 0.25)) / spec.get('roots', 9)
+        ln = reach * rnd.uniform(0.6, 1.1)
+        wig, ph = rnd.uniform(0.15, 0.35), rnd.uniform(0, 2 * np.pi)
+        r0 = rnd.uniform(13, 17)
+        radii = [r0 * 1.3, r0, r0 * 0.7, r0 * 0.45, r0 * 0.2]
+        pts = []
+        for f, r in zip((0.0, 0.08, 0.3, 0.6, 1.0), radii):
+            d = 18 + ln * f
+            b = a + wig * np.sin(4 * f + ph) * f
+            pts.append((cx0 + d * np.sin(b), -90 if f == 0 else -0.8 * r, cz0 + d * np.cos(b)))
+        out += tube(pts, radii, 3, 'fig_root', light)
+        if k % 2 == 0:
+            p0 = pts[2]
+            b = a + rnd.choice([-1, 1]) * rnd.uniform(0.5, 0.9)
+            fork = [p0] + [(p0[0] + d * np.sin(b), -3, p0[2] + d * np.cos(b)) for d in (0.25 * ln, 0.5 * ln)]
+            out += tube(fork, [r0 * 0.55, r0 * 0.35, r0 * 0.15], 3, 'fig_root', light)
+    # the trunk, leaning, forking near the top
+    trunk = [(cx0, 0, cz0), (cx0 + 10, -0.45 * H, cz0 + 6), (cx0 - 8, -0.78 * H, cz0 - 6)]
+    out += tube(trunk, [34, 24, 18], 6, 'fig_root', light)
+    tops = []
+    for dx, dz in ((-80, 20), (70, -10), (10, 70)):
+        end = (cx0 - 8 + dx, -H, cz0 - 6 + dz)
+        out += tube([trunk[-1], end], [15, 8], 5, 'fig_root', light)
+        tops.append(end)
+    # the crown: small clusters of leaves crossed all over a wide dome
+    R = spec.get('crown', 230)
+    cx, cy, cz = np.mean(np.array(tops, float), 0)
+    for k in range(spec.get('leaves', 34)):
+        a = rnd.uniform(0, 2 * np.pi)
+        r = R * np.sqrt(rnd.uniform(0.15, 1))
+        px, pz = cx + r * np.sin(a), cz + r * np.cos(a)
+        py = cy - 10 - 110 * (1 - (r / R) ** 2) * rnd.uniform(0.5, 1.1)
+        size = rnd.uniform(100, 140)
+        spin = rnd.uniform(0, np.pi)
+        lv = 0x80 * (0.75 + 0.15 * (1 - r / R) + 0.15 * rnd.uniform(0, 1))
+        out += card((px, py + size / 2, pz), (np.cos(spin), 0, np.sin(spin)), (0, -1, 0), size, size, 'fig_leaves',
+                    (0, 63), (0, 63), (lv * 0.92, lv, lv * 0.86), 0.75)
+    return out
+
+
+def sugar_palm(spec: dict, at, light: dict, rnd) -> list:
+    """A sugar palm ("palms": [degrees, distance, height], "palm": "fronds",
+    "frond" size): a tall slender ringed trunk, a little bent, swelling
+    near its top, a round crown of stiff fan leaves on short stalks all
+    round (the Cambodia picture's, stirring in the wind)."""
+    H = at[2] if len(at) > 2 else spec.get('height', 1000)
+    cx, cz = polar(at[:2])
+    lean, dirn = rnd.uniform(0, 0.05), rnd.uniform(0, 2 * np.pi)
+    off = lambda t: (H * lean * t ** 2 * np.sin(dirn), H * lean * t ** 2 * np.cos(dirn))
+    path = [(cx + off(t)[0], -H * t, cz + off(t)[1]) for t in (0, 0.35, 0.7, 0.92, 1.0)]
+    out = tube(path, [24, 19, 17, 20, 15], 5, 'palm_trunk', light, turn=0.5)
+    tx, ty, tz = path[-1]
+    S = spec.get('frond', 190)
+    flat = {'azimuth': 0, 'elevation': 90, 'ambient': [0.95, 1.0, 0.92], 'sun': [0, 0, 0]}
+    n = spec.get('fronds', 18)
+    for k in range(n):
+        # each leaf out along a direction of a ball round the crown
+        e = np.arcsin(1 - 2 * (k + 0.5) / n) * 0.85 + 0.15
+        a = k * 2.39996 + rnd.uniform(-0.2, 0.2)
+        d = np.array([np.cos(e) * np.sin(a), -np.sin(e), np.cos(e) * np.cos(a)])
+        side = np.cross(d, [0, 1.0, 0]); side /= max(1e-6, np.linalg.norm(side))
+        twist = rnd.uniform(-0.6, 0.6)
+        side = side * np.cos(twist) + np.cross(d, side) * np.sin(twist)
+        foot = np.array([tx, ty, tz]) + d * 45
+        out += tube([(tx, ty, tz), tuple(foot)], [4, 3], 3, 'palm_trunk', light)
+        lv = 0x80 * (0.75 + 0.25 * (np.sin(e) + 1) / 2)
+        out += card(foot, side, d, S, S * 0.9, 'flags', PALM_FROND[0], PALM_FROND[1], tuple(lv * v for v in flat['ambient']), 0.75)
+    return out
+
+
+def stilt_house(spec: dict, light: dict) -> list:
+    """A fisher's house on stilts ("stilt_house": {"at", "yaw", "width",
+    "depth", "floor" height, "walls" height, "roof"}): wooden posts, a plank
+    floor with a ledge before the door, matting walls, a dark doorway and
+    a window toward the fight, a steep thatched roof over gable ends, a
+    ladder up to the ledge."""
+    at, yaw = spec['at'], spec.get('yaw', 0)
+    w, d, fh, wh, rh = spec.get('width', 380), spec.get('depth', 280), spec.get('floor', 210), spec.get('walls', 190), \
+        spec.get('roof', 170)
+    place = local(at, yaw)
+    out = []
+    for x in (-w / 2 + 12, 0, w / 2 - 12):
+        for z in (-d / 2 + 12, d / 2 - 12, d / 2 + 70):
+            out += tube(place([(x, 6, z), (x, -fh, z)]), [7, 6], 4, 'wood', light)
+    c = place([(-w / 2, -fh + 14, -d / 2), (w / 2, -fh + 14, -d / 2), (w / 2, -fh + 14, d / 2 + 80), (-w / 2, -fh + 14, d / 2 + 80),
+               (-w / 2, -fh, -d / 2), (w / 2, -fh, -d / 2), (w / 2, -fh, d / 2 + 80), (-w / 2, -fh, d / 2 + 80)])
+    out += box_faces(c, ['plank'] * 4 + ['plank', 'plank'], light)
+    y0, y1 = -fh, -fh - wh
+    c = place([(-w / 2 + 6, y0, -d / 2 + 6), (w / 2 - 6, y0, -d / 2 + 6), (w / 2 - 6, y0, d / 2 - 6), (-w / 2 + 6, y0, d / 2 - 6),
+               (-w / 2 + 6, y1, -d / 2 + 6), (w / 2 - 6, y1, -d / 2 + 6), (w / 2 - 6, y1, d / 2 - 6), (-w / 2 + 6, y1, d / 2 - 6)])
+    inside = np.mean(np.array(c, float), 0)
+    for j in range(4):
+        i = (j + 1) % 4
+        out += grid_faces(*wound([c[4 + j], c[4 + i], c[j], c[i]], inside), 'matting', light, inside, size=110)
+    # the doorway and a window on the side toward the fight (+z), a little before it
+    fz = d / 2 - 4
+    for x0, x1, ya, yb in ((-w * 0.32, -w * 0.08, y0, y0 - wh * 0.8), (w * 0.12, w * 0.34, y0 - wh * 0.35, y0 - wh * 0.7)):
+        q = place([(x0, yb, fz), (x1, yb, fz), (x0, ya, fz), (x1, ya, fz)])
+        out.append(face(wound(q, inside), 'torii_black', light, inside))
+    # the roof: two thatched slopes over the eaves, the gables matting
+    ov, ridge = 50, y1 - rh
+    for s in (-1, 1):
+        q = place([(-w / 2 - ov, ridge, 0), (w / 2 + ov, ridge, 0), (-w / 2 - ov, y1 + 20, s * (d / 2 + ov)),
+                   (w / 2 + ov, y1 + 20, s * (d / 2 + ov))])
+        out += both_ways(face(q, 'thatch', light, place([(0, 0, 0)])[0]))
+    for x in (-w / 2 + 6, w / 2 - 6):
+        q = place([(x, ridge + 6, 0), (x, ridge + 6, 0), (x, y1, -d / 2 + 6), (x, y1, d / 2 - 6)])
+        out += both_ways(face(q, 'matting', light, place([(0, y1, 0)])[0]))
+    # the ladder: two rails from the ground to the ledge, rungs across
+    lz0, lz1 = d / 2 + 80 + 90, d / 2 + 78
+    for x in (-w * 0.2 - 22, -w * 0.2 + 22):
+        out += tube(place([(x, 0, lz0), (x, -fh, lz1)]), [4, 4], 3, 'bamboo', light)
+    for k in range(1, 6):
+        t = k / 6
+        z, y = lz0 + (lz1 - lz0) * t, -fh * t
+        out += tube(place([(-w * 0.2 - 22, y, z), (-w * 0.2 + 22, y, z)]), [3, 3], 3, 'bamboo', light)
+    return out
+
+
+def longtail_boat(spec: dict, light: dict) -> list:
+    """A longtail boat drawn up on the bank ("boat": {"at", "yaw",
+    "length", "width", "depth"}): a narrow wooden hull, its bow sweeping up
+    in a point, the stern square, painted bands along its sides, two seats
+    across; its long engine shaft lying out behind."""
+    at, yaw = spec['at'], spec.get('yaw', 0)
+    L, W, D = spec.get('length', 560), spec.get('width', 96), spec.get('depth', 46)
+    place = local(at, yaw)
+    ts = np.linspace(0, 1, 9)
+    half = lambda t: W / 2 * (np.clip(np.sin(np.pi * (0.12 + 0.88 * t)) ** 0.7, 0.05, 1) if t > 0.4 else
+                               0.75 + 0.25 * np.sin(np.pi * t / 0.8))
+    sheer = lambda t: -D - 90 * max(0.0, t - 0.8) ** 2 / 0.04 * 0.6
+    out = []
+    for k in range(len(ts) - 1):
+        a, b = ts[k], ts[k + 1]
+        xa, xb = -L / 2 + L * a, -L / 2 + L * b
+        for s in (-1, 1):
+            q = place([(xa, sheer(a), s * half(a)), (xb, sheer(b), s * half(b)), (xa, 0, s * half(a) * 0.45),
+                       (xb, 0, s * half(b) * 0.45)])
+            out += both_ways(face(q, 'boat', light, place([(0, -D / 2, 0)])[0]))
+        q = place([(xa, 0, -half(a) * 0.45), (xb, 0, -half(b) * 0.45), (xa, 0, half(a) * 0.45), (xb, 0, half(b) * 0.45)])
+        out.append(face(q, 'plank', light, place([(0, 100, 0)])[0]))
+    q = place([(-L / 2, sheer(0), -half(0)), (-L / 2, sheer(0), half(0)), (-L / 2, 0, -half(0) * 0.45), (-L / 2, 0, half(0) * 0.45)])
+    out += both_ways(face(q, 'boat', light, place([(0, -D / 2, 0)])[0]))
+    for x in (-L * 0.15, L * 0.2):
+        hw = half(0.5 + x / L) - 4
+        c = place([(x - 12, -D + 8, -hw), (x + 12, -D + 8, -hw), (x + 12, -D + 8, hw), (x - 12, -D + 8, hw),
+                   (x - 12, -D + 2, -hw), (x + 12, -D + 2, -hw), (x + 12, -D + 2, hw), (x - 12, -D + 2, hw)])
+        out += box_faces(c, ['plank'] * 6, light)
+    out += tube(place([(-L / 2 + 10, -D - 10, 0), (-L / 2 - 260, 4, 30)]), [5, 3], 4, 'iron', light)
+    c = place([(-L / 2 + 10 + sx, -D - 10 + sy, sz) for sy in (0, -34) for sx, sz in ((-20, -18), (20, -18), (20, 18), (-20, 18))])
+    out += box_faces(c, ['iron'] * 6, light)
+    return out
+
+
+def net_poles(spec: dict, run, light: dict) -> list:
+    """A fishing net hung out to dry ("nets": [degrees from, degrees to,
+    distance], "net": "height", "drop"): bamboo poles along the arc, the
+    net hung between them, sagging, seen from both sides."""
+    a0, a1, dist = run
+    H, drop = spec.get('height', 250), spec.get('drop', 170)
+    n = max(1, int(round(np.radians(abs(a1 - a0)) * dist / 220)))
+    pts = [polar([a0 + (a1 - a0) * k / n, dist]) for k in range(n + 1)]
+    out = []
+    for x, z in pts:
+        out += tube([(x, 4, z), (x, -H - 20, z)], [5, 4], 4, 'bamboo', light)
+    flat = {'azimuth': 0, 'elevation': 90, 'ambient': [0.9, 0.9, 0.9], 'sun': [0, 0, 0]}
+    for (xa, za), (xb, zb) in zip(pts, pts[1:]):
+        for j in range(3):
+            s0, s1 = j / 3, (j + 1) / 3
+            sag = lambda s: -H + 40 * np.sin(np.pi * s)
+            p = lambda s, y: (xa + (xb - xa) * s, y, za + (zb - za) * s)
+            q = [p(s0, sag(s0)), p(s1, sag(s1)), p(s0, sag(s0) + drop), p(s1, sag(s1) + drop)]
+            f = face(q, 'net', flat, (0, 0, 0), cols=(round(63 * s0), round(63 * s1)))
+            out += both_ways(f)
+    return out
+
+
+def lotus_pond(spec: dict, at, rnd) -> list:
+    """A lotus pool on the ground ("lotus_ponds": [degrees, distance,
+    width, depth, flowers]): the Cambodia picture's patch of pond seen from
+    above lying flat (drawn first, under the rest), a few leaves held up
+    on stalks and pink flowers standing out of it."""
+    deg, dist, w, d, nf = at
+    cx, cz = polar([deg, dist])
+    r = np.radians(deg)
+    ux, uz, vx, vz = np.cos(r), -np.sin(r), np.sin(r), np.cos(r)
+    q = [(cx + sx * w / 2 * ux + sy * d / 2 * vx, -1, cz + sx * w / 2 * uz + sy * d / 2 * vz) for sy in (1, -1) for sx in (-1, 1)]
+    uv = [(0, LOTUS_POND[0][0]), (63, LOTUS_POND[0][0]), (0, LOTUS_POND[0][1]), (63, LOTUS_POND[0][1])]
+    if wound(q, (cx, 1000, cz)) is not q:
+        q, uv = [q[i] for i in (1, 0, 3, 2)], [uv[i] for i in (1, 0, 3, 2)]
+    lv = (0x7C, 0x80, 0x80)
+    out = [dict(corners=[tuple(int(round(v)) for v in p) for p in q], tex='flags', rows=LOTUS_POND[0], var=0, uv=uv,
+                colors=[lv] * 4, under=True)]
+    for k in range(nf):
+        sx, sy = rnd.uniform(-0.38, 0.38) * w, rnd.uniform(-0.3, 0.3) * d
+        px, pz = cx + sx * ux + sy * vx, cz + sx * uz + sy * vz
+        spin = rnd.uniform(0, np.pi)
+        along = (np.cos(spin), 0, np.sin(spin))
+        if k % 3 == 2:
+            out += card((px, 0, pz), along, (0, -1, 0), 44, 44, 'flags', LOTUS_LEAF[0], LOTUS_LEAF[1], (0x78, 0x80, 0x78), 0.8)
+        else:
+            s = rnd.uniform(34, 46)
+            out += card((px, 0, pz), along, (0, -1, 0), s, s * 1.2, 'flags', LOTUS_FLOWER[0], LOTUS_FLOWER[1], (0x84, 0x80, 0x80), 0.85)
+    return out
+
+
+def egret_picture(vr: Vram):
+    """Egrets' colours in the gull's regions: "dark", "light" and "white"
+    all white (a touch of grey in the wings), in the yellow corner's
+    quarters "red" the legs' black and "horn" the beak's yellow."""
+    rnd = np.random.default_rng(14)
+    img = np.zeros((64, 64, 3))
+    for (x, y, w), rgb in (((0, 0, 32), (240, 242, 240)), ((32, 0, 32), (226, 228, 228)), ((0, 32, 32), (248, 248, 246)),
+                           ((32, 32, 32), (230, 196, 60)), ((32, 32, 16), (26, 24, 24))):
+        img[y:y + w, x:x + w] = np.clip(np.array(rgb) * (1 + 0.04 * rnd.normal(0, 1, (w, w)))[..., None], 0, 255)
+    colours, idx = sixteen(img)
+    return vr.picture(idx, colours)
+
+
+def egret_model(pose: str, scale: float = 1.0) -> list[dict]:
+    """A crane's faces (crane_model()) as a great egret's: all white, no
+    crown, its long legs black (the "red" quarter of egret_picture())."""
+    faces = crane_model(pose, 1.0)
+    out = []
+    for f in faces:
+        if f['region'] == 'red':
+            continue                                   # no crown
+        zs = [c[2] for c in f['corners']]
+        if f['region'] == 'light' and max(zs) <= -18 and min(c[1] for c in f['corners']) >= 5:
+            f['region'] = 'red'                        # the legs
+        f['corners'] = [tuple(scale * v for v in c) for c in f['corners']]
+        out.append(f)
+    return out
+
+
+# --- Athens: the Acropolis' marbles among the olives -------------------------
+
+def doric_colonnade(spec: dict, light: dict) -> list:
+    """A row of Doric columns on their stepped stylobate ("colonnades":
+    {"at" [degrees, distance], "yaw", "columns", "spacing", "radius",
+    "height", "broken" [each column's height, 1 whole], "entablature" [first,
+    last] the columns still carrying it}): fluted shafts tapering up, the
+    whole ones crowned with the echinus and the square abacus, the broken
+    ones ending low; over the whole ones the architrave, the frieze of
+    triglyphs and metopes and the cornice."""
+    at, yaw = spec['at'], spec.get('yaw', 0)
+    n, gap, r, H = spec.get('columns', 6), spec.get('spacing', 190), spec.get('radius', 40), spec.get('height', 520)
+    broken = spec.get('broken', [1] * n)
+    place = local(at, yaw)
+    W, D, rise = (n - 1) * gap + 3.4 * r, 3.4 * r, 18
+    out = []
+    for k in range(3):
+        hw, hd = W / 2 + (2 - k) * 22, D / 2 + (2 - k) * 22
+        foot = [(-hw, -rise * k, -hd), (hw, -rise * k, -hd), (hw, -rise * k, hd), (-hw, -rise * k, hd)]
+        c = place(foot + [(x, -rise * (k + 1), z) for x, _, z in foot])
+        out += box_faces(c, ['pentelic'] * 6, light)[:-1]
+    y0, sides = -3 * rise, 10
+    tops = {}
+    for i in range(n):
+        x = -(n - 1) * gap / 2 + i * gap
+        (cx, _, cz), = place([(x, 0, 0)])
+        h = H * broken[i]
+        turn = np.radians(at[0] + yaw) + i
+        out += turned([(y0, r, (0, 63)), (y0 - h, r * (1 - 0.16 * h / H), (0, 63))], sides, cx, cz, 'flute', light, turn=turn,
+                      cap='pentelic' if broken[i] < 1 else False, wrap=2)
+        if broken[i] >= 1:
+            top = y0 - h
+            out += turned([(top, r * 0.84, (0, 63)), (top - 12, r * 1.14, (0, 63)), (top - 20, r * 1.3, (0, 63))], sides, cx, cz,
+                          'pentelic', light, turn=turn, cap=False)
+            a = 1.32 * r
+            c = place([(x + sx, top - 20 - dy, sz) for dy in (0, 13) for sx, sz in ((-a, -a), (a, -a), (a, a), (-a, a))])
+            out += box_faces(c, ['pentelic'] * 6, light)[:-1]
+            tops[i] = top - 33
+    if spec.get('entablature'):
+        i0, i1 = spec['entablature']
+        x0, x1 = -(n - 1) * gap / 2 + i0 * gap - 1.32 * r, -(n - 1) * gap / 2 + i1 * gap + 1.32 * r
+        y = min(tops[i] for i in range(i0, i1 + 1))
+        a = 1.32 * r
+        for y_a, y_b, grow, tex in ((y, y - 0.95 * r, 0, 'pentelic'), (y - 0.95 * r, y - 1.95 * r, 0, 'doric_frieze'),
+                                    (y - 1.95 * r, y - 2.35 * r, 14, 'pentelic')):
+            c = place([(xx, yy, zz) for yy in (y_a, y_b) for xx, zz in ((x0 - grow, -a - grow), (x1 + grow, -a - grow),
+                                                                         (x1 + grow, a + grow), (x0 - grow, a + grow))])
+            inside = np.mean(np.array(c, float), 0)
+            if tex == 'doric_frieze':
+                for j in (0, 2):
+                    i = (j + 1) % 4
+                    out += grid_faces(*wound([c[4 + j], c[4 + i], c[j], c[i]], inside), tex, light, inside, size=gap / 2)
+                for j in (1, 3):
+                    i = (j + 1) % 4
+                    out.append(face(wound([c[4 + j], c[4 + i], c[j], c[i]], inside), 'pentelic', light, inside))
+                out.append(face(wound([c[0], c[1], c[3], c[2]], inside), 'pentelic', light, inside))
+            else:
+                out += box_faces(c, ['pentelic'] * 6, light)
+    return out
+
+
+def column_drum(spec, light: dict, rnd) -> list:
+    """A fallen column drum ("column_drums": [degrees, distance, radius,
+    length, lying]): fluted, standing on its end or lying on its side
+    half sunk in the ground, its ends plain marble."""
+    deg, dist, r, length = spec[:4]
+    cx, cz = polar([deg, dist])
+    if len(spec) > 4 and spec[4]:
+        a = rnd.uniform(0, np.pi)
+        ux, uz = np.cos(a) * length / 2, np.sin(a) * length / 2
+        y = -r * 0.8
+        out = tube([(cx - ux, y, cz - uz), (cx + ux, y, cz + uz)], [r, r * 0.97], 10, 'flute', light)
+        d = np.array([ux, 0, uz]) / max(1e-6, np.hypot(ux, uz))
+        u = np.cross(d, [0, 1.0, 0]); u /= np.linalg.norm(u)
+        for s, (ex, ez) in ((-1, (cx - ux, cz - uz)), (1, (cx + ux, cz + uz))):
+            ring = [np.array([ex, y, ez]) + r * (np.cos(t) * u + np.sin(t) * np.array([0, 1.0, 0]))
+                    for t in 2 * np.pi * np.arange(11) / 10]
+            centre = (ex, y, ez)
+            for k in range(10):
+                out += both_ways(face([ring[k], ring[k + 1], centre, centre], 'pentelic', light,
+                                      (ex - s * d[0] * 100, y, ez - s * d[2] * 100)))
+        return above_ground(out)
+    return turned([(0, r, (0, 63)), (-length, r, (0, 63))], 10, cx, cz, 'flute', light, turn=rnd.uniform(0, 1), cap='pentelic',
+                  wrap=2)
+
+
+def ionic_capital(spec, light: dict, rnd) -> list:
+    """An Ionic capital fallen in the grass ("ionic_capitals": [degrees,
+    distance, size]): its volutes' face toward the fight and away, the
+    bolsters at its ends, tipped a little, sunk a little."""
+    s = spec[2]
+    w, d, h = 1.4 * s, 0.6 * s, 0.5 * s
+    foot = [(-w, 0, -d), (w, 0, -d), (w, 0, d), (-w, 0, d)]
+    c = posed(foot + [(x, -h, z) for x, _, z in foot], rnd.uniform(-8, 8), spec[0] + 180 + rnd.uniform(-25, 25), spec[:2],
+              h * 0.12)
+    return above_ground(box_faces(c, ['ionic', 'pentelic', 'ionic', 'pentelic', 'pentelic', 'pentelic'], light))
+
+
+def architrave_piece(spec, light: dict, rnd) -> list:
+    """A length of architrave fallen ("architraves": [degrees, distance,
+    length]): its three fasciae along both faces, tipped, sunk."""
+    L, h, d = spec[2] / 2, 34, 28
+    foot = [(-L, 0, -d), (L, 0, -d), (L, 0, d), (-L, 0, d)]
+    c = posed(foot + [(x, -2 * h, z) for x, _, z in foot], rnd.uniform(-6, 6), spec[0] + 90 + rnd.uniform(-30, 30), spec[:2],
+              h * 0.2)
+    return above_ground(box_faces(c, ['architrave', 'pentelic', 'architrave', 'pentelic', 'pentelic', 'pentelic'], light))
+
+
+def olive_tree(spec: dict, at, light: dict, rnd) -> list:
+    """An old olive ("olives": [degrees, distance, height], "olive":
+    "crown" radius, "clumps" of leaves on each limb): a short thick trunk,
+    gnarled, twisting and swelling, split in three or four limbs leaning
+    out and up; on each limb's end a rounded clump of the Athens
+    picture's leaf clumps, crossed every way, the clumps together a broad
+    low crown, lit from above (the lower leaves darker), stirring."""
+    H = at[2] if len(at) > 2 else spec.get('height', 380)
+    cx, cz = polar(at[:2])
+    out = []
+    lean = rnd.uniform(0, 2 * np.pi)
+    trunk = []
+    for t in (0, 0.2, 0.42, 0.62, 0.8):
+        wob = 18 * t + 6 * np.sin(t * 9 + lean)
+        trunk.append((cx + wob * np.sin(lean + t * 2.5), -H * 0.42 * t, cz + wob * np.cos(lean + t * 2.5)))
+    out += tube(trunk, [40, 30, 33, 26, 24], 6, 'olive_bark', light, turn=0.5)
+    tx, ty, tz = trunk[-1]
+    R = spec.get('crown', 220)
+    limbs = int(rnd.integers(3, 5))          # a tile holds 256 corners: few limbs, few clumps
+    ends = []
+    for k in range(limbs):
+        a = lean + 2 * np.pi * k / limbs + rnd.uniform(-0.35, 0.35)
+        reach = R * rnd.uniform(0.4, 0.62)
+        rise = H * rnd.uniform(0.66, 0.8)
+        mid = (tx + 0.5 * reach * np.sin(a + 0.3), (ty - rise) / 2 - 10, tz + 0.5 * reach * np.cos(a + 0.3))
+        end = (tx + reach * np.sin(a), -rise, tz + reach * np.cos(a))
+        out += tube([(tx, ty, tz), mid, end], [17, 11, 6], 4, 'olive_bark', light, turn=0.6)
+        ends.append((end, a))
+    ends.append(((tx, -H * 0.86, tz), 0.0))                  # the crown's top over the trunk
+    for (ex, ey, ez), a in ends:
+        n = spec.get('clumps', 7)
+        size = R * 0.62
+        for j in range(n):
+            # round the limb's end: a ball of crossed leaf clumps
+            th, ph = rnd.uniform(0, 2 * np.pi), rnd.uniform(-0.5, 1.0)
+            r = size * 0.45 * rnd.uniform(0.3, 1.0)
+            px, py, pz = ex + r * np.cos(ph) * np.sin(th), ey - r * 0.7 * np.sin(ph), ez + r * np.cos(ph) * np.cos(th)
+            spin = th + np.pi / 2 + rnd.uniform(-0.4, 0.4)
+            s = size * rnd.uniform(0.7, 1.0)
+            bough = j % 3 == 0
+            lit = 0.82 + 0.18 * np.clip((ey - py) / size + 0.5, 0, 1)
+            lv = tuple(min(255, 0x80 * lit * v) for v in (0.96, 1.0, 0.94))
+            rows, cols = OLIVE_BOUGH if bough else OLIVE_SPRAY
+            w, h = (s * 1.5, s * 0.75) if bough else (s, s)
+            out += card((px, py + h / 2, pz), (np.cos(spin), 0, np.sin(spin)), (0, -1, 0), w, h, 'flags', rows, cols, lv, 0.82)
+    return out
+
+
+def caryatid_figure(x: float, y0: float, z: float, k: float, turn: float, light: dict) -> list:
+    """A maiden carrying the roof on her head: a turned figure (the hem, the
+    skirt, the waist, the breast, the shoulders, the neck, the head),
+    her basket and its abacus on top."""
+    # few rings, six sides: a tile holds 256 corners, the porch six maidens
+    prof = [(0, 21, (56, 63)), (-22, 22, (44, 56)), (-126, 15, (17, 44)), (-160, 19, (10, 17)), (-176, 6.5, (8, 10)),
+            (-196, 9.5, (2, 8)), (-204, 8, (0, 2))]
+    out = turned([(y0 + k * y, k * r, rows) for y, r, rows in prof], 6, x, z, 'caryatid', light, turn=turn, cap=False)
+    top = y0 - 204 * k
+    out += turned([(top, 8 * k, (0, 63)), (top - 16 * k, 17 * k, (0, 63))], 6, x, z, 'pentelic', light, turn=turn, cap=False)
+    return out
+
+
+def caryatid_porch(spec: dict, light: dict) -> list:
+    """The Porch of the Maidens ("caryatid_porch": {"at", "yaw", "width",
+    "depth", "podium" height, "figure" height}): a marble podium, on it
+    four maidens in front and one at each back corner carrying the
+    architrave (its fasciae round it) and the flat roof slab over them."""
+    at, yaw = spec['at'], spec.get('yaw', 0)
+    w, d, ph, fh = spec.get('width', 400), spec.get('depth', 260), spec.get('podium', 150), spec.get('figure', 210)
+    place = local(at, yaw)
+    out = []
+    c = place([(x, y, z) for y in (0, -ph) for x, z in ((-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2))])
+    out += box_faces(c, ['pentelic'] * 6, light)[:-1]
+    k = fh / 210
+    spots = [(-w / 2 + 40 + (w - 80) * i / 3, d / 2 - 38) for i in range(4)] + [(-w / 2 + 40, -d / 2 + 38), (w / 2 - 40, -d / 2 + 38)]
+    for i, (x, z) in enumerate(spots):
+        (px, _, pz), = place([(x, 0, z)])
+        out += caryatid_figure(px, -ph, pz, k, np.radians(at[0] + yaw + 180) + np.pi / 8, light)
+    y = -ph - fh
+    for y_a, y_b, grow, texs in ((y, y - 46, 8, ['architrave'] * 4 + ['pentelic', 'pentelic']),
+                                 (y - 46, y - 76, 26, ['pentelic'] * 6)):
+        c = place([(xx, yy, zz) for yy in (y_a, y_b) for xx, zz in ((-w / 2 - grow, -d / 2 - grow), (w / 2 + grow, -d / 2 - grow),
+                                                                     (w / 2 + grow, d / 2 + grow), (-w / 2 - grow, d / 2 + grow))])
+        out += box_faces(c, texs, light)
+    return out
+
+
+def stele(spec, light: dict, rnd) -> list:
+    """A marble stele with a decree cut in it ("steles": [degrees,
+    distance]): a low base block, the slab standing in it, its faces
+    lettered, leaning a little."""
+    out = box_faces(posed([(x, y, z) for y in (0, -30) for x, z in ((-50, -26), (50, -26), (50, 26), (-50, 26))], 0, spec[0] + 180,
+                          spec[:2]), ['pentelic'] * 6, light)[:-1]
+    lean = rnd.uniform(-3, 3)
+    c = posed([(x, y, z) for y in (-30, -180) for x, z in ((-36, -10), (36, -10), (36, 10), (-36, 10))], lean, spec[0] + 180,
+              spec[:2])
+    out += box_faces(c, ['inscription', 'pentelic', 'inscription', 'pentelic', 'pentelic', 'pentelic'], light)[:-1]
+    return out
+
+
+def odeon_wall(spec: dict, light: dict) -> list:
+    """A fragment of the Odeon's curved outer wall ("odeon": {"from", "to"
+    degrees, "distance", "height", "thick"}): brown stone along the arc,
+    tiers of round arches on both its faces, its ends broken down in steps."""
+    a0, a1, R = spec['from'], spec['to'], spec['distance']
+    H, t = spec.get('height', 520), spec.get('thick', 70)
+    n = max(2, int(round(np.radians(abs(a1 - a0)) * R / spec.get('bay', 180))))
+    out = []
+    for k in range(n):
+        u = (k + 0.5) / n
+        h = H * min(1.0, 0.45 + 1.4 * min(u, 1 - u)) if spec.get('ruined', True) else H
+        h = H * round(h / H * 8) / 8
+        sa, sb = a0 + (a1 - a0) * k / n, a0 + (a1 - a0) * (k + 1) / n
+        c = arc_box(sa, sb, R, R + t, -h)
+        inside = np.mean(np.array(c, float), 0)
+        rows = (int(round(63 * (1 - h / H))), 63)
+        for j in range(4):
+            i = (j + 1) % 4
+            q = wound([c[4 + j], c[4 + i], c[j], c[i]], inside)
+            out.append(face(q, 'odeon', light, inside, rows=(0, 7) if j in (0, 2) else rows))
+        out.append(face(wound([c[4], c[5], c[7], c[6]], inside), 'odeon', light, inside, rows=(0, 7)))
+    return out
+
+
+# --- Nowhere Desert: red rock under the moon -----------------------------------
+
+def flat_level(light: dict, k: float = 1.0) -> tuple:
+    """A flat lit picture's colour (a card's): the ambient light and half
+    the sun's (the moon's), times k."""
+    rgb = (np.array(light['ambient'], float) + 0.5 * np.array(light['sun'], float)) * 0x80 * k
+    return tuple(int(v) for v in np.clip(np.round(rgb), 0, 255))
+
+
+def juniper(spec: dict, at, light: dict) -> list:
+    """A dead juniper ("junipers": [degrees, distance, height, seed]), as
+    the canyon's (dead_tree()): twisted trunk, bare forking branches."""
+    tree = dict(spec, at=at[:2], height=at[2] if len(at) > 2 else spec.get('height', 200),
+                seed=at[3] if len(at) > 3 else spec.get('seed', 4), perch_azimuth=at[0] + 70)
+    return dead_tree(tree, light)[0]
+
+
+def prickly_pear(spec: dict, at, light: dict, rnd) -> list:
+    """A prickly pear ("prickly_pears": [degrees, distance, pad height]): a
+    few pads standing on the ground, each bearing one or two more on its
+    top edge, each turned its own way, leaning out in its own plane; some
+    of the top ones flowering (the picture's second)."""
+    cx, cz = polar(at[:2])
+    size = at[2] if len(at) > 2 else spec.get('size', 34)
+    out = []
+    def pad(foot, yaw, tilt, h, depth):
+        along = np.array([np.cos(yaw), 0, np.sin(yaw)])
+        up = np.array([np.sin(tilt) * np.cos(yaw), -np.cos(tilt), np.sin(tilt) * np.sin(yaw)])
+        lv = flat_level(light, 0.85 + 0.1 * depth)
+        faces = card(foot, along, up, h * 0.66, h, 'pear_pad', (0, 63), (0, 63), lv, 0.8)
+        kids = int(rnd.integers(1, 3)) if depth < 2 else 0
+        if depth == 2 or (depth == 1 and not kids):
+            for f in faces:
+                f['var'] = int(rnd.uniform() < 0.5)
+        out.extend(faces)
+        for k in range(kids):
+            side = (k - (kids - 1) / 2) * 0.5 + rnd.uniform(-0.2, 0.2)
+            top = np.array(foot) + up * h * 0.92 + along * side * h * 0.4
+            pad(tuple(top), yaw + rnd.uniform(-0.6, 0.6), tilt + side * 0.9 + rnd.uniform(-0.2, 0.2), h * rnd.uniform(0.8, 0.95),
+                depth + 1)
+    for k in range(int(rnd.integers(2, 4))):
+        a = rnd.uniform(0, 2 * np.pi)
+        pad((cx + 12 * np.cos(a), 0, cz + 12 * np.sin(a)), rnd.uniform(0, np.pi), rnd.uniform(-0.25, 0.25),
+            size * rnd.uniform(0.9, 1.1), 0)
+    return out
+
+
+def cholla(spec, light: dict, rnd) -> list:
+    """A cholla ("chollas": [degrees, distance, height]): a short trunk,
+    branches of spiny joints bending up and out from it, each a chain of
+    short tubes."""
+    cx, cz = polar(spec[:2])
+    h = spec[2] if len(spec) > 2 else 130
+    trunk = [(cx, 0, cz), (cx + rnd.uniform(-5, 5), -h * 0.35, cz + rnd.uniform(-5, 5))]
+    out = tube(trunk, [8, 7], 5, 'cholla', light)
+    for k in range(int(rnd.integers(4, 6))):
+        a = 2 * np.pi * k / 5 + rnd.uniform(-0.4, 0.4)
+        p = np.array(trunk[1], float) + np.array([0, rnd.uniform(0, 0.2) * h, 0])
+        pts, rise = [tuple(p)], rnd.uniform(0.6, 1.1)
+        for j in range(3):
+            step = h * rnd.uniform(0.16, 0.24)
+            d = np.array([np.cos(rise) * np.sin(a), -np.sin(rise), np.cos(rise) * np.cos(a)])
+            p = p + d * step
+            pts.append(tuple(p))
+            rise = min(1.45, rise + rnd.uniform(0.15, 0.4)); a += rnd.uniform(-0.3, 0.3)
+        out += tube(pts, [6, 5, 4.5, 3.5], 4, 'cholla', light)
+    return out
+
+
+def steer_skull(spec, light: dict, rnd) -> list:
+    """A steer's skull left in the desert ("skulls": [degrees, distance,
+    size, height]): the picture lying on the ground (or height cm up), its
+    nose to the fight, its horns raised a little off the sand, and a few
+    bleached bones about it."""
+    cx, cz = polar(spec[:2])
+    size, lift = (spec[2] if len(spec) > 2 else 70), (spec[3] if len(spec) > 3 else 0)
+    a = np.radians(spec[0])
+    toward = np.array([-np.sin(a), 0, -np.cos(a)])
+    across = np.array([np.cos(a), 0, -np.sin(a)])
+    up = -0.94 * toward + np.array([0, -0.34, 0])
+    foot = np.array([cx, -lift - 1, cz]) + toward * size * 0.45
+    out = card(tuple(foot), across, up / np.linalg.norm(up), size, size, 'skull', (0, 63), (0, 63), flat_level(light, 1.0), 0.9)
+    for k in range(3):
+        q = rnd.uniform(0, 2 * np.pi)
+        bx, bz = cx + 60 * np.cos(q + k * 2), cz + 60 * np.sin(q + k * 2)
+        d = np.array([np.cos(q), 0, np.sin(q)]) * rnd.uniform(14, 22)
+        out += tube([(bx - d[0], -3, bz - d[2]), (bx + d[0], -3, bz + d[2])], [3.2, 2.6], 4, 'bone', light)
+    return out
+
+
+def petroglyph_rock(spec: dict, light: dict) -> list:
+    """A boulder of varnished sandstone with petroglyphs ("petroglyphs":
+    {"at" [degrees, distance], "width", "height", "depth", "lean"}): its
+    pecked face turned to the fight, leaning back a little, the top
+    narrower than the foot."""
+    w, h, d = spec.get('width', 220), spec.get('height', 160), spec.get('depth', 80)
+    pts = [(x, 0, z) for x, z in ((-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2))]
+    pts += [(x * 0.82, -h, z * 0.7) for x, _, z in pts]
+    c = posed(pts, -spec.get('lean', 8), spec['at'][0] + 180, spec['at'], 6)
+    return above_ground(box_faces(c, ['redrock', 'redrock', 'petroglyph', 'redrock', 'redrock_top', 'redrock'], light))
+
+
+def barb_fence(spec: dict, light: dict, rnd) -> list:
+    """An old ranch fence ("barb_fences": {"from", "to" [degrees,
+    distance], "posts", "height", "broken" [spans without wire], "lean"}):
+    grey weathered posts, some leaning, three strands of barbed wire
+    between them."""
+    a, b = np.array(polar(spec['from'])), np.array(polar(spec['to']))
+    n, H = spec.get('posts', 5), spec.get('height', 120)
+    along = (b - a) / max(1e-6, np.linalg.norm(b - a))
+    out, tops = [], []
+    for k in range(n):
+        p = a + (b - a) * k / (n - 1)
+        lean = np.radians(rnd.uniform(-1, 1) * spec.get('lean', 8))
+        h = H * rnd.uniform(0.92, 1.05)
+        top = (p[0] + np.sin(lean) * h * along[0], -h, p[1] + np.sin(lean) * h * along[1])
+        out += tube([(p[0], 4, p[1]), top], [6.5, 5.5], 4, 'driftwood', light)
+        tops.append(top)
+    for k in range(n - 1):
+        if k in spec.get('broken', []):
+            continue
+        m = (np.array(tops[k]) + np.array(tops[k + 1])) / 2
+        span = np.array(tops[k + 1]) - np.array(tops[k])
+        w = np.hypot(span[0], span[2])
+        out += card((m[0], -0.12 * H, m[2]), (span[0] / w, 0, span[2] / w), (0, -1, 0), w, 0.75 * H, 'barbwire', (0, 63), (0, 63),
+                    flat_level(light, 1.0), 1.0)
+    return out
+
+
+def radial(at) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """At [degrees, distance]: the foot (x, 0, z), the way to the fight's
+    middle and the way across it (left to right as seen from the middle)."""
+    a = np.radians(at[0])
+    cx, cz = polar(at[:2])
+    return np.array([cx, 0.0, cz]), np.array([-np.sin(a), 0, -np.cos(a)]), np.array([np.cos(a), 0, -np.sin(a)])
+
+
+def trex_skull(spec: dict, light: dict) -> list:
+    """The T-Rex's skull, whole, lying on the ground with its jaws open
+    ("trex": {"at" [degrees, distance], "turn" degrees, "length" cm,
+    "gape" degrees, "sink" cm, "sides"}): the lower jaw on the ground, the
+    skull raised on the hinge at its back. Each a closed body of rings
+    ("sides" round) along it, its ends capped: the skull flat underneath
+    (the tooth row), narrower toward its top, its snout rounded, deep at
+    the eyes and wide at the cheeks; the jaw flat on top. The openings
+    (nostril, the big one before the eye, the eye socket, the one behind
+    it, the jaw's) dark; long cone teeth hanging from the skull's edges,
+    shorter ones standing on the jaw's, the biggest in the middle."""
+    foot, toward, across = radial(spec['at'])
+    t = np.radians(spec.get('turn', 0))
+    axis = across * np.cos(t) + toward * np.sin(t)
+    side = np.cross(axis, [0, 1.0, 0]); side /= np.linalg.norm(side)
+    L = spec.get('length', 420); k = L / 360
+    gape, sink = np.radians(spec.get('gape', 22)), spec.get('sink', 8)
+    n = spec.get('sides', 12)
+    # (along 0..1 from the snout, height, width)
+    skull = [(0.0, 26, 26), (0.03, 46, 38), (0.10, 58, 48), (0.20, 66, 52), (0.32, 76, 56), (0.45, 88, 62),
+             (0.56, 100, 70), (0.64, 116, 84), (0.72, 140, 104), (0.80, 152, 124), (0.88, 158, 140), (0.95, 140, 132),
+             (1.0, 100, 96)]
+    jaw = [(0.02, 30, 32), (0.10, 38, 42), (0.25, 44, 50), (0.45, 52, 58), (0.60, 62, 72), (0.75, 78, 92),
+           (0.88, 84, 108), (0.95, 68, 100)]
+    hinge, hinge_h = 0.9 * L, 72 * k
+
+    def place(u, y, s, upper):
+        if upper:
+            du = u - hinge
+            u, y = hinge + du * np.cos(gape) - y * np.sin(gape), y * np.cos(gape) + du * np.sin(gape) - hinge_h
+        return foot + axis * (u - L / 2) + side * s + np.array([0, y + sink, 0])
+
+    def ring(u, h, w, upper):
+        out = []
+        for j in range(n):
+            a = 2 * np.pi * j / n
+            c, sn = np.cos(a), np.sin(a)
+            # the skull flat underneath, the jaw flat on top
+            e = (0.22 if sn < 0 else 0.7) if upper else (0.22 if sn > 0 else 0.7)
+            z = w / 2 * np.sign(c) * abs(c) ** 0.6 * (1 - (0.4 if upper else 0.15) * max(0.0, sn))
+            y = -h / 2 * (1 + np.sign(sn) * abs(sn) ** e)
+            out.append(place(u, y, z, upper))
+        return out
+
+    up_r, up_l = [0, 1, 2], [n // 2 - 3, n // 2 - 2, n // 2 - 1]           # the upper half's faces, right and left
+    lo_r, lo_l = [n - 1, n - 2], [n // 2, n // 2 + 1]
+
+    def shade(stations, upper, f, j):
+        if upper:
+            if 0.03 <= f < 0.10 and j in (up_r[1], up_l[1]): return 0.4               # the nostril
+            if 0.45 <= f < 0.64 and j in (up_r[0], up_r[1], up_l[1], up_l[2]):
+                return 0.3 if j in (up_r[1], up_l[1]) else 0.45                     # the big opening before the eye
+            if 0.72 <= f < 0.80 and j in (up_r[1], up_r[2], up_l[0], up_l[1]):
+                return 0.12 if j in (up_r[1], up_l[1]) else 0.3                     # the eye socket
+            if 0.88 <= f < 0.95 and j in (up_r[0], up_l[2]): return 0.35             # behind the eye
+            return None
+        if 0.60 <= f < 0.75 and j in (lo_r[0], lo_l[0]): return 0.35                 # the jaw's
+        return None
+
+    def body(stations, upper):
+        rings = [ring(f * L, h * k, w * k, upper) for f, h, w in stations]
+        out = []
+        for i in range(len(rings) - 1):
+            inside = (np.mean(rings[i], 0) + np.mean(rings[i + 1], 0)) / 2
+            for j in range(n):
+                q = [rings[i + 1][j], rings[i + 1][(j + 1) % n], rings[i][j], rings[i][(j + 1) % n]]
+                fc = face(wound(q, inside), 'fossil', light, inside, var=j)
+                d = shade(stations, upper, stations[i][0], j)
+                if d:
+                    fc['colors'] = [tuple(int(v * d) for v in c) for c in fc['colors']]
+                out.append(fc)
+        for r, other in ((rings[0], rings[1]), (rings[-1], rings[-2])):
+            centre = np.mean(r, 0)
+            inside = (centre + np.mean(other, 0)) / 2
+            for j in range(n):
+                out.append(face(wound([r[j], r[(j + 1) % n], centre, centre], inside), 'fossil', light, inside, var=j))
+        return out
+
+    out = body(skull, True) + body(jaw, False)
+    width = lambda tab, f: np.interp(f, [x for x, _, _ in tab], [w for _, _, w in tab]) * k
+    height = lambda tab, f: np.interp(f, [x for x, _, _ in tab], [h for _, h, _ in tab]) * k
+    size = lambda f: 0.55 + 0.45 * np.sin(np.pi * np.clip((f - 0.02) / 0.62, 0, 1)) ** 0.7  # the middle ones the biggest
+    for f in np.arange(0.035, 0.64, 0.046):
+        tl, tr = 46 * k * size(f), 8 * k * size(f)
+        for sg in (-1, 1):
+            s = sg * width(skull, f) * 0.4
+            root = place(f * L, -6, s, True)
+            tip = place(f * L + 0.18 * tl, tl, s * 1.04, True)
+            out += tube([tip, root], [0, tr], 3, 'tooth', light)          # the point first: the engine culls a face by its first three corners
+            if 0.06 < f < 0.6:
+                s = sg * width(jaw, f) * 0.4
+                y0 = -height(jaw, f)
+                out += tube([place(f * L - 0.15 * tl, y0 - 0.75 * tl, s * 1.04, False), place(f * L, y0 + 6, s, False)],
+                            [0, tr * 0.9], 3, 'tooth', light)
+    return out
+
+
+def rib_cage(spec: dict, light: dict) -> list:
+    """A great beast's ribs standing up out of the ground ("rib_cages":
+    {"at" [degrees, distance], "turn" degrees, "ribs" pairs, "height",
+    "width", "spacing" cm}): it lies on its back, its backbone half sunk
+    along the ground, the ribs curving out from it either side, then up and
+    in again, their tips apart, the middle ones the longest."""
+    foot, toward, across = radial(spec['at'])
+    t = np.radians(spec.get('turn', 0))
+    axis = across * np.cos(t) + toward * np.sin(t)
+    side = np.cross(axis, [0, 1.0, 0]); side /= np.linalg.norm(side)
+    n, H, W, gap = spec.get('ribs', 7), spec.get('height', 220), spec.get('width', 120), spec.get('spacing', 44)
+    out = []
+    half = (n - 1) / 2 * gap
+    spine = [foot + axis * s + np.array([0, -4 + 8 * (abs(s) / (half + 160)) ** 2, 0])
+             for s in np.linspace(-half - 160, half + 160, 11)]
+    out += tube(spine, [12] * 4 + [13] * 3 + [12] * 4, 5, 'fossil', light)
+    r = H / 1.74                               # the curve's radius: its top at H
+    for k in range(n):
+        s = -half + k * gap
+        f = 1 - 0.4 * (abs(k - (n - 1) / 2) / max(1, (n - 1) / 2)) ** 2
+        for sg in (-1, 1):
+            pts = [foot + axis * (s + 5 * th) + side * sg * W * np.sin(th) + np.array([0, -r * f * (1 - np.cos(th)) + 2, 0])
+                   for th in np.linspace(0.2, 2.4 * f, 5)]
+            out += tube(pts, list(np.linspace(8, 3, 5)), 4, 'fossil', light)
+    return out
+
+
+def bone_bed(spec: dict, light: dict) -> list:
+    """A smaller skeleton half dug out where it lay ("skeletons": {"at"
+    [degrees, distance], "turn" degrees, "length" cm}): its backbone a
+    curve along the ground, sunk to half its depth, its tail thinning to a
+    point, short ribs arching out of the earth either side, the skull
+    (the raptor's picture) at its head, leaning on the ground."""
+    foot, toward, across = radial(spec['at'])
+    t = np.radians(spec.get('turn', 0))
+    axis = across * np.cos(t) + toward * np.sin(t)
+    side = np.cross(axis, [0, 1.0, 0]); side /= np.linalg.norm(side)
+    L = spec.get('length', 300)
+    g = L / 300                                       # its other measures grow with it
+    pts, radii = [], []
+    for k in np.linspace(0, 1, 9):
+        pts.append(foot + axis * (k - 0.5) * L + side * 26 * g * np.sin(k * 2 * np.pi) + np.array([0, 1, 0]))
+        radii.append((8 * (1 - k) ** 0.6 + 1.5) * g)
+    out = tube(pts, radii, 5, 'fossil', light)
+    head = pts[0] - axis * 30 * g
+    for k in range(6):
+        c = pts[1] + (pts[3] - pts[1]) * k / 5
+        r = 1 - 0.4 * abs(k - 2.5) / 2.5
+        for sg in (-1, 1):
+            arc = [c + side * sg * 50 * g * r * np.sin(th) + np.array([0, -34 * g * r * np.sin(2 * th) + 6 * th, 0])
+                   for th in np.linspace(0.1, 1.45, 5)]
+            out += tube(arc, [4 * g, 3.6 * g, 3 * g, 2.6 * g, 2.2 * g], 4, 'fossil', light)
+    lean = np.radians(spec.get('skull_lean', 55))
+    to_fight = -side if side @ toward < 0 else side
+    up = np.array([0, -np.cos(lean), 0]) + to_fight * np.sin(lean)
+    up /= np.linalg.norm(up)
+    out += card(tuple(head + np.array([0, 2, 0])), -axis, up, spec.get('skull', 80), spec.get('skull', 80), 'raptor',
+                (0, 63), (0, 63), flat_level(light, 1.0), 0.85)
+    for leg in (0.35, 0.6):
+        p = pts[int(leg * 8)]
+        sg = 1 if leg < 0.5 else -1
+        out += tube([p + side * sg * 12 * g, p + (side * sg * 60 - axis * 20) * g + np.array([0, -10 * g, 0]),
+                     p + (side * sg * 95 + axis * 10) * g + np.array([0, 2, 0])], [6 * g, 4.5 * g, 4 * g], 4, 'fossil', light)
+    return out
+
+
+def loose_bone(spec, light: dict, rnd) -> list:
+    """A bone lying in the grass ("bones": [degrees, distance, kind, size,
+    yaw]): "femur" a thigh bone, its ends knobbed; "claw" a hooked claw;
+    "tooth" a long curved tooth; "vertebra" a backbone's piece, its spine
+    up."""
+    foot = np.array(polar(spec[:2]))
+    kind, size = spec[2], spec[3] if len(spec) > 3 else 60
+    yaw = np.radians(spec[4] if len(spec) > 4 else rnd.uniform(0, 360))
+    d = np.array([np.cos(yaw), 0, np.sin(yaw)])
+    c = np.array([foot[0], 0, foot[1]])
+    if kind == 'femur':
+        r = size / 10
+        pts = [c - d * size / 2 + np.array([0, -r * 0.5, 0]), c - d * size * 0.38, c + d * size * 0.38,
+               c + d * size / 2 + np.array([0, -r * 0.5, 0])]
+        return tube(pts, [r * 1.6, r * 0.9, r * 0.9, r * 1.5], 5, 'fossil', light)
+    if kind == 'claw':
+        pts = [c - d * size / 2 + np.array([0, -size * 0.1 * np.sin(np.pi * k / 4), 0]) + d * size * k / 4 for k in range(5)]
+        pts = [p + np.array([0, -size * 0.35 * (k / 4) ** 2, 0]) for k, p in enumerate(pts)]
+        return tube(pts, [size / 7, size / 8, size / 10, size / 15, size / 40], 4, 'fossil', light)
+    if kind == 'tooth':
+        pts = [c - d * size / 2 + d * size * k / 3 + np.array([0, -size * 0.12 * k * (3 - k) / 2 - 2, 0]) for k in range(4)]
+        return tube(pts, [size / 7, size / 8, size / 12, size / 40], 4, 'fossil', light)
+    r = size / 2
+    out = tube([c - d * r * 0.5 + np.array([0, -r * 0.45, 0]), c + d * r * 0.5 + np.array([0, -r * 0.45, 0])], [r * 0.5, r * 0.5], 6,
+               'fossil', light)
+    return out + tube([c + np.array([0, -r * 0.8, 0]), c + np.array([0, -r * 1.9, 0]) - d * r * 0.3], [r * 0.25, r * 0.12], 4,
+                      'fossil', light)
+
+
+def ammonite(spec, light: dict) -> list:
+    """An ammonite in its stone ("ammonites": [degrees, distance, size cm,
+    tilt degrees]): lying in the grass, tilted up toward the fight."""
+    foot, toward, across = radial(spec[:2])
+    size, tilt = (spec[2] if len(spec) > 2 else 40), np.radians(spec[3] if len(spec) > 3 else 25)
+    up = -toward * np.cos(tilt) + np.array([0, -np.sin(tilt), 0])
+    return card(tuple(foot + toward * size * 0.45 + np.array([0, -1, 0])), across, up, size, size, 'ammonite', (0, 63), (0, 63),
+                flat_level(light, 1.0), 0.85)
+
+
 def scenery(cfg: dict, tex: dict, tile_size: int, flip: bool) -> tuple[decode.Geometry, dict]:
     """The scenery's faces in the base stage's 16 x 16 tiles: each face in
     the tile of its middle, the nearer first (the game draws a tile's last
@@ -5711,6 +7794,8 @@ def scenery(cfg: dict, tex: dict, tile_size: int, flip: bool) -> tuple[decode.Ge
         faces += thurible(spec['thurible'], light)
     for c in spec.get('chandeliers', []):
         faces += chandelier(spec.get('chandelier', {}), c, light)
+    for g in spec.get('flash_patches', []):
+        faces += glass_light(spec.get('flash', {}), g, 'flashwin', None)
     for g in spec.get('glass_patches', []):     # the add-on's: the patch drawn at runtime (T2GL), the shaft here
         faces += glass_light(spec.get('glass', {}), g, patch_on=not RESERVED)
     for r in spec.get('shimenawas', []):
@@ -5732,7 +7817,67 @@ def scenery(cfg: dict, tex: dict, tile_size: int, flip: bool) -> tuple[decode.Ge
         faces += stump(st, light, rnd)
     for m in spec.get('mushrooms', []):
         faces += mushrooms(m, light, rnd)
-    geo = decode.Geometry(tile_size)
+    for w in spec.get('ruin_walls', []):
+        faces += ruin_wall(w, light, rnd)
+    for r in spec.get('nagas', []):
+        faces += naga_balustrade(spec.get('naga', {}), r, light)
+    for b in spec.get('khmer_blocks', []):
+        faces += fallen_blocks(b, light, rnd)
+    for t in spec.get('terraces', []):
+        faces += laterite_steps(t, light)
+    if spec.get('fig'):
+        faces += strangler_fig(spec['fig'], light, rnd)
+    for p in spec.get('palms', []):
+        faces += sugar_palm(spec.get('palm', {}), p, light, rnd)
+    if spec.get('stilt_house'):
+        faces += stilt_house(spec['stilt_house'], light)
+    if spec.get('boat'):
+        faces += longtail_boat(spec['boat'], light)
+    for r in spec.get('nets', []):
+        faces += net_poles(spec.get('net', {}), r, light)
+    for p in spec.get('lotus_ponds', []):
+        faces += lotus_pond(spec, p, rnd)
+    for c in spec.get('colonnades', []):
+        faces += doric_colonnade(c, light)
+    for d in spec.get('column_drums', []):
+        faces += column_drum(d, light, rnd)
+    for b in spec.get('marble_blocks', []):
+        faces += wall_rubble(b[:2], b[2], light, rnd, 'pentelic')
+    for c in spec.get('ionic_capitals', []):
+        faces += ionic_capital(c, light, rnd)
+    for a in spec.get('architraves', []):
+        faces += architrave_piece(a, light, rnd)
+    for o in spec.get('olives', []):
+        faces += olive_tree(spec.get('olive', {}), o, light, rnd)
+    if spec.get('caryatid_porch'):
+        faces += caryatid_porch(spec['caryatid_porch'], light)
+    for s in spec.get('steles', []):
+        faces += stele(s, light, rnd)
+    if spec.get('odeon'):
+        faces += odeon_wall(spec['odeon'], light)
+    for j in spec.get('junipers', []):
+        faces += juniper(spec.get('juniper', {}), j, light)
+    for pp in spec.get('prickly_pears', []):
+        faces += prickly_pear(spec.get('prickly_pear', {}), pp, light, rnd)
+    for c in spec.get('chollas', []):
+        faces += cholla(c, light, rnd)
+    for k in spec.get('skulls', []):
+        faces += steer_skull(k, light, rnd)
+    for g in spec.get('petroglyphs', []):
+        faces += petroglyph_rock(g, light)
+    for f in spec.get('barb_fences', []):
+        faces += barb_fence(f, light, rnd)
+    if spec.get('trex'):
+        faces += trex_skull(spec['trex'], light)
+    for r in spec.get('rib_cages', []):
+        faces += rib_cage(r, light)
+    for s in spec.get('skeletons', []):
+        faces += bone_bed(s, light)
+    for b in spec.get('bones', []):
+        faces += loose_bone(b, light, rnd)
+    for a in spec.get('ammonites', []):
+        faces += ammonite(a, light)
+    geo =decode.Geometry(tile_size)
     slots = decode.Arcade.slot_table()
     tiles = {i: [] for i in range(256)}
     dropped = 0
@@ -5788,7 +7933,8 @@ def scenery(cfg: dict, tex: dict, tile_size: int, flip: bool) -> tuple[decode.Ge
             if f.get('added'): tpage |= 0x20
             ps.append(kind(GT4, 'GT4', tuple(idx), tuple(uv), cy << 6 | cx >> 4, tpage, tuple(colors)))
         if len(verts) > 256:
-            raise SystemExit(f'tile {i}: {len(verts)} vertices (256 at most): smaller pieces or a bigger tile size')
+            raise SystemExit(f'tile {i}: {len(verts)} vertices (256 at most): smaller pieces or a bigger tile size'
+                             + ''.join(f', tile {j}' for j in range(i + 1, 256) if len({c for f in tiles[j] for c in f['corners']}) > 256))
         geo.tiles.append(decode.Tile(i, [tuple(v) for v in verts], ps, slot=1 + slots[i]))
         prims += len(ps)
     return geo, dict(faces=len(faces), prims=prims, dropped=dropped, thinned=thinned,
@@ -5919,6 +8065,26 @@ def palette_run(vr: Vram, y: int, palettes: list) -> int:
         vr.v[y, 16 * k:16 * k + 16] = colours
     vr.rects.append(('clut', 0, y, 16 * len(palettes), 1, 4))
     return y
+
+
+def palette_frames(vr: Vram, row: int, frames: list) -> list:
+    """An animation's frames of palettes (the shown run on row): each a
+    run under it on the low half (palette_run(): the relocation moves it),
+    or, in the add-on's packs (RESERVED), past the VRAM, one row of a RAM
+    band each (Vram.ram(): (x, y) its place; tools/t2_remake_stages.py
+    frames_out() takes it into T2AN), off the high half's palette room;
+    only while PALETTE_RAM (the last five: the Pagoda's packs as they were)."""
+    if not RESERVED or not PALETTE_RAM or len(frames) > 64:
+        return [palette_run(vr, row - 1 - f, pals) for f, pals in enumerate(frames)]
+    w = 16 * len(frames[0])
+    at = vr._ram_run((w + 15) // 16)
+    x, y = (at % 64) * 16, 512 + (at // 64) * 64
+    out = []
+    for f, pals in enumerate(frames):
+        vr.v[y + f, x:x + w] = np.concatenate([np.asarray(p, np.uint16) for p in pals])
+        vr.rects.append(('image', x, y + f, w, 1, 4))
+        out.append((x, y + f))
+    return out
 
 
 WINDOW_ROW = 511                     # the lit cells' palettes (low half rows): shown, then the frames under it
@@ -6137,11 +8303,18 @@ def pagoda_lights(cfg: dict, pic: np.ndarray) -> tuple[dict, tuple, tuple]:
     fn = spec.get('frames', 48)
     t = 2 * np.pi * np.arange(fn) / fn
     levels = []
-    for _ in groups:
-        k = rnd.permutation([3, 5, 7, 11, 13])[:3]
+    # "fires" [[x, y, depth], ...] pixels of the player's picture: the group
+    # nearest burns that deep, faster (Eternal Darkness's hearth)
+    fires = {}
+    for fx, fy, fd in spec.get('fires', []):
+        cx = (fx - x0) * sx
+        if groups:
+            fires[int(np.argmin([abs(np.mean(gr) - cx) for gr in groups]))] = fd
+    for gi, _ in enumerate(groups):
+        k = rnd.permutation([3, 5, 7, 11, 13])[:3] * (2 if gi in fires else 1)
         ph = rnd.uniform(0, 2 * np.pi, 3)
         lv = 1 + 0.5 * np.sin(k[0] * t + ph[0]) + 0.3 * np.sin(k[1] * t + ph[1]) + 0.2 * np.sin(k[2] * t + ph[2])
-        lv = 1 + spec.get('depth', 0.14) * (lv - 1)
+        lv = 1 + fires.get(gi, spec.get('depth', 0.14)) * (lv - 1)
         for _ in range(int(rnd.integers(1, 3))):         # a gust: the flames bow, the light drops a moment
             s = int(rnd.integers(fn))
             for i, d in enumerate((0.8, 0.7, 0.85)):
@@ -6154,6 +8327,28 @@ def pagoda_lights(cfg: dict, pic: np.ndarray) -> tuple[dict, tuple, tuple]:
             env[k, (s + i) % ne] = max(env[k, (s + i) % ne], a)
     red = np.array(es.get('colour', [255, 40, 18]) if es else [0, 0, 0], float)
     reach = spec.get('reach', 90)
+    # "rain" {"windows": [[x0, y0, x1, y1], ...] pixels of the player's
+    # picture, "slant", "density", "dash", "colour"}: rain running down the
+    # windows' glass (its bluish pixels), its drops' pixels four colours of
+    # a cell's palette lit one after another (Eternal Darkness)
+    rain = np.full((h, w), -1)
+    rs = spec.get('rain')
+    if rs:
+        yy, xx = np.mgrid[0:h, 0:w]
+        glass = np.zeros((h, w), bool)
+        for wx0, wy0, wx1, wy1 in rs['windows']:
+            glass[max(0, int((wy0 - y0) * sy)):int((wy1 - y0) * sy), max(0, int((wx0 - x0) * sx)):int((wx1 - x0) * sx)] = True
+        glass &= b > r + rs.get('blue', 4)
+        rr = np.random.default_rng(rs.get('seed', 21))
+        track = np.floor(xx - rs.get('slant', 0.12) * yy).astype(int)
+        lo = track.min()
+        on = rr.uniform(0, 1, track.max() - lo + 1) < rs.get('density', 0.3)
+        off = rr.integers(0, 64, track.max() - lo + 1)
+        dash = rs.get('dash', 4)
+        rain = np.where(glass & on[track - lo], ((yy + off[track - lo]) // dash) % 4, -1)
+    rain_rgb = np.array(rs.get('colour', [70, 80, 104]) if rs else [0, 0, 0], float)
+    if rs and not es:
+        ne = fn                     # the windows' cells: the eyes' run, kept in step with the candles
     own, ecells, ccells, eframes, cframes = {}, [], [], [[] for _ in range(ne)], [[] for _ in range(fn)]
     near = []                                      # (the add-on's) each candle cell's distance
     for row in range(h // 64):
@@ -6182,11 +8377,36 @@ def pagoda_lights(cfg: dict, pic: np.ndarray) -> tuple[dict, tuple, tuple]:
                     eframes[f].append([int(v) or 0x0421 for v in bgr555(np.clip(lit_rgb, 0, 255))])
                 own[row, col] = (eframes[0][-1], full)
                 continue
-            if not centres:
+            wet = rain[64 * row:64 * row + 64, 64 * col:64 * col + 64]
+            if not centres and not (wet >= 0).any():
                 continue
             cy, cx = 64 * row + 31.5, 64 * col + 31.5
             # the nearest flame to the cell (its nearest point)
-            d, g = min((np.hypot(max(0, abs(fy - cy) - 32), max(0, abs(fx - cx) - 32)), g) for fy, fx, g in centres)
+            d, g = min((np.hypot(max(0, abs(fy - cy) - 32), max(0, abs(fx - cx) - 32)), g) for fy, fx, g in centres)                 if centres else (1e9, 0)
+            if (wet >= 0).any():
+                # a window's cell: 12 colours of its picture, then the drops' 4
+                dry = wet < 0
+                cs, di = few(part[dry], 12)
+                idx = np.zeros((64, 64), np.int64)
+                idx[dry] = di
+                drop_off = []
+                for k in range(4):
+                    m = wet == k
+                    idx[m] = 12 + k
+                    drop_off.append(part[m].mean(0) if m.any() else np.zeros(3))
+                cs = cs + [0x0421] * (12 - len(cs))
+                rgb = rgb_of(np.array(cs, np.uint16))
+                lv = rgb @ np.array([0.3, 0.59, 0.11])
+                warm = np.clip((rgb[:, 0] - rgb[:, 2]) / np.maximum(rgb[:, 0], 1) * 1.6, 0, 1)
+                wgt = (np.clip((lv - 12) / 90, 0, 1) * warm)[:, None] if d <= reach else np.zeros((12, 1))
+                ecells.append((row, col))
+                for f in range(fn):
+                    v = rgb * (1 + (levels[g][f] - 1) * wgt) if centres else rgb
+                    drops = [o * 0.45 + rain_rgb if k == f % 4 else o for k, o in enumerate(drop_off)]
+                    full = np.concatenate([v, np.array(drops)])
+                    eframes[f].append([int(c) or 0x0421 for c in bgr555(np.clip(full, 0, 255))])
+                own[row, col] = (eframes[0][-1], idx)
+                continue
             if d > reach:
                 continue
             colours, idx = sixteen(part)
@@ -6361,7 +8581,7 @@ def water_frames(cells: list, row: np.ndarray, spec: dict) -> list:
     n, amp, y0 = spec.get('frames', 6), spec.get('ripple', 1.2), spec.get('from', 14)
     h, w = row.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(float)
-    grow = np.clip((yy - y0 + 1) / max(1, h - y0), 0, 1) * (yy >= y0)
+    grow = np.clip((yy - y0 + 1) / max(1, h - y0), 0, 1) * (yy >= y0) * (yy < spec.get('to', h))
     lum = row @ np.array([0.3, 0.59, 0.11])
     path = (yy >= y0) & (lum > np.percentile(lum[int(y0):], 75))
     twinkle = np.random.default_rng(spec.get('seed', 33)).uniform(0, 1, (h, w))
@@ -6633,18 +8853,20 @@ def flagpole(spec: dict, light: dict) -> list:
     at, h = spec['at'], spec.get('height', 560)
     cx, cz = polar(at)
     out = box_faces(posed([(x, y, z) for y in (0, -30) for x, z in ((-34, -34), (34, -34), (34, 34), (-34, 34))], 0, at[0], at),
-                    ['granite'] * 4 + ['slab', 'granite'], light)
+                    [spec.get('plinth', 'granite')] * 4 + [spec.get('plinth', 'slab'), spec.get('plinth', 'granite')], light)
     out += turned([(-30, 7, (0, 63)), (-h, 3.5, (0, 63))], 6, cx, cz, 'pole', light, cap=False)
     out += turned([(-h, 3, (0, 63)), (-h - 6, 7, (0, 63)), (-h - 13, 6, (0, 63)), (-h - 16, 1, (0, 63))], 6, cx, cz, 'brass', light,
                   cap=False)
     w = spec.get('flag', 170)
-    ht = w * 26 / 42
+    greek = spec.get('picture') == 'greek'          # Athens: the Greek flag of the Athens picture
+    ht = w * (2 / 3 if greek else 26 / 42)
     a = np.radians(at[0] + spec.get('flies', 90))          # the way the wind blows it, from +z
     dx, dz = w * np.sin(a), w * np.cos(a)
     top = -h + 6
     q = [(cx, top, cz), (cx + dx, top + 4, cz + dz), (cx, top + ht, cz), (cx + dx, top + ht + 4, cz + dz)]
     flat = {'azimuth': 0, 'elevation': 90, 'ambient': [0.95, 0.88, 0.84], 'sun': [0, 0, 0]}
-    out += both_ways(face(q, 'nyc', flat, (0, 0, 0), rows=US_FLAG, cols=(0, 41)))
+    out += both_ways(face(q, 'flags', flat, (0, 0, 0), rows=GREEK_FLAG[0], cols=GREEK_FLAG[1]) if greek else
+                     face(q, 'nyc', flat, (0, 0, 0), rows=US_FLAG, cols=(0, 41)))
     return out
 
 
@@ -7443,6 +9665,182 @@ def rabbit_model(pose: str = '', scale: float = 1.0) -> list[dict]:
     return faces
 
 
+def vulture_picture(vr: Vram, tint=(1, 1, 1)):
+    """Turkey vultures' colours in the gull's regions: "dark" the black
+    wing coverts, "light" the silvery flight feathers, "white" the black
+    brown body; in the yellow corner's quarters the bare red head ("red")
+    and Nowhere Desert's lizards: "fur" a desert iguana's sandy back, "eye"
+    black, "horn" its pale belly. tint: the night's light on all of it."""
+    rnd = np.random.default_rng(13)
+    img = np.zeros((64, 64, 3))
+    for (x, y, w), rgb in (((0, 0, 32), (34, 30, 30)), ((32, 0, 32), (124, 120, 122)), ((0, 32, 32), (46, 40, 38)),
+                           ((32, 32, 16), (178, 62, 50)), ((48, 32, 16), (164, 142, 112)), ((32, 48, 16), (22, 18, 18)),
+                           ((48, 48, 16), (210, 196, 170))):
+        img[y:y + w, x:x + w] = np.clip(np.array(rgb) * np.array(tint, float) * (1 + 0.06 * rnd.normal(0, 1, (w, w)))[..., None],
+                                        0, 255)
+    colours, idx = sixteen(img)
+    return vr.picture(idx, colours)
+
+
+def vulture_model(pose: str, scale: float = 1.0) -> list[dict]:
+    """Faces of a turkey vulture (as gull_model(): cm, x right, y down, z
+    forward): a dark body, the small bare red head and hooked beak, a long
+    rounded tail; broad long wings held up in a shallow V when gliding,
+    their leading half black, the trailing silver, the primaries spread at
+    the tip in five fingers."""
+    faces = []
+    def add(corners, region, outward=None, both=False):
+        faces.append(dict(corners=corners, region=region, outward=outward, both=both))
+    def ring(z, rx, ry):
+        return [(0, -ry, z), (rx, 0, z), (0, ry, z), (-rx, 0, z)]
+    rings = [(30, 2.5, 2.5, 'red'), (24, 3.5, 3.5, 'red'), (16, 7, 7, 'white'), (2, 10, 9, 'white'), (-14, 8, 7, 'white'),
+             (-26, 4, 3, 'white')]
+    for (z0, rx0, ry0, reg), (z1, rx1, ry1, _) in zip(rings, rings[1:]):
+        a, b = ring(z0, rx0, ry0), ring(z1, rx1, ry1)
+        for k in range(4):
+            j = (k + 1) % 4
+            mid = np.mean([a[k], a[j], b[k], b[j]], 0)
+            add([a[k], a[j], b[k], b[j]], reg, outward=mid - np.array([0, 0, mid[2]]))
+    tip, front = (0, 2, 36), ring(30, 2.5, 2.5)
+    for k in range(4):
+        add([front[k], front[(k + 1) % 4], tip], 'red', outward=np.mean([front[k], front[(k + 1) % 4], tip], 0) - (0, 0, 30))
+    add([(-5, 0, -22), (5, 0, -22), (-9, 1, -50), (9, 1, -50)], 'white', both=True)
+    angles = {'glide': (22, -6), 'up': (52, 18), 'half': (16, 0), 'down': (-30, -14)}
+    a1, a2 = (np.radians(v) for v in angles[pose])
+    a2 = a1 + a2
+    lerp = lambda p, q, t: tuple(u + (v - u) * t for u, v in zip(p, q))
+    for side in (-1, 1):
+        ex, ey = 6 + 42 * np.cos(a1), -2 - 42 * np.sin(a1)
+        wx, wy = ex + 34 * np.cos(a2), ey - 34 * np.sin(a2)
+        for p0, p1, q0, q1 in (((side * 6, -2, 14), (side * 6, -2, -14), (side * ex, ey, 14), (side * ex, ey, -16)),
+                               ((side * ex, ey, 14), (side * ex, ey, -16), (side * wx, wy, 10), (side * wx, wy, -14))):
+            add([p0, lerp(p0, p1, 0.5), q0, lerp(q0, q1, 0.5)], 'dark', both=True)
+            add([lerp(p0, p1, 0.5), p1, lerp(q0, q1, 0.5), q1], 'light', both=True)
+        for f in range(5):
+            z0 = 10 - 6 * f
+            fx, fy = wx + (22 - 2 * abs(f - 1.5)) * np.cos(a2 - 0.08 * f), wy - 20 * np.sin(a2 - 0.08 * f)
+            add([(side * wx, wy, z0), (side * wx, wy, z0 - 4), (side * fx, fy, z0 - 3 - 2 * f), (side * fx, fy, z0 - 6 - 2 * f)],
+                'dark', both=True)
+    for f in faces:
+        f['corners'] = [tuple(scale * v for v in c) for c in f['corners']]
+    return faces
+
+
+def lizard_model(pose: str = '', scale: float = 1.0) -> list[dict]:
+    """Faces of a desert iguana (as crab_model(): cm, x right, y down, z
+    forward, its belly just off the ground): a long low body, the blunt
+    head before it with black eyes, the long tail tapering behind, four
+    legs splayed out to the ground; its back the picture's "fur", its
+    belly "horn"."""
+    faces = []
+    def add(corners, region, outward=None, both=False):
+        faces.append(dict(corners=corners, region=region, outward=outward, both=both))
+    n = 6
+    def ring(z, rx, ry, yc):
+        return [(rx * np.sin(2 * np.pi * k / n), yc - ry * np.cos(2 * np.pi * k / n), z) for k in range(n)]
+    body = [(-30, 0.4, 0.4, -1.5), (-20, 1.2, 1.1, -1.8), (-10, 2.2, 1.8, -2.2), (-2, 3.4, 2.4, -2.8), (6, 4.2, 2.8, -3.2),
+            (13, 3.6, 2.5, -3.2), (16, 2.4, 2.0, -3.4), (19, 3.0, 2.2, -3.6), (24, 2.0, 1.6, -3.2), (27, 0.6, 0.6, -2.8)]
+    rings = [ring(*b) for b in body]
+    for a, b in zip(rings, rings[1:]):
+        for k in range(n):
+            j = (k + 1) % n
+            q = [a[k], a[j], b[k], b[j]]
+            mid = np.mean(q, 0)
+            add(q, 'horn' if mid[1] > -2.4 else 'fur', outward=mid - np.array([0, -2.8, mid[2]]))
+    for side in (-1, 1):
+        add([(side * 2.2, -5.2, 21), (side * 2.2, -5.2, 19.5), (side * 2.2, -4.0, 21), (side * 2.2, -4.0, 19.5)], 'eye', both=True)
+        for z, back in ((9, 1), (-3, -1)):
+            hip = (side * 3, -3, z)
+            knee = (side * 8, -3.5, z + 2 * back)
+            foot = (side * 10, 0, z + 4 * back)
+            add([hip, (side * 3, -3, z - 2), knee, (side * 8, -3.5, z + 2 * back - 1.5)], 'fur', both=True)
+            add([knee, (side * 8, -3.5, z + 2 * back - 1.5), foot, (side * 11, 0, z + 4 * back - 2)], 'fur', both=True)
+    for f in faces:
+        f['corners'] = [tuple(scale * v for v in c) for c in f['corners']]
+    return faces
+
+
+def flash_picture(vr: Vram, cfg: dict) -> tuple:
+    """The lightning's light through a tall window as it falls on the
+    floor (seen from above, the window's arched head at row 0): its
+    mullions and transoms dark, pale blue white, soft at the edges, added.
+    Its palette left black (nothing, added) in the pack; the colours go to
+    FLIT (cfg["_flit"]): the runtime lights them while a flash is."""
+    from PIL import ImageFilter
+    yy, xx = np.mgrid[0:64, 0:64].astype(float)
+    half = 24 * np.where(yy < 20, np.sqrt(np.clip(1 - ((20 - yy) / 20) ** 2, 0, 1)), 1)
+    inside = np.abs(xx - 31.5) < half
+    soft = np.clip((half - np.abs(xx - 31.5)) / 5, 0, 1) * np.clip((62 - yy) / 6, 0, 1)
+    bars = (np.abs(xx - 31.5) < 1.6) | (np.abs(np.abs(xx - 31.5) - 12) < 1.2) | (np.abs(yy - 30) < 1.4) | (np.abs(yy - 46) < 1.2)
+    k = soft * inside * np.where(bars, 0.15, 1.0) * (0.85 + 0.15 * (yy / 63))
+    img = np.asarray(Image.fromarray(np.clip(k * 255, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)), float) / 255
+    rgb = img[..., None] * np.array(cfg['scenery'].get('flash', {}).get('colour', [150, 164, 210]), float)
+    x, y, (cx, cy) = added_picture(rgb, vr)
+    cfg['_flit'] = [int(c) for c in vr.v[cy, cx:cx + 16]]
+    vr.v[cy, cx:cx + 16] = 0
+    return x, y, (cx, cy)
+
+
+def dark_bat_picture(vr: Vram):
+    """Eternal Darkness's bats and spiders in the gull's regions: the
+    wings' membrane ("dark", "light") near black, the body ("white") dark
+    brown; in the yellow corner's quarters the spiders: "red" the body
+    black brown, "fur" the legs, "eye" dull red eyes, "horn" the thread's
+    pale silk."""
+    rnd = np.random.default_rng(29)
+    img = np.zeros((64, 64, 3))
+    for (x, y, w), rgb in (((0, 0, 32), (58, 46, 50)), ((32, 0, 32), (84, 68, 70)), ((0, 32, 32), (90, 66, 54)),
+                           ((32, 32, 16), (92, 74, 60)), ((48, 32, 16), (70, 56, 46)), ((32, 48, 16), (190, 40, 30)),
+                           ((48, 48, 16), (170, 170, 182))):
+        img[y:y + w, x:x + w] = np.clip(np.array(rgb) * (1 + 0.07 * rnd.normal(0, 1, (w, w)))[..., None], 0, 255)
+    colours, idx = sixteen(img)
+    return vr.picture(idx, colours)
+
+
+def spider_model(pose: str = '', scale: float = 1.0) -> list[dict]:
+    """Faces of a big house spider (as crab_model(): cm, x right, y down, z
+    forward): its round abdomen behind, the head and thorax before it with
+    red eyes, eight legs bent high at the knee out to the ground; the body
+    "red", the legs "fur", the eyes "eye" (the body's first vertex the
+    abdomen's top: the runtime's nearness test). pose "hang": the same on
+    a thread up out of sight ("horn": two crossed strips in pieces)."""
+    faces = []
+    def add(corners, region, outward=None, both=False):
+        faces.append(dict(corners=corners, region=region, outward=outward, both=both))
+    n = 6
+    def ring(z, r, yc):
+        return [(r * np.sin(2 * np.pi * k / n), yc - 0.8 * r * np.cos(2 * np.pi * k / n), z) for k in range(n)]
+    body = [(-9, 0.4, -3.4), (-7.5, 2.6, -3.6), (-5, 3.4, -3.8), (-2, 2.8, -3.6), (0, 1.2, -3.2), (1, 2.0, -3.0),
+            (3.5, 2.2, -3.0), (5.5, 1.0, -2.8)]
+    rings = [ring(*b) for b in body]
+    for a, b in zip(rings, rings[1:]):
+        for k in range(n):
+            j = (k + 1) % n
+            q = [a[k], a[j], b[k], b[j]]
+            mid = np.mean(q, 0)
+            add(q, 'red', outward=mid - np.array([0, mid[1] if False else -3.4, mid[2]]))
+    for side in (-1, 1):
+        add([(side * 0.6, -4.6, 5.4), (side * 1.4, -4.4, 5.2), (side * 0.6, -3.8, 5.8), (side * 1.4, -3.6, 5.6)], 'eye', both=True)
+        for i, (z, spread) in enumerate(((4.5, 50), (3.0, 20), (1.5, -15), (0.0, -45))):
+            a = np.radians(spread)
+            out = np.array([np.cos(a) * side, 0, np.sin(a)])
+            hip = np.array([side * 1.6, -3.0, z])
+            knee = hip + out * 6.5 + np.array([0, -4.5, 0])
+            foot = hip + out * 13 + np.array([0, 3.0, 0])
+            w = np.array([0, 0, 0.55]) if abs(out[2]) < 0.7 else np.array([0.55, 0, 0])
+            add([tuple(hip - w), tuple(hip + w), tuple(knee - w), tuple(knee + w)], 'fur', both=True)
+            add([tuple(knee - w), tuple(knee + w), tuple(foot - w * 0.5), tuple(foot + w * 0.5)], 'fur', both=True)
+    if pose == 'hang':
+        top, pieces, wdt = -1800.0, 8, 0.45 / max(scale, 0.1)
+        for k in range(pieces):
+            y0, y1 = -4.0 + (top + 4) * k / pieces, -4.0 + (top + 4) * (k + 1) / pieces
+            add([(-wdt, y1, -5), (wdt, y1, -5), (-wdt, y0, -5), (wdt, y0, -5)], 'horn', both=True)
+            add([(0, y1, -5 - wdt), (0, y1, -5 + wdt), (0, y0, -5 - wdt), (0, y0, -5 + wdt)], 'horn', both=True)
+    for f in faces:
+        f['corners'] = [tuple(scale * v for v in c) for c in f['corners']]
+    return faces
+
+
 def drone_picture(vr: Vram):
     """A drone's paint in the eagle's four corners (REGION): "dark" its
     black carbon body and rotor guards, "light" its grey arms, "white" the
@@ -7503,14 +9901,19 @@ def gull_sections(spec: dict, picture, reloc, arc, model=gull_model, grass: tupl
     after the critters, GRAS."""
     n = min(8 if spec.get('flock') else 4, spec.get('count', 4))
     # "rabbits" ground creatures as the crabs, hopping (GULL's critters' kind 1)
-    ground = spec.get('crabs') or spec.get('rabbits') or spec.get('pigeons') or {}
-    crabs = ground.get('count', 0)
+    ground = spec.get('crabs') or spec.get('rabbits') or spec.get('pigeons') or spec.get('lizards') or spec.get('spiders') or {}
+    # "spiders" "hang": that many more on threads, coming down from above (the 5th model)
+    hang = ground.get('hang', 0) if spec.get('spiders') else 0
+    if hang and grass:
+        raise SystemExit('spiders hanging and grass: both are the 5th model')
+    crabs = ground.get('count', 0) + hang
     if n + crabs > 8:
         raise SystemExit(f'{n} birds and {crabs} crabs: 8 drawing calls at most')
-    objs = struct.pack('<I', 5 if grass else 4)
+    objs = struct.pack('<I', 5 if grass or hang else 4)
     # with crabs ("crabs": "count", "near", "far" cm, "scale") the birds
     # flap without the half way pose: model 3 is the crab
-    poses = [(p, model) for p in ('glide', 'up', 'down')] + [('crab', rabbit_model if spec.get('rabbits') else pigeon_model if spec.get('pigeons') else crab_model)] if crabs else         [(p, model) for p in ('glide', 'up', 'half', 'down')]
+    poses = [(p, model) for p in ('glide', 'up', 'down')] + [('crab', rabbit_model if spec.get('rabbits') else pigeon_model if spec.get('pigeons') else
+                 lizard_model if spec.get('lizards') else spider_model if spec.get('spiders') else crab_model)] if crabs else         [(p, model) for p in ('glide', 'up', 'half', 'down')]
     for pose, make in poses:
         scale = ground.get('scale', 1.0) if pose == 'crab' else spec.get('scale', 1.0)
         verts, prims = eagle_prims(make(pose, scale), picture)
@@ -7519,10 +9922,17 @@ def gull_sections(spec: dict, picture, reloc, arc, model=gull_model, grass: tupl
         objs += b''.join(pack.prim_bytes(reloc.prim(p)) for p in prims)
     if grass:
         objs += grass_model(grass[0], grass[1], reloc)
+    if hang:
+        verts, prims = eagle_prims(spider_model('hang', ground.get('scale', 1.0)), picture)
+        objs += struct.pack('<2H', len(verts), len(prims))
+        objs += b''.join(struct.pack('<4h', *v, 0) for v in verts)
+        objs += b''.join(pack.prim_bytes(reloc.prim(p)) for p in prims)
     objs += struct.pack('<I', n + crabs + (4 if grass else 0))
     objs += b''.join(struct.pack('<2B3H', m & 3, 0, spec.get('rank', 1009), 64, 0) for m in range(n))
     # the crabs on the sand: over the floor and the tiles, under the fighters
-    objs += b''.join(struct.pack('<2B3H', 3, 0, ground.get('rank', 980), 64, 0) for _ in range(crabs))
+    objs += b''.join(struct.pack('<2B3H', 3, 0, ground.get('rank', 980), 64, 0) for _ in range(crabs - hang))
+    # the hanging ones behind the gauges (their threads up through the screen's top)
+    objs += b''.join(struct.pack('<2B3H', 3, 0, ground.get('hang_rank', 1008), 64, 0) for _ in range(hang))
     if grass:
         objs += b''.join(struct.pack('<2B3H', 4, 0, grass[0].get('rank', 980), 128, 0) for _ in range(4))
     gull = struct.pack('<8h', n, *spec['radius'], *spec['height'], spec.get('speed', 40), *spec.get('centre', [0, 1000]))
@@ -7531,13 +9941,18 @@ def gull_sections(spec: dict, picture, reloc, arc, model=gull_model, grass: tupl
         gull += struct.pack('<h', spec.get('flock', 0))
     if crabs or spec.get('flutter'):
         gull += struct.pack('<3h', crabs, ground['near'], ground['far']) if crabs else bytes(6)
-    if spec.get('flutter') or spec.get('rabbits') or spec.get('pigeons'):
+    if spec.get('flutter') or spec.get('rabbits') or spec.get('pigeons') or spec.get('lizards') or spec.get('spiders'):
         # "flutter" (cm): a bat's way, all flapping, darting from side to side
         gull += struct.pack('<h', spec.get('flutter', 0))
-    if spec.get('rabbits') or spec.get('pigeons'):
+    if spec.get('rabbits') or spec.get('pigeons') or spec.get('lizards') or spec.get('spiders'):
         # the critters' kind: 1 rabbits, hopping about, fleeing the fighters;
-        # 2 New York's pigeons, walking, pecking, fluttering off
-        gull += struct.pack('<h', 1 if spec.get('rabbits') else 2)
+        # 2 New York's pigeons, walking, pecking, fluttering off; 3 Nowhere
+        # Desert's lizards, still a long while, darting off; 4 Eternal
+        # Darkness's spiders, scuttling in short runs
+        gull += struct.pack('<h', 1 if spec.get('rabbits') else 2 if spec.get('pigeons') else 3 if spec.get('lizards') else 4)
+    if hang:
+        # the last critters hanging on threads, and how low they come (cm, up negative)
+        gull += struct.pack('<2h', hang, ground.get('low', -110))
     return [(b'OBJS', objs), (b'ROTT', struct.pack('<4096I', *arc.word(scene.ROT_TABLE, 4096, 'I'))),
             (b'OBJA', struct.pack('<2H', GULL_STAGE, 0)), (b'GULL', gull)] +         ([(b'GRAS', struct.pack('<2h', grass[0]['period'] * 10, 0))] if grass else [])
 
@@ -7617,7 +10032,34 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
     lights = city_lights(cfg, pic) if cfg.get('windows') else None
     hk = hk_lights(cfg, pic) if cfg.get('lights') else None
     pg = pagoda_lights(cfg, pic) if cfg.get('flicker') else None
-    fb = far_background(cfg, st.farbg, pic, vr, sea, lights[0] if lights else hk[0] if hk else pg[0] if pg else None)
+    own = lights[0] if lights else hk[0] if hk else pg[0] if pg else None
+    weave = None
+    if cfg.get('weave'):
+        # Eternal Darkness's spider spinning its web: a cell of its own
+        cell, wcolours, widx = weave_frames(pic, cfg['weave'])
+        own = dict(own or {})
+        if cell in own:
+            raise SystemExit(f'weave: cell {cell} is a lit one (a candle or a window), take another')
+        own[cell] = ([c or 0x0421 for c in wcolours], widx[0])
+    fb = far_background(cfg, st.farbg, pic, vr, sea, own)
+    if cfg.get('weave'):
+        d = fb.desc[cell[0]][cell[1]]
+        wx, wy = (d >> 8 & 15) * 64 + (d & 3) * 16, 512 + (d >> 12 & 3) * 256 + (d >> 2 & 3) * 64
+        if RESERVED:
+            # (the add-on's) the cell's y: desc's page row is already the
+            # VRAM's (vram_desc(): y // 256), the old fork's 512 more put the
+            # spider's frames past the VRAM's foot
+            wy -= 512
+        wclut = (fb.cluts[cell[0]][cell[1]] & 63) * 16, fb.cluts[cell[0]][cell[1]] >> 6
+        made, places = {}, []
+        for k, ix in enumerate(widx):
+            key = ix.astype(np.uint8).tobytes()
+            if key not in made:
+                # (the add-on's: the frames past the VRAM, T2AN)
+                made[key] = (wx, wy) if k == 0 else vr.frame(ix, None, clut=wclut)[:2]
+            places.append(made[key])
+        weave = ((wx, wy), places)
+        print(f'weave: {len(made)} pictures, {len(places)} frames')
     if pg:
         # the Pagoda's lights: the eyes' palettes one run, the candles' another
         _, (ecells, eframes), (ccells, cframes) = pg
@@ -7625,11 +10067,24 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         for row, cells, frames in ((EYE_ROW, ecells, eframes), (FLICKER_ROW, ccells, cframes)):
             if not cells:
                 pg_runs.append(None); continue
+            if PG_CHUNK and RESERVED:
+                # (the add-on's, a stage whose long runs find no room) the
+                # palettes in runs of PG_CHUNK, each its own row and animation
+                parts = []
+                for j in range(0, len(frames[0]), PG_CHUNK):
+                    r0 = row - j // PG_CHUNK
+                    palette_run(vr, r0, frames[0][j:j + PG_CHUNK])
+                    for k, (r, c) in enumerate(cells[j:j + PG_CHUNK]):
+                        fb.cluts[r][c] = r0 << 6 | k
+                    parts.append((r0, len(frames[0][j:j + PG_CHUNK]),
+                                  palette_frames(vr, r0, [f[j:j + PG_CHUNK] for f in frames])))
+                pg_runs.append(parts)
+                continue
             palette_run(vr, row, frames[0])
             for k, (r, c) in enumerate(cells):
                 fb.cluts[r][c] = row << 6 | k
-            pg_runs.append((row, len(cells), [palette_run(vr, row - 1 - f, pals) for f, pals in enumerate(frames)]))
-        print(f'flicker: {len(ecells)} eye cells, {len(ccells)} candle cells')
+            pg_runs.append((row, len(cells), palette_frames(vr, row, frames)))
+        print(f'flicker: {len(ecells)} eye (or rain) cells, {len(ccells)} candle cells')
     sign = None
     if hk:
         # Hong Kong's lights: the windows' palettes one run, the beacons'
@@ -7674,12 +10129,13 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
     mote = dust(cfg['dust'], vr) if cfg.get('dust') else None
     feathers = eagle_picture(vr) if cfg.get('eagle') else None
     paint = ship_pictures(vr) if cfg.get('ship') else None
-    birds = cfg.get('gulls') or cfg.get('crows') or cfg.get('drones') or cfg.get('magpies') or cfg.get('bats') or         cfg.get('cranes') or cfg.get('doves')
+    birds = cfg.get('gulls') or cfg.get('crows') or cfg.get('drones') or cfg.get('magpies') or cfg.get('bats') or         cfg.get('cranes') or cfg.get('doves') or cfg.get('egrets') or cfg.get('vultures')
     plumage = pigeon_picture(vr) if cfg.get('gulls', {}).get('pigeons') else \
         gull_picture(vr, tuple(cfg['gulls'].get('beak', (228, 188, 52)))) if cfg.get('gulls') else crow_picture(vr) if cfg.get('crows') else \
         drone_picture(vr) if cfg.get('drones') else magpie_picture(vr) if cfg.get('magpies') else \
-        bat_picture(vr) if cfg.get('bats') else crane_picture(vr) if cfg.get('cranes') else \
-        dove_picture(vr) if cfg.get('doves') else None
+        (dark_bat_picture(vr) if cfg['bats'].get('spiders') else bat_picture(vr)) if cfg.get('bats') else crane_picture(vr) if cfg.get('cranes') else \
+        dove_picture(vr) if cfg.get('doves') else egret_picture(vr) if cfg.get('egrets') else \
+        vulture_picture(vr, cfg['vultures'].get('tint', (1, 1, 1))) if cfg.get('vultures') else None
     lamp = beacon_frames(vr, bool(cfg['scenery'].get('steams'))) if cfg.get('scenery', {}).get('beacons') else None
     mist = fog_frames(vr, cfg['scenery'].get('fog', {}).get('colour', [96, 88, 128])) \
         if cfg.get('scenery', {}).get('fogs') else None
@@ -7725,13 +10181,15 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
             tex.update(temple)
         if cfg['scenery'].get('glass_patches'):
             tex.update(glass_pictures(vr))
+        if cfg['scenery'].get('flash_patches'):
+            tex['flashwin'] = [flash_picture(vr, cfg)]
         if surf and cfg.get('water'):
             tex['nyc'], tex['steam'] = [surf[0]], [surf[3]]
         elif surf and surf[0]:
             tex['flame' if cfg.get('sea') else 'flags' if cfg.get('clouds') else 'mlamp'] = [surf[0]]
             if cfg.get('pool', {}).get('spray'):
                 tex['fwater'] = [surf[3]]
-            if cfg.get('clouds'):
+            if cfg.get('clouds') and surf[3]:
                 tex['smoke'] = [surf[3]]
         geo, stats = scenery(cfg, tex, cfg['scenery'].get('tile_size', st.geo.tile_size), cfg['scenery'].get('flip', False))
     else:
@@ -7781,6 +10239,7 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         extra += gull_sections(birds, plumage, reloc, arc, drone_model if cfg.get('drones') else
                                magpie_model if cfg.get('magpies') else bat_model if cfg.get('bats') else
                                crane_model if cfg.get('cranes') else dove_model if cfg.get('doves') else
+                               egret_model if cfg.get('egrets') else vulture_model if cfg.get('vultures') else
                                harbour_gull_model if cfg.get('gulls', {}).get('pigeons') else gull_model,
                                (cfg['grass'], turf) if cfg.get('grass') else None)
     if lamp:
@@ -7825,12 +10284,13 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         # ANI2: the statues' eyes, ANI4: the candles' light; each frame a run
         # of palettes where the relocation put it, round and round (mode 0)
         at = lambda x, y: (reloc.map[x // 16, y][0] * 16 + x % 16, reloc.map[x // 16, y][1])
-        for sid, run, period in ((b'ANI2', pg_runs[0], cfg['flicker'].get('eyes', {}).get('period', 30)),
+        for sid, run, period in ((b'ANI2', pg_runs[0], cfg['flicker'].get('eyes', {}).get('period', 30) if cfg['flicker'].get('eyes')
+                                  else cfg['flicker'].get('period', 3)),
                                  (b'ANI4', pg_runs[1], cfg['flicker'].get('period', 3))):
-            if run:
-                row, width, runs = run
+            for row, width, runs in (run if isinstance(run, list) else [run] if run else []):
                 extra.append((sid, struct.pack('<6H', *at(0, row), 16 * width, 1, period, len(runs))
-                              + b''.join(struct.pack('<2H', *at(0, y)) for y in runs) + struct.pack('<H', 0)))
+                              + b''.join(struct.pack('<2H', *(y if isinstance(y, tuple) else at(0, y))) for y in runs)
+                              + struct.pack('<H', 0)))
     if sun:
         # ANI4: the forest's sunlight, each frame a run of palettes where the
         # relocation put it, round and round (mode 0)
@@ -7844,7 +10304,14 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         extra.append((b'ANI2', struct.pack('<6H', sx, sy, 16, 64, cfg['scenery'].get('fog', {}).get('period', decode.ANIM_PERIOD),
                                            len(frames)) + b''.join(struct.pack('<2H', fx, fy) for fx, fy, _ in frames)
                       + struct.pack('<H', 0)))
+    if weave:
+        # ANI3: the web being spun, round and round (mode 0)
+        (wx, wy), places = weave
+        extra.append((b'ANI3', struct.pack('<6H', wx, wy, 16, 64, cfg['weave'].get('period', 30), len(places))
+                      + b''.join(struct.pack('<2H', *pl) for pl in places) + struct.pack('<H', 0)))
     if getattr(fl, 'chase', None):
+        if weave:
+            raise SystemExit('the floor chase and the weave: both are ANI3')
         at = lambda x, y: (reloc.map[x // 16, y][0] * 16 + x % 16, reloc.map[x // 16, y][1])
         extra.append((b'ANI3', struct.pack('<6H', *at(0, CHASE_ROW), 16 * len(cfg['floor_chase']['cluts']), 1,
                                            cfg['floor_chase'].get('period', 8), len(fl.chase))
@@ -7936,6 +10403,13 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         extra.append((b'RAIN', struct.pack('<7h2H2B', f['count'], f['fall'], f['length'], *f['drift'], *f['distance'],
                                            tpage, reloc.clut(cy << 6 | cx >> 4), (lx & 63) * 4 + RAIN_COLS[0],
                                            (ly & 0xFF) + DIYA_ROWS[0]) + bytes(f.get('colour', [70, 84, 110])) + bytes(1)))
+    if cfg.get('scenery', {}).get('flash_patches'):
+        # FLIT: the lightning's light on the floor, its palette (relocated)
+        # black but while a flash is, then these colours
+        cx, cy = tex['flashwin'][0][2]
+        word = reloc.clut(cy << 6 | cx >> 4)
+        lit = cfg['_flit']
+        extra.append((b'FLIT', struct.pack('<2H', (word & 63) * 16, word >> 6 & 0x3FF) + struct.pack('<16H', *[int(c) for c in lit])))
     if cfg.get('mirror'):
         extra.append((b'MIRR', mirror_section(cfg['mirror'])))
     if cfg.get('fixed'):
@@ -7956,10 +10430,26 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         # page, palette, u, v, width, height (the New York picture's PAPER)
         # 5 the Great Wall's dust blown along the ground: the same, the
         # Great Wall picture's puff (WALL_DUST)
+        # 7 the Hills' dandelion seeds drifting on the wind: the same, the
+        # Hills picture's seed (HILLS_FLUFF)
         f = cfg['feathers']
         paper = b''
         if f.get('shape') == 'newspaper':
             (px, py, (cx, cy)), (pu, pv, pw, ph) = surf[0], PAPER
+            paper = struct.pack('<2H4B', (px >> 6) | (py & 0x100) >> 4 | (py & 0x200) << 2, reloc.clut(cy << 6 | cx >> 4),
+                                (px & 63) * 4 + pu, (py & 0xFF) + pv, pw, ph)
+        if f.get('shape') == 'tumbleweed':
+            # the Nowhere Desert picture's tumbleweed (solid), then its dust
+            # puff's u, v, width, height, the dust devil's colour, devils
+            (px, py, (cx, cy)), (pu, pv, pw, ph) = surf[0], TUMBLEWEED
+            paper = struct.pack('<2H4B', (px >> 6) | (py & 0x100) >> 4 | (py & 0x200) << 2, reloc.clut(cy << 6 | cx >> 4),
+                                (px & 63) * 4 + pu, (py & 0xFF) + pv, pw, ph)
+            du, dv, dw, dh = DESERT_PUFF
+            paper += struct.pack('<4B', (px & 63) * 4 + du, (py & 0xFF) + dv, dw, dh) + \
+                bytes(f.get('devil_colour', [28, 26, 30])) + bytes([f.get('devils', 1)])
+        if f.get('shape') == 'fluff':
+            # the Hills picture's dandelion seed (solid, colour 0 nothing)
+            (px, py, (cx, cy)), (pu, pv, pw, ph) = surf[0], HILLS_FLUFF
             paper = struct.pack('<2H4B', (px >> 6) | (py & 0x100) >> 4 | (py & 0x200) << 2, reloc.clut(cy << 6 | cx >> 4),
                                 (px & 63) * 4 + pu, (py & 0xFF) + pv, pw, ph)
         if f.get('shape') == 'dust':
@@ -7969,7 +10459,7 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
                                 reloc.clut(cy << 6 | cx >> 4), (px & 63) * 4 + pu, (py & 0xFF) + pv, pw, ph)
         extra.append((b'FTHR', struct.pack('<6h', f['count'], f['near'], f['far'], f['height'], f['length'], f['fall'])
                       + bytes(f.get('colour', [236, 236, 244])) + bytes(1)
-                      + (struct.pack('<h', {'petal': 1, 'strewn': 2, 'newspaper': 3, 'leaves': 4, 'dust': 5}[f['shape']]) if f.get('shape') else b'')
+                      + (struct.pack('<h', {'petal': 1, 'strewn': 2, 'newspaper': 3, 'leaves': 4, 'dust': 5, 'tumbleweed': 6, 'fluff': 7}[f['shape']]) if f.get('shape') else b'')
                       + paper))
     if feathers:
         extra += eagle_sections(cfg['eagle'], cfg['scenery'].get('buttes', []), feathers, reloc, arc, stats.pop('perch', None))
@@ -7994,13 +10484,22 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
 CLASSIC_BOTTOM = 160                     # tools/tekken2_stages.py DEFAULT "bottom"
 
 
+def frame_y(frame: dict) -> tuple:
+    """A frame's y (a, b): the old panorama's y to a * y + b, b less its
+    "lift" (texels): the user's picture that much higher in the frame, its
+    foot out of the floor (London: the buses in the sand, the user's,
+    2026-11-08: "raise London Ruins' background a little")."""
+    a, b = frame['y']
+    return a, b - frame.get('lift', 0)
+
+
 def classic_cfg(cfg: dict, picture: np.ndarray, ext: int, frame: dict, repeat: int = 2) -> dict:
     """The recipe for the add-on's picture (ext rows over Tekken 2's
     panorama in the Classic's frame: tools/t2_remake_stages.py classic_picture())."""
     c = copy.deepcopy(cfg)
     h, w = picture.shape[:2]
     wo, ho = frame['old']
-    a, b = frame['y']
+    a, b = frame_y(frame)
     sx = w / wo / (2 / repeat)
     X = lambda x: x * sx
     Y = lambda y: a * y + b + ext

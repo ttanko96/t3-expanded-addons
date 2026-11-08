@@ -116,24 +116,31 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
 - The dark stages lit round the fighters, Mirror Darkness with its mirror, Hong Kong's running lights.
 
 **Remake**
-- **18 stages remade:** scenery, animations and new painted backgrounds.
-- **Not remade yet:** Cambodian Wetlands, Athens, Nowhere Desert, Hills and Eternal Darkness are the Classic's for
-  now.
+- **All 23 stages remade:** scenery, animations and new painted backgrounds. Nowhere Desert's Remake is at night,
+  its fighters lit as on the dark stages.
+- **Scenery on the ground:** it stands where it is as the fighters move and sidestep round each other; only when
+  the fight goes more than 4 m away does it come along. The Church is a closed room: its pews, columns and altar
+  stop the fighters.
 - **What it is built from:**
   - the backgrounds open from patches that only your Tekken 2 disc opens;
   - the stages are built with the Expanded setup's tekken3.zip; without it, every stage is the Classic.
 - **Life on the stages:**
   - dust where a fighter falls;
   - butterflies, fireflies and dragonflies;
-  - falling petals, leaves and feathers, newspapers in the wind;
+  - falling petals, leaves and feathers, newspapers in the wind, Nowhere Desert's tumbleweeds and dust devils, the
+    Hills' dandelion seeds;
   - grass on the ground, lit windows and candles, the Taj Mahal's rain and oil lamps;
-  - birds, Grand Canyon's eagle, crabs, rabbits and pigeons;
+  - birds and bats, Grand Canyon's eagle, crabs, rabbits, pigeons, lizards and spiders (some coming down on their
+    threads);
   - Akihabara's ship and Hong Kong's helicopter.
-- **Lightning:** over the Taj Mahal and at the Church's windows. Its flashes and thunder come from TTT1 Stages'
+- **Lightning:** over the Taj Mahal and at the Church's and Eternal Darkness's windows (there its light falls on the
+  floor too). Its flashes and thunder come from TTT1 Stages'
   storm (the Expanded's TTT stage packs); without them, there is no lightning.
 - **Writing:** the signs are written in each country's language.
-- **Unknown:** Szechwan, Hong Kong, Akihabara, the Great Wall, Launch Pad, Kyoto and Arizona have the top of their
-  background trimmed, so that Unknown's wolf and the add-on's letters keep their room in the video memory.
+- **Unknown:** when Unknown fights, Szechwan, Akihabara, the Great Wall, Launch Pad, Kyoto, Arizona and Eternal
+  Darkness have the top of their background trimmed, so that her wolf and the add-on's letters keep their room in the
+  video memory. In every other fight, these stages show the whole background. Hong Kong is always trimmed. In
+  Tournament Mode's team fights, the stage switches when she comes in or leaves.
 
 #### Wireframe Mode
 Tekken 2's hidden Wireframe Mode: your fighter drawn in glowing green lines, no fill, and the camera just behind its
