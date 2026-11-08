@@ -64,6 +64,11 @@ void tmst_overlay_show_prims(void);
  * nothing (Tekken 3 never clears the screen) no older frame shows. off = 0
  * takes it away. */
 void tmst_overlay_backdrop(int on, uint32_t bgr);
+/* Nonzero: the chain also goes into a frame's first list of 32 nodes or
+ * more (by default 256: the fights' and selectors' lists; shorter ones are
+ * the GPU's set-up lists). The main menu's whole frame is one list of about
+ * 160 nodes: a mod that draws on it asks for this while it draws, 0 after. */
+void tmst_overlay_short_lists(int on);
 /* Moves the shown picture. */
 void tmst_overlay_move(int x, int y);
 /* The picture hidden from the next frame (its area's pixels given back
@@ -122,7 +127,7 @@ int tmst_prim_sheet(TmstPrims *k, int x, int y, int w, int h);
  * drawing area again. */
 void tmst_prim_whole_height(TmstPrims *k, int on);
 /* A builder, run while the picture is shown (before the picture is drawn).
- * Up to 4 builders (one per mod), run in the order added. */
+ * Up to 6 builders (one per mod), run in the order added. */
 typedef void (*TmstPrimsBuilder)(TmstPrims *k);
 void tmst_overlay_set_prims(TmstPrimsBuilder builder);
 /* A builder whose primitives go into the frame's ordering table right after
@@ -134,7 +139,7 @@ void tmst_overlay_set_prims(TmstPrimsBuilder builder);
 void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder builder);
 /* A visitor of each node of the game's lists (not ours), called while the
  * picture is shown, before the GPU draws the node: a mod may move the game's
- * primitives out of sight. Up to 4 visitors (one per mod). */
+ * primitives out of sight. Up to 6 visitors (one per mod). */
 typedef void (*TmstNodeVisitor)(uint32_t node);
 void tmst_overlay_set_visitor(TmstNodeVisitor visitor);
 /* For a visitor: the ordering-table rank the node is linked at (the last OT

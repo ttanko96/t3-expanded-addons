@@ -168,3 +168,19 @@ opaque:
     for (size_t i = 0, n = (size_t)*w * (size_t)*h; i < n; i++) (*out)[i] |= 0xFF000000u;
     return 1;
 }
+
+/* The runtime's pads (psxrecomp sio.c; weak). */
+extern int sio_get_pad_connected(int slot) __attribute__((weak));
+extern void sio_set_pad_connected(int slot, int connected) __attribute__((weak));
+extern void sio_set_pad_state_slot(int slot, uint16_t buttons) __attribute__((weak));
+/* The Expanded's costume panel (runtime tekken3_outfits.c; weak): which pads
+ * are there (the runtime tells it each frame, for the pads it reads). */
+extern void tekken3_outfits_connect(int p, int on) __attribute__((weak));
+int tmst_compat_pad_connected(int slot) { return sio_get_pad_connected ? sio_get_pad_connected(slot) : -1; }
+int tmst_compat_pad_set(int slot, int connected, uint16_t buttons) {
+    if (!sio_set_pad_connected || !sio_set_pad_state_slot) return 0;
+    sio_set_pad_connected(slot, connected);
+    sio_set_pad_state_slot(slot, buttons);
+    if (tekken3_outfits_connect) tekken3_outfits_connect(slot, connected);
+    return 1;
+}

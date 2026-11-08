@@ -37,6 +37,57 @@ int tmst_menu_add_row_after(const char *label, unsigned like_mode, unsigned afte
     return add_row(label, like_mode, after_mode & 0xffu, chosen);
 }
 
+/* ---- a native row taken over (tmst_menu_native_row) ---- */
+static struct { int set; unsigned mode; uint32_t label, orig_label, orig_word; int applied; } native;
+
+void tmst_menu_native_row(unsigned mode, const char *label) {
+    if (!label) return;
+    size_t n = strlen(label) + 1;
+    uint32_t text = psx_mod_alloc_guest_memory((uint32_t)((n + 3) & ~3u), 4);
+    if (!text) return;
+    for (size_t i = 0; i < n; i++) psx_mod_write_byte(text + (uint32_t)i, (uint8_t)label[i]);
+    native.set = 1; native.mode = mode & 0xffu; native.label = text; native.applied = 0;
+}
+static uint32_t list_address(void);
+static uint32_t row_at(uint32_t list, unsigned i);
+static unsigned count_of(uint32_t list);
+/* The row as the list has it, or ours on it: its index, -1 none. */
+static int native_index(uint32_t list) {
+    unsigned count = count_of(list);
+    for (unsigned i = 0; i < count && i < 16; i++) {
+        uint32_t label = psx_mod_read_word(row_at(list, i)), word = psx_mod_read_word(row_at(list, i) + 4);
+        if ((word & 0xffu) != native.mode) continue;
+        if (native.applied ? label == native.label : 1) return (int)i;
+    }
+    return -1;
+}
+static void native_apply(uint32_t list) {
+    if (!native.set || native.applied) return;
+    int i = native_index(list);
+    if (i < 0) return;
+    native.orig_label = psx_mod_read_word(row_at(list, (unsigned)i));
+    native.orig_word = psx_mod_read_word(row_at(list, (unsigned)i) + 4);
+    psx_mod_write_word(row_at(list, (unsigned)i), native.label);
+    psx_mod_write_word(row_at(list, (unsigned)i) + 4, native.orig_word & ~0xff00u);   /* no controller restriction */
+    native.applied = 1;
+}
+static void native_restore(uint32_t list) {
+    if (!native.set || !native.applied) return;
+    int i = native_index(list);
+    if (i >= 0) {
+        psx_mod_write_word(row_at(list, (unsigned)i), native.orig_label);
+        psx_mod_write_word(row_at(list, (unsigned)i) + 4, native.orig_word);
+    }
+    native.applied = 0;
+}
+int tmst_menu_native_highlighted(unsigned mode) {
+    if (!native.set || !native.applied || native.mode != (mode & 0xffu) || psx_mod_read_half(SCREEN) != MENU ||
+        psx_mod_read_half(PHASE) != 1) return 0;
+    uint32_t list = list_address();
+    unsigned sel = psx_mod_read_byte(SELECTION);
+    return list && sel < count_of(list) && psx_mod_read_word(row_at(list, sel)) == native.label;
+}
+
 void tmst_menu_select_next_time(int row) { select_row = row; }
 int tmst_menu_highlighted(int row) {
     return row >= 0 && row < row_count && rows[row].index >= 0 && psx_mod_read_half(SCREEN) == MENU &&
@@ -144,9 +195,10 @@ static int like_index(uint32_t list, unsigned like_mode) {
  * staying on our row. */
 static int told;                      /* the confirmation reported */
 void __wrap_func_80028CD4(CPUState *cpu) {
-    uint32_t list = row_count && psx_mod_game_started() && psx_mod_read_half(SCREEN) == MENU ? list_address() : 0;
+    uint32_t list = (row_count || native.set) && psx_mod_game_started() && psx_mod_read_half(SCREEN) == MENU ? list_address() : 0;
     int was_selected = -1;
     unsigned phase = list ? psx_mod_read_half(PHASE) : 0;
+    if (list) native_restore(list);           /* the Expanded's code sees the list as it is */
     if (list) {
         unsigned sel = psx_mod_read_byte(SELECTION);
         if (sel < count_of(list) && sel < MAX_COUNT) was_selected = ours(psx_mod_read_word(row_at(list, sel)));
@@ -169,6 +221,7 @@ void __wrap_func_80028CD4(CPUState *cpu) {
         select_row = -1;
     }
     psx_mod_write_byte(SELECTION, (uint8_t)sel);
+    native_apply(list);
 }
 
 /* Off the menu, the list must hold the native rows only, the game keeping
@@ -216,15 +269,23 @@ void tmst_menu_set_colour(int row, uint32_t rgb) {
     rows[row].coloured = 1; rows[row].rgb = rgb & 0xffffffu;
 }
 
-static void colour_row(int last) {
-    int order[LETTERS], n = 0;
-    char word[LETTERS + 1];
+/* The letters of the row the letter `last` is on (its line, its palette),
+ * left to right: their indices in order[], the word they spell. */
+static int row_letters(int last, int *order, char *word) {
+    int n = 0;
     for (int i = 0; i < letters.n; i++)
         if (letters.l[i].y == letters.l[last].y && letters.l[i].clut == letters.l[last].clut) order[n++] = i;
     for (int i = 1; i < n; i++)
         for (int j = i; j > 0 && letters.l[order[j]].x < letters.l[order[j - 1]].x; j--) { int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t; }
     for (int i = 0; i < n; i++) word[i] = letters.l[order[i]].c;
     word[n] = 0;
+    return n;
+}
+
+static void colour_row(int last) {
+    int order[LETTERS];
+    char word[LETTERS + 1];
+    int n = row_letters(last, order, word);
     for (int r = 0; r < row_count; r++) {
         if (!rows[r].coloured || strcmp(word, rows[r].word)) continue;
         int d = rows[r].distance, k = d < 0 || d >= (int)sizeof fade ? fade[sizeof fade - 1] : fade[d];

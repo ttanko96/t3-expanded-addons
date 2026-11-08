@@ -22,7 +22,7 @@ sys.path.insert(0, str(ADDON / 'tools'))
 sys.path.insert(0, str(ROOT / 'launcher'))
 
 FONT = 'Segoe UI' if os.name == 'nt' else 'Helvetica Neue' if sys.platform == 'darwin' else 'DejaVu Sans'
-MODS = 'Jukebox · Photo Mode · Tournament Mode · Tekken 2 Content'
+MODS = 'Jukebox · Photo Mode · Tournament Mode · VS Mode+ · Tekken 2 Content'
 # Where each part of the work sits on the progress bar.
 SETUP_SHARE, CONFIGURE_SHARE = 0.30, 0.08
 STEP_TEXT = {

@@ -87,6 +87,21 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
 - The screens' backgrounds are PNG files you may redraw: `addons\tmst\data\tournament\` (`progress`, `match`,
   `champion`, `over`, 854×480); `data\tournament\guides\` shows where the mod draws on each.
 
+### VS Mode+
+VS against the CPU, or the CPU against itself, with a single controller.
+- The main menu's **VS MODE** becomes **VS MODE PLUS**, and it can be chosen with any number of controllers.
+- ✕ on it opens a band with three choices (left/right, ✕ to take, ○ back):
+    · **PLAYER VS CPU** you against an opponent you pick
+    · **PLAYER VS PLAYER** the game's own VS (only with a second controller; see-through without one)
+    · **CPU VS CPU** two fighters you pick fight each other.
+- **Choosing:** you pick your fighter first (CPU VS CPU: the left one), then the same controller picks the CPU's fighter,
+  its handicap, the MOVESET card, the TTT1 characters' page (L2/R2) and the STAGE. The CPU's cursor is the Practice
+  grid's green one with the CPU tag. A second controller plays no part in PLAYER VS CPU.
+- **The CPU's strength** is GAME OPTION's DIFFICULTY LEVEL (with the Expanded's extra levels); in GAME OPTION the VS
+  lamp lights on that row.
+- **In the fight:** the CPU fights as in the Arcade; START pauses (CPU VS CPU: START only, the pause menu as always).
+  After the match the select screen comes back for a rematch; START + SELECT there goes back to the main menu.
+
 ### Tekken 2 Content
 What the add-on takes from your own Tekken 2 disc (given to `Setup TMST.cmd`), in one package. The setup makes
 everything whether it is switched on or not, so switching it on needs only a restart.
@@ -184,7 +199,7 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
        few minutes the first time);
      - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
        setup imported) and its title lists;
-   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, Tekken 2 Content), as the
+   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, VS Mode+, Tekken 2 Content), as the
      Expanded's setup builds it: your mod settings and game data stay.
 
    The window says so if the Expanded has not been set up yet or the game is running. When it reads

@@ -12,8 +12,12 @@ extern "C" {
 #endif
 
 typedef uint16_t (*TmstInputFilter)(int player, uint16_t buttons);
-/* Up to 4 filters, run in the order added. */
+/* Up to 6 filters, run in the order added. */
 int tmst_input_add_filter(TmstInputFilter filter);
+/* The whole chain for `player` (ours, then the Expanded's), as the runtime
+ * runs it for a pad it reads: for buttons handed to a slot without a pad
+ * (tmst_compat_pad_set), which the runtime never filters. */
+uint16_t tmst_input_run(int player, uint16_t buttons);
 
 /* Pad bits, active low (0 = pressed). */
 enum { TMST_PAD_SELECT = 0x0001, TMST_PAD_START = 0x0008, TMST_PAD_UP = 0x0010, TMST_PAD_RIGHT = 0x0020,

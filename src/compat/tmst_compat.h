@@ -62,6 +62,15 @@ int tmst_compat_arcade_stage(void);
  * display, a runtime without the readout). */
 int tmst_compat_read_frame(uint32_t **out, int *w, int *h, int *scale, int *side);
 
+/* The runtime's pads (psxrecomp sio.c, weak). tmst_compat_pad_connected:
+ * 1 / 0, -1 when the runtime has no such call. tmst_compat_pad_set: the
+ * slot (0 or 1) taken as connected (or not) and its buttons (active low)
+ * until the runtime samples it again: a slot without a real pad keeps
+ * them, as the debug port's second-port injection does; the Expanded's
+ * costume panel told so too. 0 when missing. */
+int tmst_compat_pad_connected(int slot);
+int tmst_compat_pad_set(int slot, int connected, uint16_t buttons);
+
 /* The renderer drawing (gr_backend, weak): TMST_RENDERER_*. */
 enum { TMST_RENDERER_UNKNOWN = -1, TMST_RENDERER_SOFTWARE, TMST_RENDERER_OPENGL, TMST_RENDERER_VULKAN };
 int tmst_compat_renderer(void);
