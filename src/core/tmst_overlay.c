@@ -39,6 +39,8 @@ enum { TILE = 256, BUF_WORDS = 8192, BUF_BYTES = BUF_WORDS * 4, NODE_MAX = 255,
  * nodes, between two of one node): linked into lists of SHORT_LIST nodes too. */
 static int short_lists;
 void tmst_overlay_short_lists(int on) { short_lists = on != 0; }
+static int cut_tail;
+void tmst_overlay_cut_tail(int on) { cut_tail = on != 0; }
 
 static uint32_t packet;                 /* guest address of our chain's first node */
 static uint32_t backdrop_node;          /* our node linked after the ordering table's first entry */
@@ -119,6 +121,30 @@ static void give_back(void) {
     vram_up("give back", kept_x, kept_y, kept_w, kept_h, kept);
     kept_w = 0;
 }
+/* Asked from the VBlank (a hide, a move): done at the next list instead.
+ * The OpenGL renderer draws textured primitives in batches, and one may
+ * still be waiting with our picture in it; the half's pixels it samples
+ * are copied when it is drawn. Given back at once, the frame showed what
+ * the area held before (the last fight's stage textures: the noise over
+ * the whole screen between the tournament's match screen and the loading
+ * screen). Not given back if the stage engine wrote in between: theirs. */
+static int give_back_due, atlas_back_due, sheet_back_due;
+static unsigned give_back_generation;
+static void give_back_later(void) {
+    if (!kept_w || give_back_due) return;
+    give_back_due = 1; give_back_generation = tmst_compat_high_vram_generation();
+}
+static void atlas_give_back(void);
+static void sheet_give_back(void);
+static void give_back_due_now(void) {
+    if (give_back_due) {
+        give_back_due = 0;
+        if (tmst_compat_high_vram_generation() == give_back_generation) give_back();
+        else kept_w = 0;
+    }
+    if (atlas_back_due) { atlas_back_due = 0; atlas_give_back(); }
+    if (sheet_back_due) { sheet_back_due = 0; sheet_give_back(); }
+}
 
 static void keep(int x, int y, int w, int h) {
     if (tmst_compat_high_vram_read(x, y, w, h, kept)) { kept_x = x; kept_y = y; kept_w = w; kept_h = h; }
@@ -145,11 +171,11 @@ int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, i
     if (!argb || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || w > TMST_OVERLAY_MAX_W || h > TMST_OVERLAY_MAX_H || !setup())
         return 0;
     int changed = w != pw || h != ph;
-    if (changed && kept_w) give_back();        /* a new size: a new area, at its first place */
+    if (changed && kept_w) give_back_later();  /* a new size: a new area, at its first place */
     if (flags & TMST_OVERLAY_BORROW) {
         int bx, by;
         borrow_place(w, h, &bx, &by);
-        if (kept_w && (vx != bx || vy != by)) { give_back(); changed = 1; }
+        if (kept_w && (vx != bx || vy != by)) { give_back_later(); changed = 1; }
         vx = bx; vy = by;
     } else if (changed) {
         vx = 0; vy = h <= TILE ? 1024 - TILE : 512;
@@ -177,7 +203,7 @@ void tmst_overlay_hide_picture(void) {
     yielded = 0;
     if (!shown) return;
     shown = 0;
-    give_back();
+    give_back_later();
     dirty = 1;
 }
 void tmst_overlay_set_rank_prims(int rank, TmstPrimsBuilder b) {
@@ -200,7 +226,11 @@ static void atlas_give_back(void);
 void tmst_overlay_show_prims(void) { if (setup()) prims_shown = 1; }
 void tmst_overlay_backdrop(int on, uint32_t bgr) { backdrop_on = on; backdrop_bgr = bgr & 0xFFFFFFu; }
 static void sheet_give_back(void);
-void tmst_overlay_hide(void) { shown = 0; prims_shown = 0; yielded = 0; give_back(); atlas_give_back(); sheet_give_back(); dirty = 1; }
+void tmst_overlay_hide(void) {
+    shown = 0; prims_shown = 0; yielded = 0; give_back_later();
+    atlas_back_due = sheet_back_due = 1;           /* (each gives back only what it holds) */
+    dirty = 1;
+}
 int tmst_overlay_visible(void) { return shown; }
 static int drawing(void) { return shown || prims_shown; }
 
@@ -790,7 +820,7 @@ static void link_into(uint32_t start) {
                 linked_frame = frame;
                 link_extras();
                 write_chain(gpu_e1);
-                if (after != 0x00FFFFFFu) chain_end(1, after);
+                if (after != 0x00FFFFFFu && !cut_tail) chain_end(1, after);
             }
             at = after;                                 /* the others' packets after ours */
             continue;
@@ -813,6 +843,7 @@ static void link_into(uint32_t start) {
 extern void __real_gpu_ws_prepass_linked_list(uint32_t start_addr);
 void __wrap_gpu_ws_prepass_linked_list(uint32_t start_addr) {
     give_back_nodes();                  /* the list before is drawn */
+    give_back_due_now();
     if (ready && psx_mod_game_started()) link_into(start_addr);
     __real_gpu_ws_prepass_linked_list(start_addr);
 }

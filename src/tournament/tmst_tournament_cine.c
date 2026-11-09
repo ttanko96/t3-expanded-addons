@@ -39,6 +39,28 @@ static const TmstCineKey devil_cam[] = {
     {140, {350, -1000, -1700}, {0, -1250, 900}},
     {230, {400, -900, -2000}, {0, -1300, 700}},
 };
+/* Heihachi (the user's T1 Grand Final, 2026-11-09): sitting cross-legged on
+ * the ground, his back to the camera (his TTT1 record 815's first frames,
+ * barely moving; not 824's bent kneeling: the user's choice), the camera
+ * coming to him; he gets up (815 on, turning as he stands), turns to
+ * the camera in his lightning (826: its own lightning properties, frames
+ * 1..40 on bones 2, 4, 11, 16, 17), into his stance, then black. A native:
+ * his own TTT1 pack (mods/ttt1), whatever moves he fights on. */
+static const TmstCinePart heihachi_parts[] = {
+    {NULL, 815, 0, 5, 100, 0},                   /* sitting cross-legged, his back to us: clip frames 0..5 */
+    {NULL, 815, 5, 90, 120, 0},                  /* getting up: 5..112 */
+    {NULL, 826, 0, 100, 59, 10},                 /* the turn in lightning: 0..58 */
+    {NULL, -1, 0, 100, 70, 18},                  /* his stance */
+};
+/* He sits at z 2100 (his root at y -570); getting up he goes away from us,
+ * a little to the right: he ends about (300, 2380) (TEKKEN3_CINE_RECORD). */
+static const TmstCineKey heihachi_cam[] = {
+    {0, {400, -450, -1300}, {0, -550, 2100}},
+    {100, {250, -550, -500}, {0, -550, 2100}},      /* behind him, low */
+    {170, {350, -850, -1100}, {100, -850, 2500}},   /* back and up with him */
+    {230, {500, -900, -1500}, {250, -950, 2450}},
+    {330, {550, -950, -1450}, {300, -1000, 2380}},  /* his whole figure */
+};
 /* The fallback: standing in its stance, the camera coming closer. */
 static const TmstCinePart stance_parts[] = {{NULL, -1, 0, 100, 240, 0}};
 static const TmstCineKey stance_cam[] = {
@@ -48,10 +70,12 @@ static const TmstCineKey stance_cam[] = {
 #define N(a) (int)(sizeof a / sizeof *a)
 static const TmstBossIntro intros[] = {
     {"devil", devil_parts, N(devil_parts), 230, {0, 0, 1200, 0x8000}, 24, 24, devil_cam, N(devil_cam),
-     "kazuya", 134, 6, 129, 200, 2, {14, 16, 11, 9, 1, 4, 17, 2}, 8},
+     "kazuya", 134, 6, 129, 200, 2, {14, 16, 11, 9, 1, 4, 17, 2}, 8, NULL},
+    {"heihachi", heihachi_parts, N(heihachi_parts), 330, {0, 0, 2100, 0x8000}, 30, 24, heihachi_cam, N(heihachi_cam),
+     NULL, 0, 0, 221, 266, 2, {2, 4, 11, 16, 17, 14, 9}, 7, "Heihachi-TTT1"},
 };
 static const TmstBossIntro fallback = {NULL, stance_parts, N(stance_parts), 240, {0, 0, 1800, 0x8000}, 30, 24,
-                                       stance_cam, N(stance_cam), NULL, 0, 0, 0, 0, 0, {0}, 0};
+                                       stance_cam, N(stance_cam), NULL, 0, 0, 0, 0, 0, {0}, 0, NULL};
 
 const TmstBossIntro *tmst_boss_intro(const char *key) {
     for (size_t i = 0; key && i < sizeof intros / sizeof *intros; i++)
@@ -77,24 +101,25 @@ static const uint8_t *clip_of(const uint8_t *pack, size_t size, uint32_t r, int 
     if (*frames < 2 || (uint64_t)clip + 8 + (uint64_t)*frames * CHANNELS * 2 > size) return NULL;
     return pack + clip + 8;
 }
-/* Part p's clip (clip -1: its pack's neutral); the boss's neutral for one
- * missing. *pack_out, *record: the pack and record it came from. */
-static const uint8_t *part_record(const TmstCinePart *p, TmstPackOf pack_of, void *ctx, int *frames,
+/* Part p's clip (clip -1: its pack's neutral; no pack: the boss's own,
+ * `own`); the boss's neutral for one missing. *pack_out, *record: the pack
+ * and record it came from. */
+static const uint8_t *part_record(const TmstCinePart *p, const char *own, TmstPackOf pack_of, void *ctx, int *frames,
                                   const uint8_t **pack_out, size_t *size_out, uint32_t *record) {
     size_t size = 0;
-    const uint8_t *pack = pack_of(p->pack, &size, ctx), *c = NULL;
+    const uint8_t *pack = pack_of(p->pack ? p->pack : own, &size, ctx), *c = NULL;
     if (pack_ok(pack, size)) c = clip_of(pack, size, *record = p->clip >= 0 ? (uint32_t)p->clip : word(pack + 16), frames);
     if (!c) {
-        pack = pack_of(NULL, &size, ctx);
+        pack = pack_of(own, &size, ctx);
         if (!pack_ok(pack, size)) return NULL;
         c = clip_of(pack, size, *record = word(pack + 16), frames);
     }
     *pack_out = pack; *size_out = size;
     return c;
 }
-static const uint8_t *part_clip(const TmstCinePart *p, TmstPackOf pack_of, void *ctx, int *frames) {
+static const uint8_t *part_clip(const TmstCinePart *p, const char *own, TmstPackOf pack_of, void *ctx, int *frames) {
     const uint8_t *pack; size_t size; uint32_t record;
-    return part_record(p, pack_of, ctx, frames, &pack, &size, &record);
+    return part_record(p, own, pack_of, ctx, frames, &pack, &size, &record);
 }
 /* A clip that stays where it is (its distance never changes): a stance. */
 static int still(const uint8_t *c, int n) {
@@ -144,13 +169,13 @@ static void camera_at(const TmstBossIntro *e, int f, int out[6]) {
 int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of, void *ctx, unsigned player_id,
                           unsigned player_costume, unsigned boss_id, unsigned boss_costume) {
     size_t size = 0;
-    if (!out || !e || !pack_of || !pack_ok(pack_of(NULL, &size, ctx), size) || e->frames <= 0 || e->cam_count < 1 ||
+    if (!out || !e || !pack_of || !pack_ok(pack_of(e->own, &size, ctx), size) || e->frames <= 0 || e->cam_count < 1 ||
         e->part_count < 1)
         return 0;
     int n;
     for (int p = 0; p < e->part_count; p++)
         if (e->parts[p].speed <= 0 || e->parts[p].frames <= 0 || e->parts[p].from < 0 ||
-            !part_clip(&e->parts[p], pack_of, ctx, &n))
+            !part_clip(&e->parts[p], e->own, pack_of, ctx, &n))
             return 0;
     fprintf(out, "cine 1\nname boss-intro\nlength %d\narena 0\ndark 0\n", e->frames);
     fprintf(out, "actor 0 %u %u\nhide 0 0\n", player_id, player_costume);
@@ -178,7 +203,7 @@ int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of,
     }
     unsigned v[CHANNELS], last[CHANNELS];
     int raw, raw0, base = 0, f = 0;
-    const uint8_t *c = part_clip(&e->parts[0], pack_of, ctx, &n);
+    const uint8_t *c = part_clip(&e->parts[0], e->own, pack_of, ctx, &n);
     /* Actor 0, hidden: one pose, far behind the boss. */
     clip_at(c, n, 0, v, &raw);
     v[2] = 12000;
@@ -190,7 +215,7 @@ int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of,
      * pose; past them the last pose held. */
     for (int p = 0; p < e->part_count && f < e->frames; p++) {
         const TmstCinePart *part = &e->parts[p];
-        c = part_clip(part, pack_of, ctx, &n);
+        c = part_clip(part, e->own, pack_of, ctx, &n);
         long start = (long)part->from * 100;
         if (part->from >= n) start = (long)(n - 1) * 100;
         clip_at(c, n, start, v, &raw0);
@@ -222,18 +247,19 @@ int tmst_boss_intro_sounds(const TmstBossIntro *e, TmstPackOf pack_of, void *ctx
     for (int p = 0; e && pack_of && p < e->part_count && start < e->frames; start += e->parts[p++].frames) {
         const TmstCinePart *part = &e->parts[p];
         const uint8_t *pack, *own; size_t size, own_size = 0; uint32_t record; int n;
-        if (part->speed <= 0 || !part_record(part, pack_of, ctx, &n, &pack, &size, &record)) continue;
+        if (part->speed <= 0 || !part_record(part, e->own, pack_of, ctx, &n, &pack, &size, &record)) continue;
         uint64_t at = 32 + (uint64_t)word(pack + 12) * 16 + (uint64_t)record * RECORD;
         uint32_t list = word(pack + at + 28);
         if ((uint64_t)list + 6 > size) continue;
         long t = ((long)half(pack + list + 4) - part->from) * 100;
         if (t < 0 || t >= (long)part->frames * part->speed) continue;
-        own = pack_of(part->pack, &own_size, ctx);       /* the part's pack, or the boss's in its place */
+        const char *stem = part->pack ? part->pack : e->own;
+        own = pack_of(stem, &own_size, ctx);             /* the part's pack, or the boss's in its place */
         for (int k = 0; k < 2 && count < max; k++) {
             unsigned event = half(pack + list + k * 2);
             if (event == NO_SOUND || !(event & SOUND_INDEX)) continue;
             out[count].frame = start + (int)(t / part->speed);
-            out[count].stem = pack == own ? part->pack : NULL;
+            out[count].stem = pack == own ? stem : e->own;
             out[count].index = event & SOUND_INDEX;
             count++;
         }

@@ -69,6 +69,10 @@ void tmst_overlay_backdrop(int on, uint32_t bgr);
  * the GPU's set-up lists). The main menu's whole frame is one list of about
  * 160 nodes: a mod that draws on it asks for this while it draws, 0 after. */
 void tmst_overlay_short_lists(int on);
+/* Nonzero: the chain ends the list again (what others linked after it, the
+ * Expanded's selector cards and its CHARACTER SELECT header, is not drawn),
+ * for a mod's screen that covers the whole picture; 0 after. */
+void tmst_overlay_cut_tail(int on);
 /* Moves the shown picture. */
 void tmst_overlay_move(int x, int y);
 /* The picture hidden from the next frame (its area's pixels given back

@@ -46,6 +46,7 @@
 #include "tmst_tournament_stages.h"
 #include "tmst_tournament_art.h"
 #include "tmst_tournament_screens.h"
+#include "tmst_tournament_story.h"
 #include "tmst_tournament_options.h"
 #include "tmst_tournament_cine.h"
 #include "tmst_files.h"
@@ -317,10 +318,11 @@ enum { TEAMS = 0x800afae1, TEAM_STRIDE = 13, T_LOST = 9, T_SIZE = 12, FIGHTERS =
 enum { FLOW_NONE, FLOW_MATCH, FLOW_BETWEEN };             /* a match to fight; the way back to the next */
 enum { NEXT_MATCH, ELIMINATED, CHAMPION, QUIT };
 enum { STEP_SETTLE, STEP_PAGE, STEP_CURSOR, STEP_COSTUME, STEP_CARD };
-/* The cover's screens: the opening draw, the round's winners going up, the
+/* The cover's screens: the story (T1, T2, T3), the opening draw, the round's winners going up, the
  * wait for START (and the question to leave), the zoom onto the next match,
  * the match view (the loading screen), the champion's or the end's. */
-enum { SCR_NONE, SCR_DRAW, SCR_RESULT, SCR_WAIT, SCR_ASK, SCR_ZOOM, SCR_MATCH, SCR_END };
+enum { SCR_NONE, SCR_DRAW, SCR_RESULT, SCR_WAIT, SCR_ASK, SCR_ZOOM, SCR_MATCH, SCR_END, SCR_STORY };
+enum { STORY_SPEED_NUM = 3, STORY_SPEED_DEN = 10 };      /* the story's text, pixels a frame */
 enum { DRAW_STEP = 6, RESULT_WAIT = 30, RESULT_MOVE = 48, ZOOM_FRAMES = 30, ZOOM_MAX = 190, MATCH_HOLD = 90 };
 static const unsigned char round_level[TMST_BRACKET_ROUNDS] = {1, 3, 5, 7, 9};
 static const char *const round_names[TMST_BRACKET_ROUNDS] = {"FIRST ROUND", "QUARTER FINAL", "SEMI FINAL", "FINAL",
@@ -337,9 +339,11 @@ static struct {
     int step, tries; unsigned step_at;        /* the grid, picked for the player */
     uint16_t hold, previous;                  /* the buttons pressed for the player; the last read */
     int scr; unsigned scr_at;                 /* the cover's screen, since when */
+    int story_done;                           /* the story's text at its end (CROSS starts the draw) */
     uint32_t shown, fresh;                    /* matches drawn decided; decided this round (going up) */
     int loading_seen;                         /* this match's loading screen came */
     int loading_vs; unsigned loading_at;      /* its VS picture drawn (the grid's last lists before), since when */
+    int loading_ok; unsigned loading_vs_at;   /* its portraits checked (vs_portraits_good) or given up on; since when drawn */
     unsigned rounds_won, round_end;           /* both fighters' rounds won; the frame a round ended, 0 none */
     int want, want_now, card_turns;           /* the MOVESET card: the player's TTT1 choice; the card's now */
     int unlocked;                             /* the tournament the win opened, -1 none */
@@ -377,7 +381,7 @@ static void arm_match(void) {
     mt.opponent = tmst_bracket_opponent(&bracket);
     if (mt.match < 0 || mt.opponent < 0) { end_tournament("no match left"); return; }
     mt.flow = FLOW_MATCH; mt.life_set = 0; mt.stalled = 0; mt.loading_seen = 0;
-    mt.loading_vs = 0; mt.loading_at = 0; mt.round_end = 0; mt.member = 0;
+    mt.loading_vs = 0; mt.loading_ok = 0; mt.loading_vs_at = 0; mt.loading_at = 0; mt.round_end = 0; mt.member = 0;
     const TmstTourney *d = tmst_tourney(tm.tourney);
     mt.second = mt.match == TMST_GRAND_FINAL && d->boss2 ? roster_find(d->boss2) : -1;
     int r = tmst_bracket_round(mt.match);
@@ -520,7 +524,10 @@ void __wrap_func_8004439C(CPUState *cpu) {
 /* Before the boss's second form (the CPU's team of two, its second member's
  * round: Kazuya, then Devil), once that round is loaded (the fight's screen,
  * phase INTRO_PHASE: Team Battle's next member has no intro of its own, the
- * round starts 0.3 s later), a short cinematic (src/tournament/
+ * round starts 0.3 s later); or before a Grand Final boss alone that has an
+ * entry (Heihachi, Unknown), once the fight is loaded (phase ALONE_PHASE,
+ * after the VS screen, a few frames before the round's title), a short
+ * cinematic (src/tournament/
  * tmst_tournament_cine.c) in the Expanded's cinematic engine
  * (src/tekken3_cine.c): its .cine written from the boss's own TTT1 combat
  * pack (the player's install, mods/ttt1) into addons/tmst/workspace/
@@ -539,7 +546,7 @@ extern int tekken3_cine_engine_active(void) __attribute__((weak));
 extern void tekken3_cine_abandon(void) __attribute__((weak));
 extern const char *tekken3_ttt1_asset_root(void) __attribute__((weak));
 extern const char *tekken3_guest_moves_prefix_for(unsigned player) __attribute__((weak));
-enum { INTRO_PHASE = 4, FRAME_PIECE = 0x80050450, ACTORS = 0x800a9228, ACTOR_SIZE = 0x188c, FILL = 0x8009e73c,
+enum { INTRO_PHASE = 4, ALONE_PHASE = 7, FRAME_PIECE = 0x80050450, ACTORS = 0x800a9228, ACTOR_SIZE = 0x188c, FILL = 0x8009e73c,
        DARK = 0x800afaa0, CAM_MODE = 0x800a0400, CAM_MODE_SIZE = 0x80, CAM_OBJECT = 0x800a8c40, CAM_OBJECT_SIZE = 0xc0 };
 static struct {
     int played_match, playing, skip;
@@ -548,13 +555,13 @@ static struct {
     uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
     unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
 } intro = {.played_match = -2};
-static int intro_phase(void) {
-    static int phase = -1;
-    if (phase < 0) { const char *e = getenv("TMST_BOSS_INTRO_PHASE"); phase = e && *e ? atoi(e) : INTRO_PHASE; }
-    return phase;
+static int intro_phase(int alone) {
+    const char *e = getenv("TMST_BOSS_INTRO_PHASE");
+    return e && *e ? atoi(e) : alone ? ALONE_PHASE : INTRO_PHASE;
 }
 /* The packs an intro's parts read (tmst_tournament_cine.h's TmstPackOf):
- * the boss's own (NULL: its moves' prefix, P2's) or another by its stem
+ * the boss's own (NULL: its moves' prefix, P2's: a guest's; a native's is
+ * its entry's `own`, a stem) or another by its stem
  * ("Kazuya-TTT1"), mods/ttt1/<stem>-combat.jmv, read whole once while the
  * .cine is written. */
 enum { PACKS_MAX = 4 };
@@ -652,7 +659,7 @@ static void intro_sounds_load(const TmstBossIntro *e) {
     TmstCineSound s[CUES_MAX];
     intro_sounds_free();
     int n = tmst_boss_intro_sounds(e, intro_pack, NULL, s, CUES_MAX), k = 0;
-    const char *own = tekken3_guest_moves_prefix_for ? tekken3_guest_moves_prefix_for(1) : NULL;
+    const char *own = e->own ? e->own : tekken3_guest_moves_prefix_for ? tekken3_guest_moves_prefix_for(1) : NULL;
     for (int i = 0; i < n; i++) {
         uint32_t frames = 0;
         int16_t *pcm = jus_sound(s[i].stem ? s[i].stem : own, s[i].index, &frames);
@@ -689,13 +696,19 @@ static void boss_intro_tick(unsigned screen, int due) {
         intro.playing = 0; intro.skip = 0;
         tmst_log("tournament: the boss intro over");
     }
-    if (!tekken3_cine_play || !tekken3_cine_abandon || team_size() < 2 || due != 1 || intro.played_match == mt.match ||
-        screen != FIGHT || psx_mod_read_half(PHASE) != (unsigned)intro_phase())
+    /* The Grand Final's last member: the second form, or the boss alone
+     * (only with an entry of its own: the Free Tournament's drawn one not). */
+    int alone = team_size() == 1;
+    if (!tekken3_cine_play || !tekken3_cine_abandon || mt.match != TMST_GRAND_FINAL || due != team_size() - 1 ||
+        intro.played_match == mt.match || screen != FIGHT || psx_mod_read_half(PHASE) != (unsigned)intro_phase(alone))
         return;
+    const Fighter *boss = member_fighter(due);
+    const TmstBossIntro *e = tmst_boss_intro(boss->key);
+    if (alone && !e->key) return;
     intro.played_match = mt.match;
-    const Fighter *boss = member_fighter(1);
     size_t size = 0;
-    if (boss->id < STOCK || !intro_pack(NULL, &size, NULL)) {
+    /* A native's pack is its entry's (its moves in the fight are not TTT1's). */
+    if ((boss->id < STOCK && !e->own) || !intro_pack(e->own, &size, NULL)) {
         tmst_log("tournament: no TTT1 moves for %s, no intro", boss->name);
         intro_packs_free();
         return;
@@ -704,7 +717,6 @@ static void boss_intro_tick(unsigned screen, int due) {
     snprintf(dir, sizeof dir, "%s/addons/tmst/workspace/boss-intro", tmst_files_root());
     snprintf(path, sizeof path, "%s/%s.cine", dir, boss->key);
     FILE *f = tmst_files_make_dirs(dir) ? fopen(path, "w") : NULL;
-    const TmstBossIntro *e = tmst_boss_intro(boss->key);
     int ok = f && tmst_boss_intro_write(f, e, intro_pack, NULL, psx_mod_read_half(FIGHTERS), psx_mod_read_half(COSTUMES),
                                         boss->id, boss->costume);
     if (f && fclose(f)) ok = 0;
@@ -717,7 +729,7 @@ static void boss_intro_tick(unsigned screen, int due) {
     if (!tekken3_cine_play(path, 0, NULL)) { tmst_log("tournament: %s not played", path); return; }
     intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0;
     tmst_log("tournament: %s's intro (%s) at phase %d, %d frames", boss->name, e->key ? e->key : "the fallback",
-             intro_phase(), e->frames);
+             intro_phase(alone), e->frames);
     /* The boss's piece from the intro's first frame on (the Jukebox; the
      * game starts it only with the round). */
     if (!tmst_jukebox_lead_in()) tmst_log("tournament: the intro without music (no Jukebox piece)");
@@ -1001,6 +1013,13 @@ static void cover_input(uint16_t buttons) {
     mt.previous = buttons;
     if (!mt.cover) return;
     int go = (edges & (B_START | B_CROSS)) != 0;
+    if (mt.scr == SCR_STORY) {               /* START skips it; at its end CROSS (or START) starts the draw */
+        if ((edges & B_START) || (mt.story_done && (edges & B_CROSS))) {
+            tmst_log("tournament: the story %s", mt.story_done ? "read" : "skipped");
+            mt.scr = SCR_DRAW; mt.scr_at = tm.frames;
+        }
+        return;
+    }
     if ((mt.scr == SCR_DRAW || mt.scr == SCR_RESULT) && go) mt.scr_at = 0;     /* to its end */
     else if (mt.scr == SCR_WAIT && go) { mt.confirmed = 1; mt.scr = SCR_ZOOM; mt.scr_at = tm.frames; }
     else if (mt.scr == SCR_WAIT && (edges & B_CIRCLE)) { mt.scr = SCR_ASK; tm.version++; }
@@ -1320,7 +1339,7 @@ static uint32_t grid_table(void) {
     return (w >> 26) == 0x0f ? (w & 0xffffu) << 16 : STOCK_GRID;
 }
 enum { CELL_W = 36, CELL_H = 63, ICON_W = 32, ICON_H = 58, GREY_RAMP = 0x7d50, CELLS = 22, LOADING_SCREEN = 11,
-       FIGHTERS_AT = 0x800add5c, COSTUMES_AT = 0x800add98 };
+       FIGHTERS_AT = 0x800add5c, COSTUMES_AT = 0x800add98, HELD_PORTRAIT = 0x80098106, NO_PORTRAIT = 0xff };
 static int grey_tourney;
 /* A stock fighter's icon read from VRAM the first time the grid draws it
  * (not greyed: the game's own grey ramp is not its palette). */
@@ -1374,25 +1393,68 @@ static void capture_vs(uint32_t clut_at, int x, int y, int w, int h, unsigned op
     vs[side].seen |= 1 << band;
     if (vs[side].seen == 15) mt.loading_vs = 1;      /* a whole portrait: the VS screen (not the grid's PLEASE WAIT) */
 }
-static void keep_vs_portraits(void) {
-    for (int p = 0; p < 2; p++) {
-        if (vs[p].done || vs[p].seen != 15) continue;
-        vs[p].done = 1;
-        unsigned id = psx_mod_read_half(FIGHTERS_AT + 2 * p), costume = psx_mod_read_half(COSTUMES_AT + 2 * p);
-        if (id >= STOCK || (id == KUMA && costume == 1) || (id == EDDY && costume == 2) || art_portrait(stock_keys[id]))
-            continue;                                          /* a guest's, Panda's, Tiger's come from their .jui */
-        ArtImage im = {0};
-        im.px = calloc((size_t)VS_W * VS_H, sizeof(uint32_t)); im.w = VS_W; im.h = VS_H;
-        int ok = im.px != NULL;
-        for (int b = 0; b < 4 && ok; b++) {
-            ArtImage band;
-            int rows = b == 3 ? VS_H - 3 * VS_BAND : VS_BAND;
-            ok = art_read_texture(vs[p].tpage, vs[p].clut[b], vs[p].u, b * VS_BAND, VS_W, rows, &band);
-            if (ok) { memcpy(im.px + (size_t)b * VS_BAND * VS_W, band.px, sizeof(uint32_t) * VS_W * (size_t)rows); free(band.px); }
-        }
-        if (ok) art_set_portrait(stock_keys[id], &im, 1);
-        else free(im.px);
+/* A stock fighter's portrait read back from VRAM (NULL px: not readable). */
+static int vs_read(int p, ArtImage *im) {
+    *im = (ArtImage){0};
+    im->px = calloc((size_t)VS_W * VS_H, sizeof(uint32_t)); im->w = VS_W; im->h = VS_H;
+    int ok = im->px != NULL;
+    for (int b = 0; b < 4 && ok; b++) {
+        ArtImage band;
+        int rows = b == 3 ? VS_H - 3 * VS_BAND : VS_BAND;
+        ok = art_read_texture(vs[p].tpage, vs[p].clut[b], vs[p].u, b * VS_BAND, VS_W, rows, &band);
+        if (ok) { memcpy(im->px + (size_t)b * VS_BAND * VS_W, band.px, sizeof(uint32_t) * VS_W * (size_t)rows); free(band.px); }
     }
+    if (!ok) { free(im->px); im->px = NULL; }
+    return ok;
+}
+/* The stock fighter whose own portrait the loading screen shows for p (-1:
+ * a guest's, Panda's, Tiger's, which come from their .jui). */
+static int vs_stock(int p) {
+    unsigned id = psx_mod_read_half(FIGHTERS_AT + 2 * p), costume = psx_mod_read_half(COSTUMES_AT + 2 * p);
+    return id >= STOCK || (id == KUMA && costume == 1) || (id == EDDY && costume == 2) ? -1 : (int)id;
+}
+/* Pixels (RGB, see-through as one) that differ, of the portrait's. */
+static int vs_differ(const ArtImage *a, const ArtImage *b) {
+    if (!a->px || !b->px || a->w != b->w || a->h != b->h) return a->w * a->h;
+    int n = 0;
+    for (int i = 0; i < a->w * a->h; i++) {
+        uint32_t x = a->px[i] >> 24 ? a->px[i] & 0xffffff : 0x1000000u, y = b->px[i] >> 24 ? b->px[i] & 0xffffff : 0x1000000u;
+        n += x != y;
+    }
+    return n;
+}
+/* Each loading-screen frame, both portraits read back once all their bands
+ * were drawn: a portrait is good when it is the cached one (the game drew
+ * its bands before the texels were in place, or over others' pixels, is
+ * what the player saw broken), or, none cached, when it has held still for
+ * VS_STILL frames: only then cached (never a broken one kept). */
+enum { VS_STILL = 10, VS_SLACK = 200 };         /* pixels allowed to differ (of 31752) */
+static struct { uint32_t sum; int still, good; } vs_check[2];
+static int vs_portraits_good(void) {
+    int good = 1;
+    for (int p = 0; p < 2; p++) {
+        if (vs_check[p].good) continue;
+        if (vs[p].seen != 15) { good = 0; continue; }
+        int id = vs_stock(p);
+        if (id < 0) { vs_check[p].good = 1; continue; }
+        ArtImage im;
+        if (!vs_read(p, &im)) { good = 0; continue; }
+        /* Another costume's (or an outfit mod's) portrait is not the cached
+         * one: held still, it is good too, but not cached. */
+        const ArtImage *cached = art_portrait(stock_keys[id]);
+        int same = cached && vs_differ(&im, cached) <= VS_SLACK;
+        uint32_t sum = 2166136261u;
+        for (int i = 0; i < VS_W * VS_H; i++) sum = (sum ^ im.px[i]) * 16777619u;
+        vs_check[p].still = sum == vs_check[p].sum ? vs_check[p].still + 1 : 0;
+        vs_check[p].sum = sum;
+        vs_check[p].good = same || vs_check[p].still >= VS_STILL;
+        if (vs_check[p].good && !cached) art_set_portrait(stock_keys[id], &im, 1);
+        else free(im.px);
+        if (vs_check[p].good) tmst_log("tournament: P%d's loading portrait (%s) %s", p + 1, stock_keys[id],
+                                       same ? "is the cached one" : cached ? "held still (not the cached one)" : "held still, kept");
+        good &= vs_check[p].good;
+    }
+    return good;
 }
 static void log_loading(uint32_t clut_at, int x, int y, int w, int h, unsigned op) {
     if (w >= 48 && h >= 48)
@@ -1676,6 +1738,22 @@ static void show_canvas(unsigned screen, int x, int y, int w, int h) {
     tmst_overlay_show_scaled(art_canvas, ART_W, ART_H, x, y, w, h, TMST_OVERLAY_BORROW | TMST_OVERLAY_YIELD);
     pic_on = 1;
 }
+/* The tournament's story (data/tournament/story/<id>.txt), read at its
+ * start: 1 when it has one (the T1, T2 and T3 tournaments). */
+static TmstStory story;
+static int story_load(int tourney) {
+    char path[4200];
+    snprintf(path, sizeof path, "%s/addons/tmst/data/tournament/story/%s.txt", tmst_files_root(), tmst_tourney(tourney)->id);
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    static char text[TMST_STORY_TEXT];
+    size_t n = fread(text, 1, sizeof text - 1, f);
+    fclose(f);
+    text[n] = 0;
+    int ok = tmst_story_parse(&story, text);
+    tmst_log("tournament: the story %s %s", path, ok ? "told" : "empty");
+    return ok;
+}
 static void cover_screen(unsigned screen) {
     unsigned t = tm.frames - mt.scr_at;
     const char *tourney = tmst_tourney(tm.tourney)->name;
@@ -1683,6 +1761,11 @@ static void cover_screen(unsigned screen) {
                         TMST_BRACKET_SLOTS, (int)tm.frames, 0, NULL};
     int x = CANVAS_X, y = 0, w = CANVAS_W, h = ART_H;
     switch (mt.scr) {
+    case SCR_STORY:
+        s.next = -1; s.undrawn = 1;
+        s.prompt = mt.story_done ? ART_X "  START THE DRAW" : "START  SKIP";
+        if (screen_story(&s, &story, (int)(t * STORY_SPEED_NUM / STORY_SPEED_DEN))) mt.story_done = 1;
+        break;
     case SCR_DRAW:
         s.next = -1; s.drawn = (int)(t / DRAW_STEP);
         if (s.drawn >= TMST_BRACKET_SLOTS) { s.drawn = TMST_BRACKET_SLOTS; mt.scr = SCR_WAIT; mt.scr_at = tm.frames; }
@@ -1801,7 +1884,8 @@ static void tick(void) {
             mt.want_now = mt.want;
             mt.match = tmst_bracket_player_match(&bracket); mt.opponent = tmst_bracket_opponent(&bracket);
             mt.flow = FLOW_BETWEEN; mt.outcome = NEXT_MATCH; mt.cover = 1; mt.confirmed = 0; mt.previous = 0;
-            mt.scr = SCR_DRAW; mt.scr_at = tm.frames; mt.step = STEP_SETTLE; mt.step_at = tm.frames; mt.tries = 0;
+            mt.story_done = 0; mt.scr = story_load(tm.tourney) ? SCR_STORY : SCR_DRAW;
+            mt.scr_at = tm.frames; mt.step = STEP_SETTLE; mt.step_at = tm.frames; mt.tries = 0;
             tmst_log("tournament: the pick held for the draw (0x%x, %s moves)", choice, mt.want ? "TTT1" : "T3");
         } else {
             tm.view = VIEW_PICKED; tm.version++; pic_on = 0; tmst_overlay_hide();
@@ -1814,11 +1898,28 @@ static void tick(void) {
         mt.loading_seen = 1;
         if (!mt.loading_at) mt.loading_at = tm.frames | 1;
         else if (!mt.loading_vs && tm.frames - mt.loading_at > 120) {     /* no VS portraits seen: shown anyway */
-            mt.loading_vs = 1; tmst_log("tournament: the loading screen's portraits not seen");
+            mt.loading_vs = mt.loading_ok = 1; tmst_log("tournament: the loading screen's portraits not seen");
         }
     }
-    if (screen == LOADING) keep_vs_portraits();
-    else memset(vs, 0, sizeof vs);
+    /* The loading screen loads a player's portrait only when the one asked
+     * for differs from the one held (0x80098106 + player): from the second
+     * match on, the player's native fighter was never loaded again, and
+     * what the fights had left in its place showed. Held as none from the
+     * pick to the loading screen (not on it, where it would load again each
+     * frame), as the Expanded does for its guests. */
+    if (mt.flow == FLOW_MATCH && !mt.loading_seen && (screen == GRID || screen == FIGHT))
+        for (unsigned p = 0; p < 2; p++)
+            if (psx_mod_read_byte(HELD_PORTRAIT + p) != NO_PORTRAIT) psx_mod_write_byte(HELD_PORTRAIT + p, NO_PORTRAIT);
+    if (screen == LOADING) {
+        int good = vs_portraits_good();                   /* (outside the tournament it only fills the cache) */
+        if (mt.flow == FLOW_MATCH && mt.loading_vs && !mt.loading_ok) {
+            if (!mt.loading_vs_at) mt.loading_vs_at = tm.frames | 1;
+            if (good) mt.loading_ok = 1;
+            else if (tm.frames - mt.loading_vs_at > 90) {
+                mt.loading_ok = 1; tmst_log("tournament: the loading screen's portraits not checked, shown anyway");
+            }
+        }
+    } else { memset(vs, 0, sizeof vs); memset(vs_check, 0, sizeof vs_check); }
     static unsigned room_screen, room_gen;              /* TMST_TOURNAMENT_ROOM: the upper half's free room logged */
     if (getenv("TMST_TOURNAMENT_ROOM") && (screen != room_screen || tmst_compat_high_vram_generation() != room_gen)) {
         room_screen = screen; room_gen = tmst_compat_high_vram_generation();
@@ -1835,8 +1936,9 @@ static void tick(void) {
     /* The loading screen is the game's own VS screen: in it other things
      * than the stage engine upload into the upper VRAM half (TTT Hitspark's
      * images), not a place for the picture. Black until its VS portraits are
-     * drawn (the grid draws its way out in its first frames). */
-    if (mt.cover && mt.flow == FLOW_MATCH && ((screen == LOADING && mt.loading_vs) ||
+     * drawn (the grid draws its way out in its first frames) and their
+     * texels are right (vs_portraits_good). */
+    if (mt.cover && mt.flow == FLOW_MATCH && ((screen == LOADING && mt.loading_ok) ||
                                               (screen == FIGHT && mt.loading_seen && !mt.life_set))) {   /* the grid leaves through 8 for a frame */
         mt.cover = 0; mt.scr = SCR_NONE;
     }
@@ -1850,6 +1952,9 @@ static void tick(void) {
     }
     if (tm.active && !team_grid()) close_screen();
     static int covered;
+    /* The cover is the whole screen: nothing linked after our chain over it
+     * (the Expanded's CHARACTER SELECT header showed on the progress screen). */
+    tmst_overlay_cut_tail(mt.cover);
     if (mt.cover) {
         if (!covered) { tmst_overlay_hide_picture(); pic_on = 0; }
         tmst_overlay_backdrop(1, 0); tmst_overlay_show_prims(); covered = 1;

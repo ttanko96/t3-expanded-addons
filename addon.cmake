@@ -36,6 +36,7 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_cine.c
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
+    src/tournament/tmst_tournament_story.c
     src/tournament/tmst_tournament_options.c
     src/tournament/tmst_tournament.c
     src/vsplus/tmst_vsplus.c

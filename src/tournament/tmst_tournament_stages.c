@@ -16,7 +16,7 @@ static const Home tekken1[] = {
 static const Home tekken2[] = {
     {"bruce", 0}, {"wang", 1}, {"jun", 2}, {"paul", 3}, {"king", 4}, {"lei", 5}, {"heihachi", 6},
     {"yoshimitsu", 7}, {"jack2", 8}, {"law", 9}, {"kunimitsu", 10}, {"nina", 11}, {"armorking", 12}, {"lee", 13},
-    {"kuma", 14}, {"ganryu", 15}, {"anna", 16}, {"roger", 17}, {"alex", 17}, {"pjack", 18}, {"michelle", 19},
+    {"kuma", 14}, {"ganryu", 15}, {"anna", 16}, {"roger", 17}, {"alex", 14}, {"pjack", 18}, {"michelle", 19},
     {"baek", 20}, {"kazuya", 21}, {"devil", 22}, {"angel", 22}, {NULL, -1}};
 /* Tekken 3's arenas. */
 static const Home tekken3[] = {

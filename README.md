@@ -77,7 +77,9 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
 - **Boss intro:** before Devil, a short cinematic: Kazuya standing in the dark, the camera coming to him, then his
   Tekken Tag change in lightning and a white flash, and Devil stands there; his music starts with it, the move's
   own sounds too. START skips it (from the change on). Made from the fighters' own TTT1 moves in your install
-  (TTT1 Characters needed; without them the fight starts as before). The other bosses are coming in the future..
+  (TTT1 Characters needed; without them the fight starts as before). Before Heihachi (the Tekken 1 Grand Final,
+  after the VS screen): he sits cross-legged, his back to you, gets up and turns to you in his blue lightning, into
+  his stance. Ogre / True Ogre and Unknown are coming in the future.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
 - **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the

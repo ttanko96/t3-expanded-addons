@@ -42,12 +42,15 @@ typedef struct {
     int flash;                  /* with `start`: a white flash, up for these frames to the swap and down after */
     int aura_from, aura_to, aura_step;          /* the lightning (its own hit effect) on these bones in turn */
     uint8_t aura_bones[TMST_AURA_BONES]; int aura_bone_count;
+    const char *own;            /* the boss's own pack's stem ("Heihachi-TTT1": a native's TTT1 pack, its moves
+                                   in the fight not TTT1); NULL: P2's TTT1 moves' (a guest's) */
 } TmstBossIntro;
 
 /* The entry for `key` (the fallback when it has none; never NULL). */
 const TmstBossIntro *tmst_boss_intro(const char *key);
 
-/* A pack's bytes by its stem (NULL: the boss's own), NULL when missing. */
+/* A pack's bytes by its stem (NULL: the boss's own, an entry without `own`),
+ * NULL when missing. A part with no pack is the boss's: `own`, or NULL. */
 typedef const uint8_t *(*TmstPackOf)(const char *stem, size_t *size, void *ctx);
 
 /* The .cine for entry e into `out`, the poses from the packs `pack_of`

@@ -8,12 +8,14 @@
  *   cine <key|-> <own.jmv> [<stem>=<file>...]
  *                                       "entry <key|->", then the boss intro's .cine (player 7/1, boss 33/0)
  *   sounds <key|-> <own.jmv> [<stem>=<file>...]
- *                                       "entry <key|->", then "<frame> <stem|-> <index>" per sound */
+ *                                       "entry <key|->", then "<frame> <stem|-> <index>" per sound
+ *   story <file> <width>                "title|<header>", then "|<line>" per line, cut at <width> characters */
 #include "tmst_bracket.h"
 #include "tmst_tournament_pools.h"
 #include "tmst_tournament_progress.h"
 #include "tmst_tournament_stages.h"
 #include "tmst_tournament_cine.h"
+#include "tmst_tournament_story.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,13 +27,21 @@ static void winners(const TmstBracket *b) {
 
 /* The boss intro's packs, read from the command line (cine). */
 enum { PACKS = 4 };
-static struct { char stem[64]; uint8_t data[1 << 20]; size_t size; } packs[PACKS];
+static struct { char stem[64]; uint8_t data[1 << 23]; size_t size; } packs[PACKS];   /* a real pack too (up to 8 MB) */
 static int pack_count;
 static const uint8_t *pack_of(const char *stem, size_t *size, void *ctx) {
     (void)ctx;
     for (int i = 0; i < pack_count; i++)
         if (stem ? !strcmp(packs[i].stem, stem) : !packs[i].stem[0]) { *size = packs[i].size; return packs[i].data; }
     return NULL;
+}
+
+/* A line's width in characters (UTF-8: its lead bytes). */
+static int story_chars(const char *text, void *ctx) {
+    (void)ctx;
+    int n = 0;
+    for (; *text; text++) n += ((unsigned char)*text & 0xc0) != 0x80;
+    return n;
 }
 
 int main(int argc, char **argv) {
@@ -81,6 +91,18 @@ int main(int argc, char **argv) {
         for (int t = 0; t < TMST_TOURNEYS; t++) if (tmst_progress_open(&p, t)) printf(" %d", t);
         if (opens != -2) printf(" opens %d", opens);
         printf("\n");
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "story")) {
+        static char text[TMST_STORY_TEXT]; static TmstStory s;
+        FILE *f = fopen(argv[2], "rb");
+        size_t n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+        if (f) fclose(f);
+        text[n] = 0;
+        if (!tmst_story_parse(&s, text)) { printf("none\n"); return 0; }
+        tmst_story_wrap(&s, atoi(argv[3]), story_chars, NULL);
+        printf("title|%s\n", s.title);
+        for (int i = 0; i < s.lines; i++) printf("|%s\n", s.out + s.line[i]);
         return 0;
     }
     if (argc >= 5 && !strcmp(argv[1], "stage")) {

@@ -14,6 +14,7 @@
 #define TMST_TOURNAMENT_SCREENS_H
 #include <stdint.h>
 #include "tmst_bracket.h"
+#include "tmst_tournament_story.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,9 +36,14 @@ typedef struct {
     int shuffle;                          /* while drawing: a frame count for the slots still turning */
     int over;                             /* TOURNAMENT OVER's pyramid */
     const char *prompt;                   /* the strip's button line, NULL none */
+    int undrawn;                          /* the slots empty: the draw still to come (the story before it) */
 } ScreenProgress;
 
 void screen_progress(const ScreenProgress *s);
+/* The story before the draw: the pyramid (its slots empty), over it a
+ * see-through panel, the story's header, its text `offset` pixels up from
+ * under the panel. Returns 1 once the text has come to its end (and stays). */
+int screen_story(const ScreenProgress *s, TmstStory *story, int offset);
 /* The canvas point a match sits at (its fighters' middle), for the zoom. */
 void screen_match_point(int match, int *x, int *y);
 /* The match view: the round, both fighters. */

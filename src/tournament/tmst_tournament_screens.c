@@ -1,6 +1,7 @@
 /* tmst.tournament: the screens (tmst_tournament_screens.h). */
 #include "tmst_tournament_screens.h"
 #include "tmst_tournament_art.h"
+#include "tmst_ui_font.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +94,7 @@ static void pyramid(const ScreenProgress *s) {
         for (int j = 0; j < level_count[L]; j++) {
             int x, y, w, h, f = node_fighter(s, L, j);
             box(L, j, &x, &y, &w, &h);
+            if (L == 0 && s->undrawn) { face(s, TMST_NOBODY, x, y, w, h, 1); continue; }
             if (L == 0 && j >= s->drawn) {                       /* still being drawn: a face turning */
                 int k = (s->shuffle / 3 + j * 7) % TMST_BRACKET_SLOTS;
                 face(s, s->bracket->slot[k], x, y, w, h, 1);
@@ -149,6 +151,60 @@ void screen_progress(const ScreenProgress *s) {
         art_text(line, ART_W / 2, 428, 1, 70, WHITE);
     }
     if (s->prompt) art_text(s->prompt, ART_SAFE_X + ART_SAFE_W - 4, 456, 2, 50, DIM);
+}
+
+/* ---- the story ----
+ * The panel over the pyramid, under its boss, the 4:3 screen's middle; its
+ * text in the UI font (the title font has no small letters nor marks),
+ * drawn into a strip of the panel's text area, faded at its top and bottom. */
+enum { STORY_X = ART_W / 2 - 290, STORY_Y = 124, STORY_W = 580, STORY_H = 294, STORY_TX = STORY_X + 28,
+       STORY_TY = STORY_Y + 52, STORY_TW = STORY_W - 56, STORY_TH = STORY_H - 64, STORY_LINE = 22, STORY_GAP = 11,
+       STORY_FADE = 18, STORY_CAP = 11 };
+static uint32_t story_px[STORY_TW * STORY_TH];
+static double story_sx(void) { return STORY_CAP * 1.25 / tmst_ui_face_list.cap; }   /* the LIST face: texels 1.25 wide */
+static double story_sy(void) { return (double)STORY_CAP / tmst_ui_face_list.cap; }
+static int story_width(const char *text, void *ctx) {
+    (void)ctx;
+    return (int)(tmst_ui_width(&tmst_ui_face_list, text) * story_sx() + 0.5);
+}
+int screen_story(const ScreenProgress *s, TmstStory *story, int offset) {
+    screen_progress(s);
+    if (story->wrapped_w != STORY_TW) tmst_story_wrap(story, STORY_TW, story_width, NULL);
+    art_fill(STORY_X, STORY_Y, STORY_W, STORY_H, 0xa0000000u);
+    art_frame(STORY_X, STORY_Y, STORY_W, STORY_H, 2, 0xffe8b830u);
+    art_text(story->title, ART_W / 2, STORY_Y + 14, 1, 90, 0);
+    art_fill(STORY_X + 24, STORY_Y + 44, STORY_W - 48, 1, 0xff8a7030u);
+    int height = 0;
+    for (int i = 0; i < story->lines; i++) height += story->out[story->line[i]] ? STORY_LINE : STORY_GAP;
+    /* to its end: the last line above the bottom fade, or a short text's
+     * first below the top one */
+    int end = height + STORY_FADE > STORY_TH - STORY_FADE ? height + STORY_FADE : STORY_TH - STORY_FADE, done = offset >= end;
+    if (done) offset = end;
+    for (int i = 0; i < STORY_TW * STORY_TH; i++) story_px[i] = 0xff000000u;
+    int y = STORY_TH - offset;
+    for (int i = 0; i < story->lines; i++) {
+        const char *line = story->out + story->line[i];
+        if (!*line) { y += STORY_GAP; continue; }
+        if (y > -STORY_LINE && y < STORY_TH)
+            tmst_ui_text_scaled(story_px, STORY_TW, STORY_TH, 0, y, story_sx(), story_sy(), &tmst_ui_face_list, line, 0xffffffffu);
+        y += STORY_LINE;
+    }
+    for (int v = 0; v < STORY_TH; v++) {          /* the text's coverage, white over black, in the text's colour */
+        int edge = v < STORY_TH - 1 - v ? v : STORY_TH - 1 - v, fade = edge >= STORY_FADE ? 256 : edge * 256 / STORY_FADE;
+        uint32_t *d = &art_canvas[(STORY_TY + v) * ART_W + STORY_TX];
+        const uint32_t *c = &story_px[v * STORY_TW];
+        for (int u = 0; u < STORY_TW; u++) {
+            int a = (int)(c[u] & 0xff) * fade >> 8;
+            if (!a) continue;
+            uint32_t o = d[u], r = 0;
+            for (int k = 0; k < 24; k += 8) {
+                int bg = o >> k & 0xff, fg = WHITE >> k & 0xff;
+                r |= (uint32_t)(bg + (fg - bg) * a / 255) << k;
+            }
+            d[u] = (o & 0xff000000u) | r;
+        }
+    }
+    return done;
 }
 
 /* A face as big as the screen asks: the VS portrait, or the icon stretched. */

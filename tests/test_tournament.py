@@ -5,7 +5,7 @@ from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
 SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c',
-           'tmst_tournament_cine.c']
+           'tmst_tournament_cine.c', 'tmst_tournament_story.c']
 # The roster keys the Expanded has today: the stock fighters, Panda and Tiger, its guests.
 STOCK = ['paul', 'law', 'lei', 'king', 'yoshimitsu', 'nina', 'hwoarang', 'xiaoyu', 'eddy', 'jin', 'julia', 'kuma',
          'bryan', 'heihachi', 'ogre', 'mokujin', 'gunjack', 'gon', 'anna', 'drb', 'trueogre', 'panda', 'tiger']
@@ -203,7 +203,7 @@ class TournamentTest(unittest.TestCase):
         self.assertEqual(set(self.music(4, everyone).values()), {'-/-'})
         self.assertEqual(self.music(0, ['paul', 'wang']), {'paul': 't2-console/t2-paul.bgm', 'wang': 't2-console/t2-wang.bgm'})
         self.assertEqual(self.music(1, ['alex', 'angel', 'kazuya', 'devil']),
-                         {'alex': 't2-console/t2-roger.bgm', 'angel': 't2-console/devil.bgm',
+                         {'alex': 't2-console/t2-kuma.bgm', 'angel': 't2-console/devil.bgm',
                           'kazuya': 't2-console/t2-kazuya.bgm', 'devil': 't2-console/devil.bgm'})
         self.assertEqual(self.music(2, ['anna', 'gunjack', 'nina', 'panda', 'trueogre']),
                          {'anna': 't3-console/xa-21', 'gunjack': 't3-console/xa-27', 'nina': 't3-console/xa-38',
@@ -231,7 +231,7 @@ class TournamentTest(unittest.TestCase):
                           'bruce': (self.NONE, -1)})
         self.assertEqual(self.stages(1, ['devil', 'angel', 'roger', 'alex', 'bruce', 'lei']),
                          {'devil': (self.T2, 22), 'angel': (self.T2, 22), 'roger': (self.T2, 17),
-                          'alex': (self.T2, 17), 'bruce': (self.T2, 0), 'lei': (self.T2, 5)})
+                          'alex': (self.T2, 14), 'bruce': (self.T2, 0), 'lei': (self.T2, 5)})
         # T1's stages are T2's, for its own fighters
         t1, t2 = self.stages(0, GUESTS + STOCK), self.stages(1, GUESTS + STOCK)
         for k, v in t1.items():
@@ -370,6 +370,32 @@ class TournamentTest(unittest.TestCase):
         self.assertEqual(self.cine('devil', self.pack(sounds={0: (0x7010, 0xffff, 5)}), 'sounds')[1],
                          ['entry devil', '5 - 16', '87 - 16', '155 - 16'])   # 80 + 5 / 0.7, 150 + 5
 
+    def test_intro_heihachi(self):
+        # a native alone: his own pack by its stem (Heihachi-TTT1), not P2's
+        # moves' (the boss's pack here, channel 3 from 30000, never used)
+        hei = self.pack(records=830, clips={815: (150, 4), 826: (60, 0)}, ch3=5000,
+                        sounds={826: (0x7021, 0xffff, 10)})
+        code, out = self.cine('heihachi', self.pack(ch3=30000), Heihachi=hei)
+        self.assertEqual((code, out[0]), (0, 'entry heihachi'))
+        head, cam, poses = self.blocks(out)
+        n = int(head['length'][0][0])
+        self.assertEqual((len(cam), len(poses[1])), (n, n))
+        self.assertEqual(head['actor'][1], ['1', '33', '0'])                 # the boss all along
+        self.assertNotIn('swap', head)
+        self.assertEqual(len(head['fade']), 2)                               # no flash
+        aura = list(map(int, head['aura'][0]))
+        self.assertEqual(aura[:4], [1, 221, 266, 2])                         # in the turn (826 from frame 220)
+        c3 = [p[3] for p in poses[1]]
+        self.assertTrue(all(5000 <= v < 5000 + 150 * 8 for v in c3), (min(c3), max(c3)))
+        self.assertTrue(all(self.turn(a, b) <= 2500 for a, b in zip(c3, c3[1:])))
+        for a, b in zip(cam, cam[1:]):
+            self.assertTrue(all(abs(x - y) <= 40 for x, y in zip(a, b)), (a, b))
+        # his sound from his pack, at the turn's frame 10
+        self.assertEqual(self.cine('heihachi', self.pack(), 'sounds', Heihachi=hei)[1],
+                         ['entry heihachi', '230 Heihachi-TTT1 33'])
+        # without his pack: not written (no intro)
+        self.assertEqual(self.cine('heihachi', self.pack())[0], 1)
+
     def test_intro_fallback(self):
         own = self.pack()
         code, out = self.cine('-', own)
@@ -387,6 +413,34 @@ class TournamentTest(unittest.TestCase):
         self.assertTrue(all(p[3] < 24 for p in self.blocks(out)[2][1]))
         # not a pack
         self.assertEqual(self.cine('devil', b'\0' * 64)[0], 1)
+
+    # ---- the story before the draw ------------------------------------------------
+    def story(self, text, width):
+        path = Path(self.tmp.name) / 'story.txt'
+        path.write_bytes(text.encode('utf-8'))
+        return subprocess.run([str(self.exe), 'story', str(path), str(width)], check=True, capture_output=True,
+                              encoding='utf-8').stdout.splitlines()
+
+    def test_story_parse_and_wrap(self):
+        out = self.story('\ufeff\r\n  TEKKEN 2  \r\none two three\r\nfour\r\n\r\n\r\n\u201cfive\u201d \u2013 six\r\n', 9)
+        self.assertEqual(out, ['title|TEKKEN 2', '|one two', '|three', '|four', '|',
+                               '|\u201cfive\u201d \u2013', '|six'])
+
+    def test_story_long_word_alone(self):
+        self.assertEqual(self.story('T\nab abcdefghij cd', 5), ['title|T', '|ab', '|abcdefghij', '|cd'])
+
+    def test_story_empty(self):
+        self.assertEqual(self.story('\n\n', 10), ['none'])
+
+    def test_story_files(self):
+        for tid, title in (('t1', 'TEKKEN'), ('t2', 'TEKKEN 2'), ('t3', 'TEKKEN 3')):
+            text = (ADDON / 'data/tournament/story' / f'{tid}.txt').read_text(encoding='utf-8')
+            out = self.story(text, 80)
+            self.assertEqual(out[0], 'title|' + title)
+            self.assertTrue(all(len(line) - 1 <= 80 for line in out[1:]))
+            self.assertTrue(set(title.replace(' ', '')) <= set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'))
+        for tid in ('ttt', 'free'):
+            self.assertFalse((ADDON / 'data/tournament/story' / f'{tid}.txt').exists())
 
 
 if __name__ == '__main__':

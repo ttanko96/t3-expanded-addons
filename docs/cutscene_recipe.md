@@ -113,13 +113,26 @@ Hasznos még (nem használtuk): `light rrggbb`, `music <pcm> f`, `spark`, `eyes`
   a jelenet megfelelő kockáján, a játékos SFX-hangerején.
 - **Fallback:** tábla nélküli guest boss → álló póz, a kamera közelít.
 
+## 6b. Natív boss, egyfős boss (Heihachi, 2026-11-09)
+- **Natív** (Heihachi, Ogre, True Ogre): a motor a TTT1-pózokat a natív csontvázára is lejátssza, T3-mozdulatokon is
+  („donor pose reached native skeleton bridge”). A bejegyzés `own` mezője a saját csomag töve (`"Heihachi-TTT1"`):
+  a pózok és a hangok onnan; `NULL` = a P2 guest-prefixe (Devil).
+- **Egyfős boss** (T1, TTT GF): a VS-képernyő (8/3) után a **8-as képernyő 7-es fázisa** (`ALONE_PHASE`); a 8-asban
+  rögtön a menet címe jön. Csak saját bejegyzéssel (a Free Tournament húzott bossa nem kap). Kétfősnél marad a 4-es.
+- **Kamera:** teljes alakhoz a cél y ≈ −950 (derék), nem −1300 (fej: a láb kilóg); headless 4:3-ban 3,5–3,8 m.
+  A szereplő tényleges útja: `TEKKEN3_CINE_RECORD` + `rec.py` (Heihachi felállva *távolodik*).
+- **Hangolás torna nélkül:** `test-scripts/cine/entry_cine.sh <kulcs> <tő> <swap-kulcs>` (a tábla `.cine`-ja a
+  teszt-exével a telepítés csomagjaiból, `actor 1 xiaoyu` + `swap`), Practice-ben `c5.py` + `TEKKEN3_CINE_TEST`.
+  A Practice-ben a P2 ID írása nem cserél modellt: ezért a `swap`.
+- Egy klip eleje „tartásként”: ugyanaz a klip kis sebességgel (Heihachi 815 0..5 kocka 5 %-on), majd onnan tovább.
+
 ## 7. Buktatók (amibe belefutottunk)
 - **A debug buildben nincs TTT1 adat** (nincs Kazuya/Devil → „FINAL BOSS NOT IN THIS INSTALL”): minden
   `dev\build.cmd --debug` után `sh docs/handoffs/test-scripts/cine/copy_mods.sh` (**másolat, nem junction**: a
   build kiüríti a debug `mods/`-ját, és egy junctionön át a release-t is érhetné).
 - A headless rácsválasztás néha elakad (a mérés „ids 22 22”-t ír): újraindítás.
-- **Natív bossok** (Ogre, True Ogre, Heihachi T3-mozdulatokkal) pózai nem TTT1 csatornák → így nem kapnak intrót
-  (a napló mondja). Ha kell: kutatás (a natívok TTT1 mozdulatkészlete, `tekken3_native_moves`).
+- **Natív bossok:** mennek, de csak `own` csomag-tővel (6b). Egy natívra `swap` után a motor a TTT1-mozdulatokat
+  kényszeríti (`tekken3_native_moves_force`): a harcban azokon maradhat (Ogre → True Ogre-nál mérni).
 - A gyökér-távolság a klipben **előre nő**: ha csökkented, a szereplő hátrafelé „moonwalkol”. Az irányt a
   `place` facing-je adja.
 - A Practice-ben a karakter-ID felülírása nem tölt guestet: a méréshez a torna GF-je kell (kb. 6 perc).
