@@ -10,6 +10,8 @@
 | v1.4.1 (`ff6b0c1`) | 0.1.0 (Tournament Mode) | OK (build-release, debug) | the user, in game (OpenGL, 16:9): tested and approved; headless: t16 (T1 champion, saved), `T16_LOSE=1`, t40 (T2, Kazuya then Devil), t41 (TTT, Unknown), t45 (locking), t24/t23x/t52 (covers, frame by frame) | 2026-11-02 | `tmst.tournament` with jukebox and photo-mode on |
 | v1.4.1 (`ff6b0c1`) | 0.1.0 (Tournament Mode: boss intro) | OK (build-release, debug) | the user, in game: the first version (arms crossed, laser) approved; the tag change (Kazuya → flash → Devil, its sounds): headless only (GF, held frames, `C4_SKIP` before the change) | 2026-11-07 | `tmst.tournament` with jukebox, tekken2 on; TTT1 Characters |
 | v1.4.1 (`ff6b0c1`) | 0.1.0 (VS Mode+) | OK (build-release, debug) | the user, in game: the menu row and its band approved; PLAYER VS CPU, CPU VS CPU, the VS lamp: headless only (vsplus p1, p13-p22: one pad choosing both blocks, the CPU cursor and card, TTT1 guest as the CPU, pause, rematch, back to the menu) | 2026-11-08 | `tmst.vs-plus` with jukebox and tournament on; TTT1 Characters |
+| v1.4.1 (`ff6b0c1`) | 0.2.0 (add-on hook) | OK (build-release, through the shim: the hook not seen, nothing built twice) | – | 2026-11-10 | the hook path (`dev/tmst_hook.cmake`) checked only against a stand-in of 1.5.0's functions (PC and macOS branches, `TMST_WITHOUT`, the shim stepping aside) |
+| 1.5.0 candidate (the Expanded's author) | 0.1.0 + the hook patch | OK on Windows (their test) | the Expanded's author: Jukebox, Photo Mode, VS Mode+, Tournament (no Tekken 2 disc) | 2026-11-09 | macOS: the cross-drive bug of `ttt_arcade_music.py` left the add-on out (fixed in 0.2.0); full Mac build being tested on their side |
 
 `check_upstream.cmd` builds the add-on against the refs given and checks the surfaces below.
 
@@ -24,6 +26,8 @@
 
 | Surface | Used by | Checked by |
 |---|---|---|
+| add-on API 1 (1.5.0 on): `TEKKEN3_ADDON_API`/`_DIR`, `tekken3_addon_chain()`, `tekken3_addon_stage()`, `TEKKEN3_ADDON_SETUP` (stable from then: the Expanded's `addons/README.md`) | `addon.cmake`, `dev/tmst_hook.cmake` | build (`has_hook()` in `dev/build.py`: `TEKKEN3_ADDON_API` in their CMakeLists) |
+| macOS: the game's wrapped symbols, global property `TEKKEN3_WRAPPED_SYMS` (1.5.0, per the hook patch) or `TEKKEN3_WRAP_SYMS` (1.4.1): both read | `dev/tmst_hook.cmake` | – |
 | target `psx-runtime`, `game.toml` at the root, `mods/packages/<id>/<ver>/` staging | `dev/tmst_inject.cmake` | `check_expanded.py` |
 | `tekken3_wrap_symbol()` (macOS emulation of `--wrap`) | `dev/tmst_inject.cmake` | `check_expanded.py` |
 | `mod_plugins.h` function names | `src/compat/tmst_features.cmake` → `TMST_HAS_*` | build |
@@ -149,8 +153,23 @@
   runtime wraps `fopen` (`LINKER:--wrap=fopen`, the APK's files): ours is chained in front (`tmst_chain.py`, the
   NDK's llvm-objcopy, `.o` objects on a Windows host). 2026-11-07: the APK built and signed on Windows (853 MB, no
   music); never run on a phone by the add-on's author.
+- **Data under `mods/tmst-data` (0.2.0):** the Expanded's own APK (with the hook, 1.5.0 on) holds only what is
+  staged under the game's `mods/`. So the build also copies `data/tournament`, `data/photo` and `workspace/jukebox`
+  to `<game>/mods/tmst-data/<same path>` (`TMST_STAGED`, about 1 MB), and the game reads them through
+  `tmst_files_addon()` (`src/core/tmst_files.c`): `<root>/addons/tmst/<path>` when there, else the staged copy
+  (`tests/test_files.py`). `tmst_android.py` no longer adds those three with `--data`. Still `--data` only (so not
+  in the Expanded's own APK): `workspace/jukebox-defaults.txt`, `workspace/tournament` (the portraits' cache, the
+  game makes it again) and the music. Caches the game writes (portraits, `workspace/boss-intro`) stay under
+  `addons/tmst/workspace`, made on first use.
 - **Cached include:** `CMAKE_PROJECT_INCLUDE` stays in `build-release/CMakeCache.txt`, so the Expanded's own
   Update & play keeps building the add-on in. `dev\build.cmd --without` clears it.
+- **With the add-on hook (1.5.0 on):** the Expanded's Update & play clears `CMAKE_PROJECT_INCLUDE` and includes
+  `addon.cmake` itself; so do `dev/build.py` and `setup/tmst_android.py` (`has_hook()`), whose `--without` is the
+  cache's `TMST_WITHOUT=ON` instead (kept for the Expanded's next Update & play, as the stub was). An old cache's
+  stub still runs the shim, which returns at once when the hook is there (global property `TMST_ADDON_HOOK`, or
+  `tekken3_addon_chain` defined): the add-on is never built in twice. Objects `tmst_chain.py` renamed in an older
+  build are deleted once (`forget_chains`), so they compile again. `dev\build.cmd <ref>` copies the add-on (no
+  `workspace/` content, no `dev/build`) into the ref's `addons/tmst` when that ref has the hook.
 - **Chains and `--without`:** renamed objects are listed in `<build>/tmst_chain_state.json`; `--without` (or a
   chain dropped from `addon.cmake`) deletes them so that Ninja compiles them again as the Expanded wrote them.
 - **Removing the add-on folder:** run `dev\build.cmd --without` first. Otherwise the cached

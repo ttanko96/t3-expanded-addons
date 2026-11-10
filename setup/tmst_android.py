@@ -13,11 +13,13 @@ setup steps run again first (nothing is made twice; a Tekken 2 disc it knows
 is used), then the APK is built. What the game reads from addons/tmst goes in
 the APK at the same place (the Tournament's and Photo Mode's pictures, the
 Jukebox's lists and, with --music, its music); the add-on's mods and the Tekken
-2 stages are staged by the build itself (dev/tmst_inject.cmake).
+2 stages are staged by the build itself (dev/tmst_hook.cmake with the
+Expanded's add-on hook, 1.5.0 on; dev/tmst_inject.cmake before it).
 
-The add-on is kept in build-android's CMake cache (CMAKE_PROJECT_INCLUDE), so
-the Expanded's own Build Android APK also builds it in afterwards, as its
-Update & play does on PC; --without takes it out again.
+The add-on is kept in build-android's CMake cache (CMAKE_PROJECT_INCLUDE before
+the hook, TMST_WITHOUT=OFF with it), so the Expanded's own Build Android APK
+also builds it in afterwards, as its Update & play does on PC; --without takes
+it out again.
 """
 from __future__ import annotations
 import argparse, os, subprocess, sys
@@ -31,10 +33,10 @@ sys.path.insert(0, str(ROOT / 'launcher'))
 
 # What the game reads from addons/tmst, as "here|in the APK's data" (the
 # runtime's folder on the phone is the data folder, with game.toml in it).
+# The Tournament's backgrounds and stories, Photo Mode's logo and the Jukebox's
+# title lists are staged by the build under mods/tmst-data (addon.cmake
+# TMST_STAGED), so they are in the APK already, as in the Expanded's own.
 DATA = (
-    'data/tournament',                 # the Tournament's backgrounds
-    'data/photo',                      # Photo Mode's frames
-    'workspace/jukebox',               # the Jukebox's title lists
     'workspace/jukebox-defaults.txt',
     'workspace/tournament',            # the portraits the game made (a cache)
 )
@@ -83,8 +85,12 @@ def main() -> int:
         make_apk.up_to_date()           # never an APK of an older install: the Expanded's update first
         if not args.without:
             addon_setup()
-        tmst_build.forget_chains(BUILD, set() if args.without else tmst_build.chains_listed())
-        include = '' if args.without else tmst_build.write_stub(BUILD).as_posix()
+        hook = tmst_build.has_hook(ROOT)
+        tmst_build.forget_chains(BUILD, set() if args.without or hook else tmst_build.chains_listed())
+        if hook:    # the Expanded's add-on hook builds the add-on in (addon.cmake)
+            defines = ['CMAKE_PROJECT_INCLUDE=', 'TMST_WITHOUT=' + ('ON' if args.without else 'OFF')]
+        else:
+            defines = ['CMAKE_PROJECT_INCLUDE=' + ('' if args.without else tmst_build.write_stub(BUILD).as_posix())]
         extra = [] if args.without else data_args(args.music)
 
         def run(command, env=None):
@@ -94,7 +100,7 @@ def main() -> int:
             make_apk.run_command(command, env)
 
         apk = make_apk.build(out=(args.out or make_apk.DEFAULT_OUT).resolve(), run=run,
-                             defines=['CMAKE_PROJECT_INCLUDE=' + include])
+                             defines=defines)
         say(f'APK ready: {apk} ({apk.stat().st_size / 1e6:.0f} MB), '
             + ('without the add-on' if args.without else 'with the add-on' + (' and its music' if args.music else '')))
         if args.install:

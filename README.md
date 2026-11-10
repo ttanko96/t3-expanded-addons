@@ -180,6 +180,25 @@ experimental). You need a Tekken 3 Expanded that has been set up once with its o
 this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in `addons/tmst/workspace/`
 (Tekken 1 and 2 about 1.3 GB, TTT about 470 MB).
 
+### Tekken 3 Expanded 1.5.0 and later
+
+The Expanded builds add-ons in by itself
+([its add-on support](https://github.com/omarma/tekken3-expanded/blob/main/addons/README.md)):
+
+1. **Close the game**, then **put the add-on in place**, exactly at `<the Expanded's folder>/addons/tmst/` (the
+   `git clone` below for your platform, or the ZIP renamed to `tmst`; `addons/tmst/addon.cmake` must exist).
+2. **Start the Expanded's setup and click Update & play.** It runs the add-on's setup (the Jukebox's music, and the
+   Tekken 2 content from a disc it already knows), then builds the game with the add-on. Its mods show in the
+   launcher's **Mods** page, in the **TMST** group.
+3. **The Tekken 2 disc** (optional): Update & play asks nothing, so give it once with `Setup TMST` (step 3 below for
+   your platform); every later Update & play reuses it.
+
+If the add-on cannot be set up or built with your release, the setup leaves it out, builds the game without it and
+says so (`.setup/setup.log` tells why): the game stays playable.
+
+With **Tekken 3 Expanded 1.4.1 and earlier**, follow the steps for your platform below: there `Setup TMST` builds
+the add-on in.
+
 ### Windows
 
 Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
@@ -205,8 +224,8 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
      Expanded's setup builds it: your mod settings and game data stay.
 
    The window says so if the Expanded has not been set up yet or the game is running. When it reads
-   `The TMST add-on is installed`, **Play** opens the game's launcher. Once the Expanded runs add-on setups itself, its
-   **Update & play** does all of this.
+   `The TMST add-on is installed`, **Play** opens the game's launcher. From Expanded 1.5.0 on, its **Update & play**
+   does all of this too.
 
 ### macOS (experimental)
 
@@ -276,8 +295,10 @@ downloads Google's Android tools, about 1 GB, into `.setup/android`).
   a second copy after the install): the Jukebox then shows only the Tekken 3 disc's music. Add `--music` to put it in.
 - **Photo Mode** works, but its pictures stay in the game's private storage on the phone: they cannot be copied off
   it yet (a screenshot of the phone is the way for now).
-- The Expanded's own Build Android APK keeps building the add-on in afterwards (as Update & play does on PC);
-  `--without` builds the APK without it.
+- The Expanded's own Build Android APK keeps building the add-on in afterwards (as Update & play does on PC; from
+  Expanded 1.5.0 on it builds add-ons in by itself); `--without` builds the APK without it. Its APK has every mod
+  with its pictures, stories and Jukebox lists (the build copies them under the game's `mods/tmst-data`), but never
+  the Jukebox's Tekken 1, 2 and TTT music: for that, use `Build Android APK (TMST)` with `--music`.
 
 ## Settings
 
@@ -287,9 +308,13 @@ default). Restart the game after switching a mod.
 ## Updating and removing
 
 - **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, run
-  `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`) again.
-- **Add-on update:** `git -C "C:\<your_folder>\tekken3-expanded\addons\tmst" pull`, then `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`).
-- **Removing:** close the game, rebuild without the add-on, then delete the folder:
+  `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`) again. **Expanded 1.5.0 needs TMST 0.2.0
+  or later** (`TMST_VERSION` in `addon.cmake`): update the add-on too, or 1.5.0 builds the game without it.
+- **Add-on update:** `git -C "C:\<your_folder>\tekken3-expanded\addons\tmst" pull`, then, with Expanded 1.5.0 or
+  later, **Update & play** (the setup asks for it); with 1.4.1 or earlier, `Setup TMST.cmd` (macOS:
+  `Setup TMST.command`, Linux: `Setup TMST.sh`).
+- **Removing, Expanded 1.5.0 or later:** close the game, delete the `addons/tmst` folder, then **Update & play**.
+- **Removing, 1.4.1 or earlier:** close the game, rebuild without the add-on, then delete the folder:
   ```bash
   "C:\<your_folder>\tekken3-expanded\addons\tmst\dev\build.cmd" --without
   ```

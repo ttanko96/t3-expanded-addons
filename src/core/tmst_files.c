@@ -13,15 +13,35 @@
 #endif
 
 static char root[4096];
+static char game_dir[4096];
+
+const char *tmst_files_game_dir(void) {
+    if (game_dir[0]) return game_dir;
+    const char *base = SDL_GetBasePath();
+    snprintf(game_dir, sizeof game_dir, "%s", base && *base ? base : "./");
+#if !defined(PSX_SDL3)
+    if (base) SDL_free((void *)base);
+#endif
+    size_t n = strlen(game_dir);
+    if (n + 1 < sizeof game_dir && game_dir[n - 1] != '/' && game_dir[n - 1] != '\\') memcpy(game_dir + n, "/", 2);
+    return game_dir;
+}
+
+int tmst_files_staged(char *out, size_t size, const char *rel) {
+    return snprintf(out, size, "%smods/tmst-data/%s", tmst_files_game_dir(), rel) < (int)size;
+}
+
+void tmst_files_addon(char *out, size_t size, const char *rel) {
+    snprintf(out, size, "%s/addons/tmst/%s", tmst_files_root(), rel);
+    if (tmst_files_exist(out)) return;
+    char staged[4300];
+    if (tmst_files_staged(staged, sizeof staged, rel) && tmst_files_exist(staged)) snprintf(out, size, "%s", staged);
+}
 
 const char *tmst_files_root(void) {
     if (root[0]) return root;
     char exe[4096], at[4200];
-    const char *base = SDL_GetBasePath();
-    snprintf(exe, sizeof exe, "%s", base ? base : "./");
-#if !defined(PSX_SDL3)
-    if (base) SDL_free((void *)base);
-#endif
+    snprintf(exe, sizeof exe, "%s", tmst_files_game_dir());
     int found = 0;
     snprintf(at, sizeof at, "%s", exe);
     for (int up = 0; up < 8 && !found; up++) {
