@@ -171,6 +171,8 @@ head, looking the way the body faces.
   replay, the winner's pose); in Photo Mode the fighter is solid too.
 - **The camera follows:** it turns the way the game turns the fighter, smoothly, so that a combo's blows do not
   swing it; TTT1 guests too.
+- **Left and right:** the d-pad's right always walks forward, left always back, whichever side you stand on (the
+  game would judge the side from the camera, which behind the head swings); up and down as the game gives them.
 - Your fighter's shadow stays.
 
 ## Installation
