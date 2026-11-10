@@ -31,6 +31,15 @@
  *   linked since is a polygon of this fighter: each becomes a closed green
  *   line strip, in a buffer of ours, linked where the polygon was (the
  *   polygon left as an empty packet).
+ * - The pad. The game turns the d-pad's RIGHT into forward or back by the
+ *   side of the screen the fighter stands on (its record's +0xC6: 0 RIGHT
+ *   forward, 1 RIGHT back; measured), judged from the camera: with ours just
+ *   behind the head, the opponent straight ahead, that side swings (18
+ *   changes in 160 frames of a fight, against 1 with the game's camera). So
+ *   the human's RIGHT and LEFT change places whenever +0xC6 says RIGHT is
+ *   back: RIGHT always forward, LEFT always back, the whole round (the throws
+ *   and the KO too: the user's wish, 2026-11-10); UP / DOWN (the side-steps)
+ *   as the game gives them; not in the pause (its menus).
  *
  * Bench: TMST_T2_WIREFRAME=1 takes the row as ON (the fights' rule kept)
  * and logs, every 120 frames, how much the camera moves against the one
@@ -40,6 +49,7 @@
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "tmst_camera.h"
+#include "tmst_input.h"
 #include "cpu_state.h"
 #include "memcard.h"
 #include "mod_plugins.h"
@@ -56,7 +66,8 @@ enum { SCREEN = 0x800ae204, PHASE = 0x800ae224, MODE = 0x800afa88, HUMAN = 0x800
        LIFE_P1 = 0x800a961e, LIFE_P2 = 0x800aaeaa, TIMER = 0x800adbcc,
        SLOT0 = 0x800a02a8, SLOT_BYTES = 24, RECORD = 0x800a9228, RECORD_STRIDE = 0x188c,
        BONES = 0x8f4, BONE_BYTES = 68, BONE_ROOT = 0, BONE_HEAD = 2,
-       DRAWENV = 0x800a8c54, OT_ENTRIES = 1024, OPTIONS = 5, FIGHT = 8, FIGHTING_PHASE = 6 };
+       DRAWENV = 0x800a8c54, OT_ENTRIES = 1024, OPTIONS = 5, FIGHT = 8, FIGHTING_PHASE = 6,
+       SIDE = 0xc6, PAUSED = 0x80095494 };
 /* The modes (0x800AFA88; GAME OPTION's lamps the same bits): the Tournament
  * plays as a Team Battle. */
 enum { ARCADE = 0, VS = 1, TEAM_BATTLE = 2, TIME_ATTACK = 3, SURVIVAL = 4, PRACTICE = 5,
@@ -182,6 +193,17 @@ static int fighting(void) {
     return 1;
 }
 
+/* RIGHT forward, LEFT back (see the top). */
+static uint16_t pad(int player, uint16_t buttons) {
+    if (!enabled() || !psx_mod_game_started() || psx_mod_read_word(SCREEN) != FIGHT || psx_mod_read_word(PAUSED) ||
+        !our_fight()) return buttons;
+    int p = human_record();
+    if (player != p || !psx_mod_read_half(RECORD + (uint32_t)p * RECORD_STRIDE + SIDE)) return buttons;
+    uint16_t lr = buttons & (TMST_PAD_LEFT | TMST_PAD_RIGHT);
+    if (lr == TMST_PAD_LEFT || lr == TMST_PAD_RIGHT) buttons ^= TMST_PAD_LEFT | TMST_PAD_RIGHT;
+    return buttons;
+}
+
 static void tick(void) {
     if (!part || !psx_mod_game_started()) return;
     load();
@@ -190,6 +212,7 @@ static void tick(void) {
 
 static void activate(void) {
     part = tmst_guard("tmst.tekken2.wireframe", TMST_NEED_ACTIVATION | TMST_NEED_VBLANK | TMST_NEED_GAME_OPTIONS);
+    if (part) tmst_input_add_filter(pad);
     if (part) tmst_log("tekken2: Wireframe Mode ready (GAME OPTION's " ROW_NAME " row)");
     (void)bench_on();                        /* its numbers, whatever the row says */
 }
