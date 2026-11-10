@@ -54,6 +54,7 @@
 #include "tmst_input.h"
 #include "tmst_music.h"
 #include "tmst_spu.h"
+#include "tmst_files.h"
 #include "mod_plugins.h"
 #include "memcard.h"
 #include "psx_sdl.h"
@@ -338,6 +339,11 @@ static void sort_tracks(Category *c) {
     unsigned placed = 0;
     if (snprintf(path, sizeof path, "%s/addons/tmst/workspace/jukebox/%s", game_root(), c->titles) < (int)sizeof path) {
         FILE *f = fopen(path, "rb");
+        if (!f) {               /* the copy the build staged beside the game (the Expanded's own APK) */
+            char rel[300];
+            snprintf(rel, sizeof rel, "workspace/jukebox/%s", c->titles);
+            if (tmst_files_staged(path, sizeof path, rel)) f = fopen(path, "rb");
+        }
         char line[1024];
         while (f && fgets(line, sizeof line, f)) {
             char *s = trim(line);

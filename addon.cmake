@@ -1,10 +1,13 @@
 # TMST add-on for Tekken 3 Expanded: what the game's build takes from this
-# folder. Declarative only (lists, no commands), so that the Expanded's own
-# add-on hook can read the same file once it exists; until then
-# dev/tmst_inject.cmake does. Paths are relative to this folder.
+# folder. Lists only, read by both ways in: the Expanded's own add-on hook
+# (1.5.0 on, its addons/README.md; dev/tmst_hook.cmake, at the end of this
+# file) and, for older releases, dev/tmst_inject.cmake. Paths are relative to
+# this folder.
 
 set(TMST_ID "tmst")
-set(TMST_VERSION "0.1.0")
+set(TMST_VERSION "0.2.0")
+# The Expanded's setup rebuilds when this file changes: bump the version at
+# every update.
 # Expanded releases this add-on was tested with (docs/COMPAT.md). Another
 # release still builds and runs: the add-on detects features, not versions,
 # and only notes the release as untested in the log.
@@ -122,10 +125,24 @@ set(TMST_PACKAGES
 
 # Folders the setup makes, staged beside the game at each build, each
 # "folder here|folder beside the game" (dev/tmst_stage_dir.cmake).
+# mods/tmst-data: what the game reads from addons/tmst (src/core/tmst_files.h
+# tmst_files_addon), copied under mods/ because the Expanded's own Android APK
+# holds only the game's mods/ (about 1 MB; the music stays out, ~1.8 GB).
 set(TMST_STAGED
     "workspace/t2-stages/classic|mods/t2-stages/classic"
     "workspace/t2-stages/remake|mods/t2-stages/remake"
+    "data/tournament|mods/tmst-data/data/tournament"
+    "data/photo|mods/tmst-data/data/photo"
+    "workspace/jukebox|mods/tmst-data/workspace/jukebox"
 )
 
 # Python steps run after the Expanded's setup (setup/tmst_setup.py).
 set(TMST_SETUP setup/tmst_setup.py)
+
+# The Expanded's own add-on hook (TEKKEN3_ADDON_API): this add-on built in by
+# it, unless dev/build.py --without (or tmst_android.py --without) asked not to.
+if(DEFINED TEKKEN3_ADDON_API AND NOT TMST_WITHOUT)
+    include("${CMAKE_CURRENT_LIST_DIR}/dev/tmst_hook.cmake")
+endif()
+# The step the Expanded's Update & play runs before each build (--no-build).
+set(TEKKEN3_ADDON_SETUP setup/tmst_setup.py)

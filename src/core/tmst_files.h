@@ -18,6 +18,18 @@ const char *tmst_files_root(void);
 int tmst_files_make_dirs(const char *path);
 /* Nonzero when something is at `path`. */
 int tmst_files_exist(const char *path);
+/* The game's own folder (the executable's; the data folder on Android), with
+ * a slash at the end. */
+const char *tmst_files_game_dir(void);
+/* The add-on's file `rel` ("data/photo/t3e_logo.png"), read only:
+ * <root>/addons/tmst/<rel> when it is there, else the copy the build stages
+ * beside the game, <game>/mods/tmst-data/<rel> (addon.cmake TMST_STAGED: the
+ * Expanded's own Android APK holds only the game's mods/). Neither there:
+ * the first. */
+void tmst_files_addon(char *out, size_t size, const char *rel);
+/* Only the staged copy: <game>/mods/tmst-data/<rel>. Returns 0 when it does
+ * not fit. */
+int tmst_files_staged(char *out, size_t size, const char *rel);
 
 #ifdef __cplusplus
 }

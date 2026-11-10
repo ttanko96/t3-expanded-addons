@@ -104,8 +104,9 @@ void art_background(const char *name) {
         free(backgrounds[slot].im.px); memset(&backgrounds[slot], 0, sizeof backgrounds[slot]);
         snprintf(backgrounds[slot].name, sizeof backgrounds[slot].name, "%s", name);
         backgrounds[slot].tried = 1;
-        char path[4200]; ArtImage file = {0};
-        snprintf(path, sizeof path, "%s/addons/tmst/data/tournament/%s.png", tmst_files_root(), name);
+        char path[4200], rel[200]; ArtImage file = {0};
+        snprintf(rel, sizeof rel, "data/tournament/%s.png", name);
+        tmst_files_addon(path, sizeof path, rel);              /* or the copy in mods/tmst-data */
         uint32_t *px = malloc(sizeof art_canvas);
         if (px) {
             if (tmst_png_read(path, &file.px, &file.w, &file.h)) {

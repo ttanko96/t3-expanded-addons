@@ -1742,8 +1742,9 @@ static void show_canvas(unsigned screen, int x, int y, int w, int h) {
  * start: 1 when it has one (the T1, T2 and T3 tournaments). */
 static TmstStory story;
 static int story_load(int tourney) {
-    char path[4200];
-    snprintf(path, sizeof path, "%s/addons/tmst/data/tournament/story/%s.txt", tmst_files_root(), tmst_tourney(tourney)->id);
+    char path[4200], rel[200];
+    snprintf(rel, sizeof rel, "data/tournament/story/%s.txt", tmst_tourney(tourney)->id);
+    tmst_files_addon(path, sizeof path, rel);                  /* or the copy in mods/tmst-data */
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     static char text[TMST_STORY_TEXT];

@@ -452,7 +452,7 @@ static int logo_load(void) {
     if (logo.tried) return logo.ok;
     logo.tried = 1;
     char path[4200];
-    snprintf(path, sizeof path, "%s/addons/tmst/data/photo/t3e_logo.png", tmst_files_root());
+    tmst_files_addon(path, sizeof path, "data/photo/t3e_logo.png");   /* or the copy in mods/tmst-data */
     if (!tmst_png_read(path, &logo.px, &logo.w, &logo.h)) { tmst_log("photo: no logo at %s", path); return 0; }
     for (int i = 0; i < logo.w * logo.h; i++) {
         uint32_t p = logo.px[i], a = p >> 24;

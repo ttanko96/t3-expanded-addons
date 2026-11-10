@@ -1,5 +1,4 @@
-"""TEMPORARY developer build of Tekken 3 Expanded with the TMST add-on, until
-the Expanded's own add-on hook exists (docs/API_GAPS.md G11).
+"""Developer build of Tekken 3 Expanded with the TMST add-on.
 
     build.cmd                 the game you play (build-release), with the add-on
     build.cmd --without       the same, without the add-on (the plain Expanded)
@@ -11,6 +10,10 @@ build_game), with one argument more: -DCMAKE_PROJECT_INCLUDE=<build>/tmst_includ
 a stub written there that includes dev/tmst_inject.cmake while the add-on is
 in place (STUB). The Expanded's tracked files are never touched. The setup must have run once
 (generated/ holds the game made from the player's disc).
+
+An Expanded with its own add-on hook (1.5.0 on, has_hook) builds the add-on
+in by itself (dev/tmst_hook.cmake): then there is no stub, CMAKE_PROJECT_INCLUDE
+is cleared and --without is the cache's TMST_WITHOUT (addon.cmake).
 """
 from __future__ import annotations
 import argparse, json, os, re, shutil, subprocess, sys
@@ -97,6 +100,15 @@ def environment(setup):
     return toolchain, env
 
 
+def has_hook(source: Path) -> bool:
+    """The Expanded at source has its own add-on hook (TEKKEN3_ADDON_API,
+    its addons/README.md): it includes addons/<id>/addon.cmake by itself."""
+    try:
+        return 'TEKKEN3_ADDON_API' in (source / 'CMakeLists.txt').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+
+
 def configure_args(toolchain, source: Path, build: Path, with_addon: bool, emulate: bool = False) -> list[str]:
     cmake = str(toolchain / 'bin/cmake.exe') if toolchain else (shutil.which('cmake') or 'cmake')
     args = [cmake, '-S', str(source), '-B', str(build), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
@@ -119,7 +131,11 @@ def configure_args(toolchain, source: Path, build: Path, with_addon: bool, emula
     args.append('-DTMST_EMULATE_WRAPS=' + ('ON' if emulate else 'OFF'))
     # The cache keeps CMAKE_PROJECT_INCLUDE: set or clear it every time, so that
     # the Expanded's own Update & play builds what was built last.
-    args.append('-DCMAKE_PROJECT_INCLUDE=' + (write_stub(build).as_posix() if with_addon else ''))
+    if has_hook(source):
+        # The hook builds the add-on in (an older cache's stub cleared).
+        args += ['-DCMAKE_PROJECT_INCLUDE=', '-DTMST_WITHOUT=' + ('OFF' if with_addon else 'ON')]
+    else:
+        args.append('-DCMAKE_PROJECT_INCLUDE=' + (write_stub(build).as_posix() if with_addon else ''))
     return args
 
 
@@ -175,7 +191,23 @@ def worktree(ref: str) -> tuple[Path, Path]:
     for file in GENERATED_FILES:
         if (ROOT / file).is_file():
             shutil.copy2(ROOT / file, source / file)
+    # A ref with the add-on hook finds add-ons in its own addons/: this one
+    # copied there (its sources and lists; not dev/, workspace/ or .git).
+    if has_hook(source):
+        copy_addon(source / 'addons' / ADDON.name)
     return source, build
+
+
+def copy_addon(target: Path) -> None:
+    """This add-on in another ref's addons/, for that ref's hook: a copy, never
+    a link (a link would put dev/build inside itself). workspace/ (what the
+    setup made, gigabytes) stays an empty folder: a compat build stages no
+    Tekken 2 stages."""
+    skip = shutil.ignore_patterns('.git', 'build', 'workspace', '__pycache__', 'screenshots', 'tests')
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(ADDON, target, ignore=skip)
+    (target / 'workspace').mkdir(exist_ok=True)
 
 
 # What the Expanded's setup makes beside its tracked files and its build reads
@@ -197,7 +229,9 @@ def main() -> None:
     setup = expanded_setup()
     toolchain, env = environment(setup)
     with_addon = not a.without
-    keep = chains_listed() if with_addon else set()
+    # With the hook, nothing is renamed after compiling: every object
+    # dev/tmst_chain.py renamed in an older build compiles again.
+    keep = chains_listed() if with_addon and not has_hook(ROOT) else set()
     if a.debug:
         build = DEV / 'build' / 'debug'
         forget_chains(build, keep)
@@ -209,7 +243,7 @@ def main() -> None:
         return
     if a.ref:
         source, build = worktree(a.ref)
-        forget_chains(build, keep)
+        forget_chains(build, keep if not has_hook(source) else set())
         run(configure_args(toolchain, source, build, with_addon, a.emulate_wraps), env)
         run([configure_args(toolchain, source, build, with_addon, a.emulate_wraps)[0], '--build', str(build),
              '--target', 'psx-runtime', '--parallel', env['CMAKE_BUILD_PARALLEL_LEVEL']], env)

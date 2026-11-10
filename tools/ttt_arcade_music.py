@@ -97,7 +97,8 @@ def convert(pack: Path, out: Path, cc: str, say=print) -> list[str]:
                 continue
             number = int(line.split()[0], 16)
             name = name_of(number)
-            os.replace(tmp / 'out' / f'piece-{number:02X}.bgm', out / name)
+            # shutil.move: the temp folder may be on another drive than the game.
+            shutil.move(str(tmp / 'out' / f'piece-{number:02X}.bgm'), str(out / name))
             names.append(name)
     say(f'TTT arcade music: {len(names)} piece(s) in {out}')
     return names

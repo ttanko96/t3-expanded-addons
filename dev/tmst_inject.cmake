@@ -1,5 +1,5 @@
-# TEMPORARY developer shim, until the Expanded's own add-on hook exists
-# (docs/API_GAPS.md G11): adds this add-on to the game's build without
+# Developer shim for Expanded releases before the add-on hook (1.4.1 and
+# older; docs/API_GAPS.md G11, closed in 1.5.0 by dev/tmst_hook.cmake): adds this add-on to the game's build without
 # touching any of the Expanded's files.
 #
 #   cmake -S <expanded> -B <build> -DCMAKE_PROJECT_INCLUDE=<this file> ...
@@ -17,6 +17,13 @@ set(TMST_INJECTED 1)
 get_filename_component(TMST_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 function(tmst_setup)
+    # An Expanded with its own add-on hook (1.5.0 on) builds the add-on itself
+    # (dev/tmst_hook.cmake): the shim, still in an old cache, adds nothing.
+    get_property(_hooked GLOBAL PROPERTY TMST_ADDON_HOOK)
+    if(_hooked OR COMMAND tekken3_addon_chain)
+        message(STATUS "TMST: the Expanded's add-on hook builds the add-on; the shim is left out")
+        return()
+    endif()
     include("${TMST_DIR}/addon.cmake")
     if(NOT TARGET psx-runtime)
         message(WARNING "TMST: no psx-runtime target in this Expanded build; the add-on is left out.")
