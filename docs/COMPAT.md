@@ -54,7 +54,8 @@
 | `git describe` of the Expanded folder | version guard (`tmst_guard`) | – |
 | symbols the Expanded wraps itself (we must not wrap them again) | `addon.cmake` `TMST_WRAPS` | build (duplicate `__wrap_` = link error) |
 | chained symbols: the Expanded's `__wrap_<sym>` renamed in its compiled object before the link | `addon.cmake` `TMST_CHAINS`, `dev/tmst_chain.py` | build (missing object = error naming the symbol); wrapped or not is read from psx-runtime's link options at configure time; not wrapped (another release, TTT1 Characters off): we wrap it and our file's `TMST_BRIDGE_<sym>` part calls `__real_<sym>` |
-| runtime functions we wrap: `gpu_ws_prepass_linked_list` (start of each GPU list DMA), `psx_sdl_audio_open` (audio output) | `src/core/tmst_overlay.c`, `tmst_audio.c` | build (link error if renamed) |
+| runtime functions we wrap: `gpu_ws_prepass_linked_list` (start of each GPU list DMA), `psx_sdl_audio_open` (audio output), `psx_mod_gpu_high_vram_upload` (the TTT1 roster's HD faces kept out of our picture's place) | `src/core/tmst_overlay.c`, `tmst_audio.c` | build (link error if renamed) |
+| the TTT1 roster's HD tiles and portraits (Expanded 1.5.0, `src/tekken3_ttt1_roster.c` `hd_slot_place`, `hd_portrait_put`; no query upstream): 64 x 116 tile of slot s at (64 * (s % 16), 512 + 116 * (s / 16)), 20 slots; 168 x 252 portrait of player p at (192 * p, 768); present with `psx_mod_gpu_sprite_hd_set` | `src/compat/tmst_compat.c` (`tmst_compat_roster_hd_area` / `_write`), `src/core/tmst_overlay.c` | weak, absent = none |
 | upper VRAM: `psx_mod_gpu_high_vram_*`, packet memory as trusted source; area x 0..511, y 768..1023 | `src/core/tmst_overlay.c` | `TMST_HAS_HIGH_VRAM_UPLOAD` |
 | `tekken3_stage_high_vram_used/generation()` (weak) | `src/compat/tmst_compat.c` | absent = nothing taken |
 | guest: 0x8006AE14 = play music (a0 = id) | `src/core/tmst_music.c` | retail, stable |

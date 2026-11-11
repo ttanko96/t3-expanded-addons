@@ -1658,7 +1658,9 @@ static void grid_visitor(uint32_t node) {
     each_textured(node, grey_icon);
 }
 
-/* The panel's picture: 1024 x 392 texels for the screen's 368 x 196. */
+/* The panel's picture: 1024 x 392 texels for the screen's 368 x 196 (576
+ * wide in the upper half where the grid has the Expanded's HD faces:
+ * TMST_OVERLAY_ROOM_FOR_HD). */
 enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, HINT_UP = 50,   /* the hint clear of the screen's edge */
        MATTE = 0xff805858u };      /* about the red-brown backdrop under the hint (measured headless, 128 88 88) */
 static uint32_t pic[PW * PH];
@@ -1720,7 +1722,7 @@ static void draw(void) {
 }
 static void show_picture(void) {
     if (pic_version != tm.version) { draw(); pic_version = tm.version; }
-    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW);
+    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW | TMST_OVERLAY_ROOM_FOR_HD);
     pic_on = 1;
 }
 

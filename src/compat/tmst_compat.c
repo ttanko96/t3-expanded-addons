@@ -2,9 +2,18 @@
 #include "tmst_compat.h"
 #include "gpu.h"
 #include "mod_plugins.h"
+#include "tmst_core.h"
+#include "psx_sdl.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <strings.h>
+#endif
 
 /* Weak: a release without them still links, and nothing counts as taken. */
 extern int tekken3_stage_high_vram_used(int x, int y, int w, int h) __attribute__((weak));
@@ -25,6 +34,69 @@ int tmst_compat_high_vram_taken(int x, int y, int w, int h) {
 }
 unsigned tmst_compat_high_vram_generation(void) {
     return tekken3_stage_high_vram_generation ? tekken3_stage_high_vram_generation() : 0;
+}
+
+/* The TTT1 roster's HD tiles and portraits (Expanded 1.5.0,
+ * src/tekken3_ttt1_roster.c hd_slot_place / hd_portrait_put), present with
+ * the runtime's sprite substitutes (psx_mod_gpu_sprite_hd_set; weak: an
+ * older release has neither). Fixed places, no query for them upstream:
+ * slot s (18 guests, then Panda and Tiger) a 64 x 116 tile at
+ * (64 * (s % 16), 512 + 116 * (s / 16)); player p's 168 x 252 portrait at
+ * (192 * p, 768). */
+extern int psx_mod_gpu_sprite_hd_set(unsigned slot, unsigned page, uint32_t uv, unsigned w, unsigned h,
+                                     unsigned hx, unsigned hy, unsigned hw, unsigned hh) __attribute__((weak));
+enum { HD_TILE_W = 64, HD_TILE_H = 116, HD_COLS = 16, HD_SLOTS = 20, HD_PORTRAIT_W = 168, HD_PORTRAIT_H = 252,
+       HD_PORTRAIT_STEP = 192, HD_PORTRAIT_Y = 768 };
+static int overlaps(int x, int y, int w, int h, int ax, int ay, int aw, int ah) {
+    return x < ax + aw && ax < x + w && y < ay + ah && ay < y + h;
+}
+int tmst_compat_roster_hd_area(int x, int y, int w, int h) {
+    if (!psx_mod_gpu_sprite_hd_set) return 0;
+    return overlaps(x, y, w, h, 0, 512, HD_COLS * HD_TILE_W, HD_TILE_H) ||
+           overlaps(x, y, w, h, 0, 512 + HD_TILE_H, (HD_SLOTS - HD_COLS) * HD_TILE_W, HD_TILE_H) ||
+           overlaps(x, y, w, h, 0, HD_PORTRAIT_Y, HD_PORTRAIT_STEP + HD_PORTRAIT_W, HD_PORTRAIT_H);
+}
+extern const char *tekken3_guest_key(unsigned id) __attribute__((weak));
+/* Looked for by listing mods/ttt1, else (a folder that cannot be listed:
+ * the Android APK's, read through its fopen) by opening each guest's tile
+ * under its prefix (the key with a capital: "kunimitsu" -> Kunimitsu-T3). */
+int tmst_compat_roster_hd_present(void) {
+    static int present = -1;
+    if (!psx_mod_gpu_sprite_hd_set) return 0;
+    if (present >= 0) return present;
+    present = 0;
+    const char *base = SDL_GetBasePath();
+    char dir[4200]; snprintf(dir, sizeof dir, "%smods/ttt1", base ? base : "./");
+#if !defined(PSX_SDL3)
+    if (base) SDL_free((void *)base);
+#endif
+#ifdef _WIN32
+    char pattern[4300]; snprintf(pattern, sizeof pattern, "%s\\*-T3-tile-hd.bin", dir);
+    WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) { present = 1; FindClose(h); }
+#else
+    DIR *d = opendir(dir); struct dirent *e;
+    while (d && !present && (e = readdir(d))) {
+        size_t n = strlen(e->d_name), s = strlen("-T3-tile-hd.bin");
+        present = n > s && !strcasecmp(e->d_name + n - s, "-T3-tile-hd.bin");
+    }
+    if (d) closedir(d);
+#endif
+    for (unsigned id = 23; !present && tekken3_guest_key && id < 23 + 32; id++) {
+        const char *key = tekken3_guest_key(id);
+        if (!key || !key[0]) continue;
+        char path[4400]; snprintf(path, sizeof path, "%s/%c%s-T3-tile-hd.bin", dir, toupper((unsigned char)key[0]), key + 1);
+        FILE *f = fopen(path, "rb");
+        if (f) { present = 1; fclose(f); }
+    }
+    tmst_log("compat: roster HD faces %s", present ? "installed: the selectors' pictures leave them room" : "not installed");
+    return present;
+}
+int tmst_compat_roster_hd_write(int x, int y, int w, int h) {
+    if (!psx_mod_gpu_sprite_hd_set) return 0;
+    if (w == HD_TILE_W && h == HD_TILE_H && x >= 0 && x % HD_TILE_W == 0 && y >= 512 && (y - 512) % HD_TILE_H == 0)
+        return (x / HD_TILE_W) + HD_COLS * ((y - 512) / HD_TILE_H) < HD_SLOTS;
+    return w == HD_PORTRAIT_W && h == HD_PORTRAIT_H && y == HD_PORTRAIT_Y && (x == 0 || x == HD_PORTRAIT_STEP);
 }
 
 /* psxrecomp/runtime/src/gpu.c: the half's 1024 x 512 pixels, NULL before

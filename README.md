@@ -1,5 +1,9 @@
 # TMST add-on for Tekken 3 Expanded
 
+> **Disclaimer:** This project is a fan-made, non-commercial endeavor and is in no way affiliated with, authorized,
+> maintained, sponsored, or endorsed by Bandai Namco Entertainment Inc. or any of its affiliates. "Tekken" and all
+> associated trademarks, characters, and assets are registered trademarks of Bandai Namco Entertainment Inc.
+
 New features for [Tekken 3 Expanded](https://github.com/omarma/tekken3-expanded), packaged as mods that show up in the game's own **Mods**
 tab, in the **TMST** group. Each mod can be switched on and off there; nothing in the Expanded's own files is changed.
 
