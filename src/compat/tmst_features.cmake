@@ -58,5 +58,17 @@ function(tmst_detect_features out)
     if(_engine)
         list(APPEND _defs "TMST_HAS_STAGE_ENGINE=1")
     endif()
+    # Unknown's wolf (src/tekken3_ttt1_wolf.c, built with TTT1 Characters):
+    # its two entry points, wrapped to keep the wolf to Unknown's own fights
+    # (src/compat/tmst_compat.c, docs/COMPAT.md).
+    set(_text "")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/src/tekken3_ttt1_wolf.c")
+        file(READ "${CMAKE_SOURCE_DIR}/src/tekken3_ttt1_wolf.c" _text)
+    endif()
+    string(FIND "${_text}" "void tekken3_ttt1_wolf_after_actor(CPUState *cpu,uint32_t actor)" _at1)
+    string(FIND "${_text}" "int tekken3_ttt1_wolf_high_vram_used(int x,int y,int w,int h)" _at2)
+    if(NOT _at1 EQUAL -1 AND NOT _at2 EQUAL -1 AND (NOT DEFINED TEKKEN3_TTT1_CHARACTERS OR TEKKEN3_TTT1_CHARACTERS))
+        list(APPEND _defs "TMST_HAS_UNKNOWN_WOLF=1")
+    endif()
     set(${out} "${_defs}" PARENT_SCOPE)
 endfunction()
