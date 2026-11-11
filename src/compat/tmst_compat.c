@@ -24,9 +24,18 @@ extern unsigned tekken3_stage_high_vram_generation(void) __attribute__((weak));
 extern int tekken3_hit_effect_high_vram_used(int x, int y, int w, int h) __attribute__((weak));
 extern int tekken3_ttt1_wolf_high_vram_used(int x, int y, int w, int h) __attribute__((weak));
 
+#if TMST_HAS_UNKNOWN_WOLF
+/* Ours, by name: a weak reference is not sent to the wrapper (PE/COFF). */
+int __wrap_tekken3_ttt1_wolf_high_vram_used(int x, int y, int w, int h);
+static int wolf_used(int x, int y, int w, int h) { return __wrap_tekken3_ttt1_wolf_high_vram_used(x, y, w, h); }
+#else
+static int wolf_used(int x, int y, int w, int h) {
+    return tekken3_ttt1_wolf_high_vram_used && tekken3_ttt1_wolf_high_vram_used(x, y, w, h);
+}
+#endif
 int tmst_compat_high_vram_effects(int x, int y, int w, int h) {
     return (tekken3_hit_effect_high_vram_used && tekken3_hit_effect_high_vram_used(x, y, w, h)) ||
-           (tekken3_ttt1_wolf_high_vram_used && tekken3_ttt1_wolf_high_vram_used(x, y, w, h));
+           wolf_used(x, y, w, h);
 }
 int tmst_compat_high_vram_taken(int x, int y, int w, int h) {
     return (tekken3_stage_high_vram_used && tekken3_stage_high_vram_used(x, y, w, h)) ||
@@ -134,6 +143,42 @@ int tmst_compat_unknown_fights(void) {
     }
     return 0;
 }
+
+#if TMST_HAS_UNKNOWN_WOLF
+#include "cpu_state.h"
+/* Unknown's wolf only behind Unknown (hotfix/wolf). The Expanded 1.5.0's
+ * wolf (src/tekken3_ttt1_wolf.c, unknown()) asks for the player's guest
+ * identity, which keeps the last guest the player had: tekken3_ttt1_roster.c
+ * follow() leaves it as it is for a native. A native on its TTT1 model and
+ * its Tekken 3 moves (a guest's grafted rows, the identity not its own) then
+ * passes as Unknown: after a fight with her on that side, Gun Jack or Ogre
+ * fought with her wolf behind them, and the wolf's pack took the upper half's
+ * pages 640..1023 x 512..767 from the stage. Here the fighter itself
+ * decides: the actor's character ID (+0x18, the guest's own ID while a
+ * guest fights, as the roster's state 8 reads it) is Unknown's. */
+enum { ACTOR0 = 0x800a9228, ACTOR_SIZE = 0x188c, ACTOR_ID = 0x18 };
+static int unknown_actor(unsigned p) {
+    const char *key = tekken3_guest_key ? tekken3_guest_key(psx_mod_read_half(ACTOR0 + p * ACTOR_SIZE + ACTOR_ID)) : NULL;
+    return key && !strcmp(key, "unknown");
+}
+
+extern void __real_tekken3_ttt1_wolf_after_actor(CPUState *cpu, uint32_t actor);
+void __wrap_tekken3_ttt1_wolf_after_actor(CPUState *cpu, uint32_t actor) {
+    /* Not Unknown: no call, so no wolf; theirs starts it again (comes out of
+     * her) once she is drawn after a gap of 8 frames or more. */
+    if ((actor == ACTOR0 || actor == ACTOR0 + ACTOR_SIZE) && !unknown_actor(actor != ACTOR0)) return;
+    __real_tekken3_ttt1_wolf_after_actor(cpu, actor);
+}
+/* Its pages for the PS2 lasers and weapons, and for us: taken only while
+ * Unknown is one of the fighters, as the loading screen names them (the
+ * packs are chosen there, before the actors carry the new fighters) or as
+ * an actor carries her (Survival's next opponent, without a loading screen). */
+extern int __real_tekken3_ttt1_wolf_high_vram_used(int x, int y, int w, int h);
+int __wrap_tekken3_ttt1_wolf_high_vram_used(int x, int y, int w, int h) {
+    return (tmst_compat_unknown_fights() || unknown_actor(0) || unknown_actor(1)) &&
+           __real_tekken3_ttt1_wolf_high_vram_used(x, y, w, h);
+}
+#endif
 
 extern int tekken3_arcade_stages_t3_stage(void) __attribute__((weak));
 int tmst_compat_arcade_stage(void) {
