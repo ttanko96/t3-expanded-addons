@@ -334,6 +334,7 @@ static struct {
     int second, member;                       /* the boss's second form (-1 none), the CPU member placed */
     unsigned pick;                            /* the player's fighter, ID * 4 + costume */
     int life_set, size_held, ai_saved, ai_was;    /* life_set: the fight begun (both lives full) */
+    int fight_over;                           /* the fight's end seen (covered from there) */
     int cover, confirmed;                     /* the black cover up; START pressed on it */
     int stalled; unsigned watch_key, watch_since;   /* the cover lifted: nothing moved under it */
     int step, tries; unsigned step_at;        /* the grid, picked for the player */
@@ -380,7 +381,7 @@ static void arm_match(void) {
     mt.match = tmst_bracket_player_match(&bracket);
     mt.opponent = tmst_bracket_opponent(&bracket);
     if (mt.match < 0 || mt.opponent < 0) { end_tournament("no match left"); return; }
-    mt.flow = FLOW_MATCH; mt.life_set = 0; mt.stalled = 0; mt.loading_seen = 0;
+    mt.flow = FLOW_MATCH; mt.life_set = 0; mt.fight_over = 0; mt.stalled = 0; mt.loading_seen = 0;
     mt.loading_vs = 0; mt.loading_ok = 0; mt.loading_vs_at = 0; mt.loading_at = 0; mt.round_end = 0; mt.member = 0;
     const TmstTourney *d = tmst_tourney(tm.tourney);
     mt.second = mt.match == TMST_GRAND_FINAL && d->boss2 ? roster_find(d->boss2) : -1;
@@ -783,7 +784,7 @@ static void match_tick(unsigned screen) {
      * load changes VRAM) and nothing of ours is drawn on it. */
     if (mt.life_set && !mt.cover && (screen == BOOT_LOADING || screen == AFTER_FIGHT ||
                                      (screen == FIGHT && psx_mod_read_half(PHASE) == 0))) {
-        mt.cover = 1; mt.scr = SCR_NONE;
+        mt.cover = 1; mt.fight_over = 1; mt.scr = SCR_NONE;
         tmst_log("tournament: the fight over (screen %u), covered", screen);
     }
     if (screen != LOADING && mt.size_held) { psx_mod_write_byte(TEAMS + TEAM_STRIDE + T_SIZE, (uint8_t)team_size()); mt.size_held = 0; }
@@ -1940,9 +1941,14 @@ static void tick(void) {
      * than the stage engine upload into the upper VRAM half (TTT Hitspark's
      * images), not a place for the picture. Black until its VS portraits are
      * drawn (the grid draws its way out in its first frames) and their
-     * texels are right (vs_portraits_good). */
+     * texels are right (vs_portraits_good). The fight lifts it whatever
+     * the loading screen got to (a short one ends before its portraits are
+     * checked), until its end is seen: not by life_set, which match_tick
+     * sets in the fight's first frame before this (the whole fight stayed
+     * black and silent, issue #5). */
     if (mt.cover && mt.flow == FLOW_MATCH && ((screen == LOADING && mt.loading_ok) ||
-                                              (screen == FIGHT && mt.loading_seen && !mt.life_set))) {   /* the grid leaves through 8 for a frame */
+                                              (screen == FIGHT && mt.loading_seen && !mt.fight_over))) {   /* the grid leaves through 8 for a frame */
+        if (screen == FIGHT && !mt.loading_ok) tmst_log("tournament: the fight lifts the cover (the loading screen's portraits unchecked)");
         mt.cover = 0; mt.scr = SCR_NONE;
     }
     /* What the screens need from VRAM, while the grid shows it. */
