@@ -85,7 +85,9 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
   after the VS screen): he sits cross-legged, his back to you, gets up and turns to you in his blue lightning, into
   his stance. Ogre / True Ogre and Unknown are coming in the future.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
-  fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end.
+  fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end. The Tekken 3 fighters' big VS
+  portraits on them come from your Tekken 3 disc (the add-on's setup takes them, USA SLUS-00402); without them a
+  fighter has its grid icon until its first loading screen.
 - **Options:** OPTION → GAME OPTION shows TOURNAMENT in the box of modes at the top right, in gold where the
   option affects the tournament (as Team Battle's, but FIGHT COUNT: the tournament's rounds are its own; and TEKKEN 2 STAGES,
   which its Tekken 1 and Tekken 2 tournaments use).
@@ -226,6 +228,7 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
        few minutes the first time);
      - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
        setup imported) and its title lists;
+     - from the Tekken 3 disc the Expanded runs: Tournament Mode's portraits of the Tekken 3 fighters;
    - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, VS Mode+, Tekken 2 Content), as the
      Expanded's setup builds it: your mod settings and game data stay.
 

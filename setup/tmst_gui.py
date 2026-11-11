@@ -35,6 +35,7 @@ STEP_TEXT = {
     'ttt_ps2_music': ('Making the Jukebox’s TTT console music', 'From the TTT PS2 music the Expanded’s setup imported. The first time takes a minute.'),
     'ttt_arcade_music': ('Making the Jukebox’s TTT arcade music', 'Rendered from tektagt.zip’s music with the Expanded’s compiler.'),
     'jukebox_titles': ('Updating the Jukebox’s title lists', ''),
+    'tekken3_portraits': ('Taking the Tekken 3 portraits', 'Tournament Mode’s pictures of the Tekken 3 fighters, from your Tekken 3 disc.'),
 }
 
 
