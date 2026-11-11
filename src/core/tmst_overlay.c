@@ -1,7 +1,9 @@
 /* TMST core: our drawing over the game (tmst_overlay.h).
  *
  * Where the picture is: the upper VRAM half from x 0; a picture up to 256
- * rows tall at y 768..1023, a taller one from y 512. Texture pages of 256 x 256
+ * rows tall at y 768..1023, a taller one from y 512 (a selector's, with
+ * room for the TTT1 roster's HD faces: narrowed, in two bands around them,
+ * see bands()). Texture pages of 256 x 256
  * 15-bit texels: one sprite or quad per 256 x 256 tile, each naming its page
  * with the upper-half bit 11. What the area held is kept before our upload
  * and given back on hide (others' pixels that the stage engine does not
@@ -54,6 +56,10 @@ static int dirty;
 static int yielded;                     /* TMST_OVERLAY_YIELD: the stage engine took the area */
 static unsigned vram_generation;        /* the stage engine's, at our upload */
 static uint16_t kept[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
+/* Where our picture's pixels are now (uploaded there, its place this
+ * frame), held_w 0 when none: see __wrap_psx_mod_gpu_high_vram_upload. */
+static int held_x, held_y, held_w, held_h;
+static int own_upload;
 /* Every upload of ours into the upper half; TMST_OVERLAY_VRAM_LOG=1 logs
  * each with the game's screen and the stage engine's generation. */
 static void vram_up(const char *what, int x, int y, int w, int h, const uint16_t *px) {
@@ -61,9 +67,35 @@ static void vram_up(const char *what, int x, int y, int w, int h, const uint16_t
     if (logging < 0) { const char *e = getenv("TMST_OVERLAY_VRAM_LOG"); logging = e && *e == '1'; }
     if (logging) tmst_log("overlay: upload %s %d,%d %dx%d screen %u gen %u (%u)", what, x, y, w, h,
                           psx_mod_read_word(0x800ae204), tmst_compat_high_vram_generation(), n);
+    own_upload = 1;
     psx_mod_gpu_high_vram_upload(x, y, w, h, px);
+    own_upload = 0;
 }
-static int kept_x, kept_y, kept_w, kept_h;
+
+/* The TTT1 roster's HD tiles and portraits (Expanded 1.5.0) have fixed
+ * places in the upper half, inside our full-screen picture's (854 x 480
+ * from y 512: the whole half, no other place for it). On the selector and
+ * the grids the roster writes them again each frame they differ, over our
+ * picture: its top rows showed the HD faces at the picture's scale (the
+ * Jukebox's and Tournament Mode's grids, the bracket). While the picture
+ * holds a place, such an upload is refused: the roster then finds its tile
+ * missing and draws the cell from its own 32 x 58 tile
+ * (psx_mod_gpu_sprite_hd_clear), the portrait from the 126 x 252 one, until
+ * the picture is gone and it writes them again. Others' uploads pass. */
+int __real_psx_mod_gpu_high_vram_upload(int x, int y, int w, int h, const uint16_t *pixels);
+int __wrap_psx_mod_gpu_high_vram_upload(int x, int y, int w, int h, const uint16_t *pixels) {
+    if (!own_upload && held_w && tmst_compat_roster_hd_write(x, y, w, h) &&
+        x < held_x + held_w && held_x < x + w && y < held_y + held_h && held_y < y + h) {
+        static int said;
+        if (!said) { said = 1; tmst_log("overlay: the TTT1 roster's HD faces stay out of the picture's place (%d,%d %dx%d)", x, y, w, h); }
+        return 0;
+    }
+    return __real_psx_mod_gpu_high_vram_upload(x, y, w, h, pixels);
+}
+/* What the area held before our picture: one rectangle per band (bands
+ * below), one after the other in `kept`; kept_w nonzero while any is kept. */
+static int kept_w, kept_n;
+static struct { int x, y, w, h; } kept_r[2];
 static unsigned frame, linked_frame = ~0u, uploaded_frame;
 enum { MAX_CLIENTS = 6 };
 static TmstPrimsBuilder builders[MAX_CLIENTS];
@@ -118,8 +150,12 @@ static uint16_t texel(uint32_t argb) {
 
 static void give_back(void) {
     if (!kept_w) return;
-    vram_up("give back", kept_x, kept_y, kept_w, kept_h, kept);
-    kept_w = 0;
+    const uint16_t *at = kept;
+    for (int i = 0; i < kept_n; i++) {
+        vram_up("give back", kept_r[i].x, kept_r[i].y, kept_r[i].w, kept_r[i].h, at);
+        at += (size_t)kept_r[i].w * (size_t)kept_r[i].h;
+    }
+    kept_w = 0; kept_n = 0;
 }
 /* Asked from the VBlank (a hide, a move): done at the next list instead.
  * The OpenGL renderer draws textured primitives in batches, and one may
@@ -146,8 +182,43 @@ static void give_back_due_now(void) {
     if (sheet_back_due) { sheet_back_due = 0; sheet_give_back(); }
 }
 
-static void keep(int x, int y, int w, int h) {
-    if (tmst_compat_high_vram_read(x, y, w, h, kept)) { kept_x = x; kept_y = y; kept_w = w; kept_h = h; }
+/* The picture's bands: rows row0.. (rows of them) at x, y of the upper
+ * half. One band (the whole picture at vx, vy) but for a split picture
+ * (TMST_OVERLAY_ROOM_FOR_HD with the roster's HD faces): its first page row
+ * of texels at SPLIT0 (x 384..959, y 768..1023: right of the big portraits,
+ * x 0..359), the rest at SPLIT1 (x 256..831 from y 628: under the HD tiles'
+ * first row, right of their second, within one page row: at most 140 rows),
+ * x 832..1023 there left to the font's sheet. */
+enum { SPLIT0_X = 384, SPLIT0_Y = 768, SPLIT1_X = 256, SPLIT1_Y = 628, SPLIT1_ROWS = 140 };
+static int split;
+static int bands(int b[2][4]) {                 /* {x, y, row0, rows} each; returns how many */
+    if (!split) { b[0][0] = vx; b[0][1] = vy; b[0][2] = 0; b[0][3] = ph; return 1; }
+    b[0][0] = SPLIT0_X; b[0][1] = SPLIT0_Y; b[0][2] = 0; b[0][3] = ph < TILE ? ph : TILE;
+    b[1][0] = SPLIT1_X; b[1][1] = SPLIT1_Y; b[1][2] = TILE; b[1][3] = ph - TILE;
+    return ph > TILE ? 2 : 1;
+}
+/* Whether a split picture's bands meet the rectangle (0 for any other). */
+static int split_overlaps(int x, int y, int w, int h) {
+    if (!split || !shown) return 0;
+    int b[2][4], n = bands(b);
+    for (int i = 0; i < n; i++)
+        if (x < b[i][0] + pw && b[i][0] < x + w && y < b[i][1] + b[i][3] && b[i][1] < y + h) return 1;
+    return 0;
+}
+static void keep(void) {
+    int b[2][4], n = bands(b);
+    uint16_t *at = kept;
+    kept_w = 0; kept_n = 0;
+    for (int i = 0; i < n; i++) {
+        if (!tmst_compat_high_vram_read(b[i][0], b[i][1], pw, b[i][3], at)) { kept_n = 0; return; }
+        kept_r[i].x = b[i][0]; kept_r[i].y = b[i][1]; kept_r[i].w = pw; kept_r[i].h = b[i][3];
+        at += (size_t)pw * (size_t)b[i][3]; kept_n = i + 1;
+    }
+    kept_w = kept_n > 0;
+}
+static void upload_picture(void) {
+    int b[2][4], n = bands(b);
+    for (int i = 0; i < n; i++) vram_up("picture", b[i][0], b[i][1], pw, b[i][3], pixels + (size_t)b[i][2] * (size_t)pw);
 }
 
 /* Where a borrowed picture goes: the first place (rows of pages from the
@@ -170,9 +241,39 @@ int tmst_overlay_picture_contested(void) { return shown && (show_flags & TMST_OV
 int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, int dw, int dh, unsigned flags) {
     if (!argb || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || w > TMST_OVERLAY_MAX_W || h > TMST_OVERLAY_MAX_H || !setup())
         return 0;
-    int changed = w != pw || h != ph;
+    /* Room for the roster's HD faces: narrowed (each texel the average of
+     * the source's under it, colours weighted by their alpha) and split. */
+    int want_split = (flags & TMST_OVERLAY_ROOM_FOR_HD) && h > TILE && h <= TILE + SPLIT1_ROWS &&
+                     tmst_compat_roster_hd_present();
+    if (want_split && w > TMST_OVERLAY_ROOM_W) {
+        static uint32_t narrow[TMST_OVERLAY_ROOM_W * (TILE + SPLIT1_ROWS)];
+        for (int col = 0; col < TMST_OVERLAY_ROOM_W; col++) {
+            int a0 = col * w * 256 / TMST_OVERLAY_ROOM_W, a1 = (col + 1) * w * 256 / TMST_OVERLAY_ROOM_W;  /* 1/256 texels */
+            for (int row = 0; row < h; row++) {
+                const uint32_t *src = argb + (size_t)row * (size_t)w;
+                uint32_t sa = 0, sc[3] = {0, 0, 0};
+                for (int sxi = a0 >> 8; sxi <= (a1 - 1) >> 8 && sxi < w; sxi++) {
+                    int lo = sxi * 256 > a0 ? sxi * 256 : a0, hi = sxi * 256 + 256 < a1 ? sxi * 256 + 256 : a1;
+                    uint32_t c = src[sxi], wa = (c >> 24) * (uint32_t)(hi - lo);
+                    sa += wa;
+                    for (int k = 0; k < 3; k++) sc[k] += (c >> (16 - 8 * k) & 255) * wa;
+                }
+                uint32_t span = (uint32_t)(a1 - a0), out = 0;
+                if (sa) {
+                    out = (sa / span) << 24;
+                    for (int k = 0; k < 3; k++) out |= (sc[k] / sa) << (16 - 8 * k);
+                }
+                narrow[row * TMST_OVERLAY_ROOM_W + col] = out;
+            }
+        }
+        argb = narrow; w = TMST_OVERLAY_ROOM_W;
+    }
+    int changed = w != pw || h != ph || want_split != split;
     if (changed && kept_w) give_back_later();  /* a new size: a new area, at its first place */
-    if (flags & TMST_OVERLAY_BORROW) {
+    split = want_split;
+    if (split) {
+        vx = SPLIT0_X; vy = SPLIT0_Y;
+    } else if (flags & TMST_OVERLAY_BORROW) {
         int bx, by;
         borrow_place(w, h, &bx, &by);
         if (kept_w && (vx != bx || vy != by)) { give_back_later(); changed = 1; }
@@ -319,7 +420,8 @@ static void atlas_give_back(void) {
     atlas_x = -1; atlas_has_kept = 0; atlas_dirty = 1;
 }
 static int atlas_fits(int x, int y) {
-    return (y - 512) / 256 == (y + ATLAS_H - 1 - 512) / 256 && !tmst_compat_high_vram_taken(x, y, ATLAS_W, ATLAS_H);
+    return (y - 512) / 256 == (y + ATLAS_H - 1 - 512) / 256 && !tmst_compat_high_vram_taken(x, y, ATLAS_W, ATLAS_H) &&
+           !tmst_compat_roster_hd_area(x, y, ATLAS_W, ATLAS_H) && !split_overlaps(x, y, ATLAS_W, ATLAS_H);
 }
 /* This frame: the sheet in place and up to date, or 0. */
 static int place_atlas(void) {
@@ -423,7 +525,8 @@ static int sheet_fits(int x, int y) {
     if (atlas_x >= 0 && x < atlas_x + ATLAS_W && atlas_x < x + sheet_w && y < atlas_y + ATLAS_H && atlas_y < y + sheet_h)
         return 0;
     if (y + sheet_h > 1024 - ATLAS_H && x + sheet_w > 1024 - ATLAS_W) return 0;   /* where the font's sheet goes first */
-    return !tmst_compat_high_vram_taken(x, y, sheet_w, sheet_h);
+    return !tmst_compat_high_vram_taken(x, y, sheet_w, sheet_h) && !tmst_compat_roster_hd_area(x, y, sheet_w, sheet_h) &&
+           !split_overlaps(x, y, sheet_w, sheet_h);
 }
 static int place_sheet(void) {
     if (!sheet_w) return 0;
@@ -535,12 +638,17 @@ void tmst_prim_screen_copy(TmstPrims *k, int x, int y, int w, int h, int dx, int
  * texels blended. */
 static void picture_prims(TmstPrims *k) {
     int one = sw == pw && sh == ph;
+    int b[2][4]; bands(b);
     for (int ty = 0; ty * TILE < ph; ty++)
         for (int tx = 0; tx * TILE < pw; tx++) {
             int w = pw - tx * TILE < TILE ? pw - tx * TILE : TILE;
             int h = ph - ty * TILE < TILE ? ph - ty * TILE : TILE;
-            unsigned page = (unsigned)(vx + tx * TILE) / 64u;
-            unsigned ybit = (unsigned)(vy + ty * TILE - 512) / 256u & 1u;
+            /* the tile's texels: its band's place (a split picture's second
+             * band starts inside its page row: v from there) */
+            int bx = split ? b[ty][0] : vx, by = split ? b[ty][1] : vy + ty * TILE;
+            unsigned page = (unsigned)(bx + tx * TILE) / 64u;
+            unsigned ybit = (unsigned)(by - 512) / 256u & 1u;
+            uint32_t v0 = (uint32_t)(by - 512) % 256u;
             uint32_t tpage = page | ybit << 4 | 2u << 7 /* 15-bit */ | 1u << 11;
             if (one) {
                 int x = sx + tx * TILE, y = sy + ty * TILE;
@@ -548,16 +656,16 @@ static void picture_prims(TmstPrims *k) {
                 tmst_prim_word(k, 0xE1000000u | tpage | 1u << 10);
                 tmst_prim_word(k, 0x67808080u);                       /* raw sprite, half see-through texels */
                 tmst_prim_word(k, tmst_xy(x, y));
-                tmst_prim_word(k, 0u);
+                tmst_prim_word(k, v0 << 8);
                 tmst_prim_word(k, (uint32_t)h << 16 | (uint32_t)w);
             } else {
                 int x0 = sx + tx * TILE * sw / pw, x1 = sx + (tx * TILE + w) * sw / pw;
                 int y0 = sy + ty * TILE * sh / ph, y1 = sy + (ty * TILE + h) * sh / ph;
-                uint32_t u1 = (uint32_t)(w > 255 ? 255 : w), v1 = (uint32_t)(h > 255 ? 255 : h);
+                uint32_t u1 = (uint32_t)(w > 255 ? 255 : w), v1 = v0 + (uint32_t)h > 255 ? 255 : v0 + (uint32_t)h;
                 tmst_prim_room(k, 9);
                 tmst_prim_word(k, 0x2E808080u);                       /* textured quad (x 1.0), half see-through texels */
-                tmst_prim_word(k, tmst_xy(x0, y0)); tmst_prim_word(k, 0u);
-                tmst_prim_word(k, tmst_xy(x1, y0)); tmst_prim_word(k, u1 | tpage << 16);
+                tmst_prim_word(k, tmst_xy(x0, y0)); tmst_prim_word(k, v0 << 8);
+                tmst_prim_word(k, tmst_xy(x1, y0)); tmst_prim_word(k, u1 | v0 << 8 | tpage << 16);
                 tmst_prim_word(k, tmst_xy(x0, y1)); tmst_prim_word(k, v1 << 8);
                 tmst_prim_word(k, tmst_xy(x1, y1)); tmst_prim_word(k, u1 | v1 << 8);
             }
@@ -582,6 +690,7 @@ static int find_place(void) {
  * stage engine leaves it no place (unless borrowed). */
 static void write_chain(uint32_t e1_before) {
     TmstPrims k; prims_begin(&k);
+    if (!shown) held_w = 0;
     if (drawing()) {
         /* The font's sheet only while text is drawn: asked for in the last
          * frame (the rank builder's, the builders') or this one's rank
@@ -595,7 +704,8 @@ static void write_chain(uint32_t e1_before) {
             kept_w = 0; yielded = 1;                   /* theirs now: nothing of ours given back over it */
             tmst_log("overlay: the stage engine took the borrowed area, the picture yields");
         }
-        int placed = shown && !yielded && (borrow || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
+        int placed = shown && !yielded && (borrow || split || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
+        if (!placed) held_w = 0;
         int under = (show_flags & TMST_OVERLAY_UNDER) != 0;
         if (placed) {
             unsigned gen = tmst_compat_high_vram_generation();
@@ -607,12 +717,15 @@ static void write_chain(uint32_t e1_before) {
              * they write their images there each frame an effect plays
              * (before the list: ours, written as it is walked, is what is
              * drawn; their effects are under our picture meanwhile). */
-            int contested = borrow && tmst_compat_high_vram_effects(vx, vy, pw, ph);
+            int contested = borrow && !split && tmst_compat_high_vram_effects(vx, vy, pw, ph);
             if (dirty || contested || gen != vram_generation || frame - uploaded_frame >= 30) {
-                if (!kept_w || (gen != vram_generation && !borrow)) keep(vx, vy, pw, ph);
-                vram_up("picture", vx, vy, pw, ph, pixels);
+                if (!kept_w || (gen != vram_generation && !borrow)) keep();
+                upload_picture();
                 dirty = 0; vram_generation = gen; uploaded_frame = frame;
+                held_x = vx; held_y = vy; held_w = pw; held_h = ph;
             }
+            /* (a split picture is clear of the roster's places: nothing to hold) */
+            if (split || held_x != vx || held_y != vy || held_w != pw || held_h != ph) held_w = 0;
             if (under) picture_prims(&k);
         }
         for (int i = 0; i < builder_count; i++) builders[i](&k);

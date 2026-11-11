@@ -28,6 +28,17 @@ int tmst_compat_high_vram_taken(int x, int y, int w, int h);
  * effect plays (each frame, "unless already there"). */
 int tmst_compat_high_vram_effects(int x, int y, int w, int h);
 unsigned tmst_compat_high_vram_generation(void);
+/* The TTT1 roster's HD tiles and portraits (Expanded 1.5.0 on; no query for
+ * them upstream: their fixed places, 0 on an older release). _area: the
+ * rectangle overlaps one of their places (our small sheets keep off them);
+ * _write: an upload of exactly one of them (the overlay refuses it while its
+ * picture holds the place: tmst_overlay.c, __wrap_psx_mod_gpu_high_vram_upload). */
+int tmst_compat_roster_hd_area(int x, int y, int w, int h);
+int tmst_compat_roster_hd_write(int x, int y, int w, int h);
+/* Nonzero when the roster draws HD faces at all: the runtime has the
+ * substitutes and mods/ttt1 holds at least one <Key>-T3-tile-hd.bin (looked
+ * for once). */
+int tmst_compat_roster_hd_present(void);
 /* The upper half's pixels of a rectangle (y 512..1023) into `out` (w x h);
  * 0 when this runtime cannot read them back (gpu_high_vram_pixels). */
 int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out);

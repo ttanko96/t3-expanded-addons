@@ -24,8 +24,11 @@ def game_running(exe: Path) -> bool:
     """The game (build-release's) is running: a running game cannot be built again."""
     try:
         if WINDOWS:
+            # tasklist writes in the console's (OEM) code page, in the system's
+            # language: a German "ausgeführt" is not cp1252 (issue #7).
             out = subprocess.run(['tasklist', '/fi', f'imagename eq {EXE_NAME}', '/fo', 'csv', '/nh'],
-                                 capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout
+                                 capture_output=True, text=True, encoding='oem', errors='replace',
+                                 creationflags=subprocess.CREATE_NO_WINDOW).stdout or ''
             return EXE_NAME.lower() in out.lower()
         target = exe.resolve()
         if Path('/proc').is_dir():                      # Linux: each process's executable
@@ -38,7 +41,8 @@ def game_running(exe: Path) -> bool:
                         pass
             return False
         # macOS: ps gives each process's executable path in full.
-        out = subprocess.run(['ps', '-A', '-o', 'comm='], capture_output=True, text=True).stdout
+        out = subprocess.run(['ps', '-A', '-o', 'comm='], capture_output=True, text=True,
+                             errors='replace').stdout or ''
         for line in out.splitlines():
             line = line.strip()
             if line == str(target) or (line.endswith('/' + EXE_NAME) and Path(line).resolve() == target):

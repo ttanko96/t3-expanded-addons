@@ -5,7 +5,7 @@
 # this folder.
 
 set(TMST_ID "tmst")
-set(TMST_VERSION "0.2.0")
+set(TMST_VERSION "0.3.0")
 # The Expanded's setup rebuilds when this file changes: bump the version at
 # every update.
 # Expanded releases this add-on was tested with (docs/COMPAT.md). Another
@@ -64,7 +64,10 @@ set(TMST_INCLUDE_DIRS
 # itself (docs/COMPAT.md).
 set(TMST_WRAPS
     "gpu_ws_prepass_linked_list|src/core/tmst_overlay.c"
+    "psx_mod_gpu_high_vram_upload|src/core/tmst_overlay.c"
     "psx_sdl_audio_open|src/core/tmst_audio.c"
+    "tekken3_ttt1_wolf_after_actor|src/compat/tmst_compat.c|UNKNOWN_WOLF"
+    "tekken3_ttt1_wolf_high_vram_used|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_stage_source|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_ttt_stage|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_fight|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"

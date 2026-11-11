@@ -14,7 +14,9 @@
  *   - the title font (the selector's: 1..9, A..Z, !; no 0), from the grid;
  *   - the stock fighters' grid icons (32 x 58), from the grid's own drawing;
  *   - the guests' icon and VS portrait (126 x 252), from their
- *     mods/ttt1/<Key>-T3-ui.jui (Panda's and Tiger's too);
+ *     mods/ttt1/<Key>-T3-ui.jui (Panda's and Tiger's too), or the HD ones
+ *     beside it where the install has them (Expanded 1.5.0 on:
+ *     <Key>-T3-tile-hd.bin 64 x 116, <Key>-T3-portrait-hd.bin 168 x 252);
  *   - the stock fighters' VS portraits, from the loading screen's drawing,
  *     kept in addons/tmst/workspace/tournament/portraits/<key>.png for the
  *     next time (until then their icon stands in). */

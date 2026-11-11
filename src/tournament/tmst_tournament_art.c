@@ -337,7 +337,8 @@ int art_read_texture(uint32_t tpage, uint32_t clut, int u, int v, int w, int h, 
  * length) pairs from +16; TIM 0 the VS portrait, TIM 2 the grid icon, each an
  * 8-bit TIM with one palette. The portrait is banded as the game's own: four
  * bands of 64 rows, each on its quarter of the palette (indices 0..63). */
-static int jui_path(const char *key, char *path, size_t size) {
+/* mods/ttt1/<Key>-T3-<suffix>, whatever the key's case. */
+static int guest_path(const char *key, const char *suffix, char *path, size_t size) {
     const char *base = SDL_GetBasePath();
     char dir[4200]; snprintf(dir, sizeof dir, "%smods/ttt1", base ? base : "./");
 #if !defined(PSX_SDL3)
@@ -345,16 +346,39 @@ static int jui_path(const char *key, char *path, size_t size) {
 #endif
     path[0] = 0;
 #ifdef _WIN32
-    char pattern[4300]; snprintf(pattern, sizeof pattern, "%s\\%s-T3-ui.jui", dir, key);
+    char pattern[4300]; snprintf(pattern, sizeof pattern, "%s\\%s-T3-%s", dir, key, suffix);
     WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pattern, &fd);
     if (h != INVALID_HANDLE_VALUE) { snprintf(path, size, "%s\\%s", dir, fd.cFileName); FindClose(h); }
 #else
     DIR *d = opendir(dir); struct dirent *e;
-    char want[96]; snprintf(want, sizeof want, "%s-T3-ui.jui", key);
+    char want[96]; snprintf(want, sizeof want, "%s-T3-%s", key, suffix);
     while (d && (e = readdir(d))) if (!strcasecmp(e->d_name, want)) { snprintf(path, size, "%s/%s", dir, e->d_name); break; }
     if (d) closedir(d);
 #endif
     return path[0] != 0;
+}
+static int jui_path(const char *key, char *path, size_t size) { return guest_path(key, "ui.jui", path, size); }
+/* The Expanded's HD faces (1.5.0, src/tekken3_ttt1_roster.c hd_file_load):
+ * <Key>-T3-tile-hd.bin, the grid tile's framing at 64 x 116, and
+ * <Key>-T3-portrait-hd.bin, the arcade portrait at 168 x 252 (the 126 x 252
+ * one of the .jui is it squeezed, in 64 colours a band); raw 15-bit texels,
+ * 0 see-through. 0 when missing or not of that size (the .jui's stays). */
+enum { HD_TILE_W = 64, HD_TILE_H = 116, HD_PORTRAIT_W = 168, HD_PORTRAIT_H = 252 };
+static int hd_image(const char *key, const char *suffix, int w, int h, ArtImage *out) {
+    char path[4400];
+    if (!guest_path(key, suffix, path, sizeof path)) return 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = (size_t)w * (size_t)h;
+    uint8_t *d = malloc(n * 2);
+    uint32_t *px = malloc(n * sizeof(uint32_t));
+    int ok = d && px && fread(d, 2, n, f) == n && fgetc(f) == EOF;
+    fclose(f);
+    if (ok) for (size_t i = 0; i < n; i++) px[i] = argb_of((uint16_t)(d[2 * i] | d[2 * i + 1] << 8));
+    free(d);
+    if (!ok) { free(px); tmst_log("tournament: %s is not %d x %d texels, not used", path, w, h); return 0; }
+    *out = (ArtImage){px, w, h};
+    return 1;
 }
 enum { VS_PORTRAIT_W = 126, VS_PORTRAIT_H = 252, VS_BAND_ROWS = 64, VS_BAND_COLOURS = 64 };
 static uint32_t le32(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
@@ -399,6 +423,14 @@ void art_load_guest(const char *key) {
         free(faces[i].icon.px); faces[i].icon = im;
     }
     free(d);
+    /* The HD faces over the .jui's, where the install has them. */
+    int hd_tile = hd_image(key, "tile-hd.bin", HD_TILE_W, HD_TILE_H, &im);
+    if (hd_tile) { free(faces[i].icon.px); faces[i].icon = im; }
+    int hd_portrait = hd_image(key, "portrait-hd.bin", HD_PORTRAIT_W, HD_PORTRAIT_H, &im);
+    if (hd_portrait) { free(faces[i].portrait.px); faces[i].portrait = im; faces[i].cache_tried = 1; }
+    if (hd_tile || hd_portrait)
+        tmst_log("tournament: %s's HD %s%s%s", key, hd_tile ? "tile" : "", hd_tile && hd_portrait ? " and " : "",
+                 hd_portrait ? "portrait" : "");
 }
 
 int art_write_png(const char *path) { return tmst_png_write(path, art_canvas, ART_W, ART_H, ART_W); }

@@ -1054,7 +1054,9 @@ static void hide_below_grid(uint32_t node) {
 
 /* ---- the list's picture --------------------------------------------------------- */
 /* 1024 x 392 texels for the screen's 368 x 196 under the category line. Its
- * background is see-through: the panel shows under it. */
+ * background is see-through: the panel shows under it. Narrowed to 576 in
+ * the upper half where the Expanded draws its HD faces on the grid
+ * (TMST_OVERLAY_ROOM_FOR_HD). */
 enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, BG = 0x00000000u,
        MATTE = 0xff1a1216u };      /* about the half see-through panel under the picture's see-through texels */
 static uint32_t pic[PW * PH];
@@ -1187,7 +1189,7 @@ static void show_picture(void) {
             fclose(f);
         }
     }
-    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW);
+    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW | TMST_OVERLAY_ROOM_FOR_HD);
 }
 
 /* ---- sound -------------------------------------------------------------------- */
