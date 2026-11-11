@@ -7,7 +7,9 @@ Each step is a function in STEPS: it checks whether its output is current
 Steps: the Python modules the tools need (numpy, Pillow), the Tekken 2 disc
 (checked and remembered), the Jukebox's Tekken 2 (and Tekken 1) music from it,
 the Tekken 2 stages from it (the Classic's packs, the Remake's pictures and packs), the
-Jukebox's TTT console and arcade music, then its title lists. Then the game is built again with the add-on (dev/build.py).
+Jukebox's TTT console and arcade music, then its title lists, then Tournament
+Mode's portraits of the stock fighters from the Tekken 3 disc. Then the game is
+built again with the add-on (dev/build.py).
 
 It always runs with the Expanded's own Python (.setup/venv, which its setup
 gives numpy): started with another one, it starts itself again with that one.
@@ -439,6 +441,33 @@ def ttt_arcade_music() -> None:
     music_pack_step(music, 'ttt-arcade-music', 'TTT arcade music', 'tektagt.zip', convert)
 
 
+def tekken3_portraits() -> None:
+    """Tournament Mode's portraits of the stock fighters (tools/t3_portraits.py),
+    from the Tekken 3 disc the Expanded runs (game.toml), written over the
+    ones the game kept: again when the disc or the tool's VERSION changed or
+    a picture is gone. Without them (no disc, another region) the game keeps
+    each one as its loading screen first shows it."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    from disc_image import DiscError
+    import t3_portraits as portraits
+    disc = portraits.find_disc(ROOT)
+    if not disc:
+        log('Tekken 3 portraits: no Tekken 3 disc in game.toml, skipped')
+        return
+    want = {'version': portraits.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}}
+    have = stamp('tekken3-portraits')
+    out = ROOT / portraits.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 3 portraits: taking them from the disc')
+    try:
+        names = portraits.convert(disc, out, say=log)
+    except (DiscError, OSError, ValueError) as error:
+        log(f'Tekken 3 portraits: {error}; left out')
+        return
+    save_stamp('tekken3-portraits', {'stamp': want, 'files': names})
+
+
 def jukebox_titles() -> None:
     """The Jukebox's title lists (tools/jukebox_titles.py): every run, since
     it only adds lines for music that came since."""
@@ -448,7 +477,8 @@ def jukebox_titles() -> None:
 
 
 STEPS: list = [python_packages, tekken2_disc, tekken2_music, tekken2_stages, tekken2_remake_pictures,
-               tekken2_remake_stages, ttt_ps2_music, ttt_arcade_music, jukebox_titles]   # the music first: the titles list it
+               tekken2_remake_stages, ttt_ps2_music, ttt_arcade_music, jukebox_titles,   # the music first: the titles list it
+               tekken3_portraits]
 
 
 def main() -> int:

@@ -1429,7 +1429,10 @@ static int vs_differ(const ArtImage *a, const ArtImage *b) {
  * its bands before the texels were in place, or over others' pixels, is
  * what the player saw broken), or, none cached, when it has held still for
  * VS_STILL frames: only then cached (never a broken one kept). */
-enum { VS_STILL = 10, VS_SLACK = 200 };         /* pixels allowed to differ (of 31752) */
+/* VS_STILL: the loading screen lasts about 15 frames, a portrait reads the
+ * same from its first whole read on (measured 2026-11-11): at 10 it was never
+ * kept, the stock fighters had their grid icons on the screens (issue #3). */
+enum { VS_STILL = 4, VS_SLACK = 200 };          /* pixels allowed to differ (of 31752) */
 static struct { uint32_t sum; int still, good; } vs_check[2];
 static int vs_portraits_good(void) {
     int good = 1;
