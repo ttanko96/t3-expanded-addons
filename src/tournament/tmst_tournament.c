@@ -1531,10 +1531,12 @@ static void log_loading(uint32_t clut_at, int x, int y, int w, int h, unsigned o
 enum { HUD_Y = 24, HUD_W = 10, HUD_H = 16, HUD_ADVANCE = 9, HUD_WHITE = 0x7e16,
        FIGURE_W = 10, FIGURE_H = 24, FIGURE_CLUT = 0x7ed0, FIGURE_LOST = 0x7ed1, MARK_H = 21,
        LAMP_DX = -5, LAMP_DY = 6, LAMP_W = 15, LAMP_H = 18, LAMP_STEP = 14, LAMP_UV = 0xa8f0, LAMP_TPAGE = 0x00d,
-       LAMP_DARK = 0x7f19, LAMP_LIT = 0x7f18, LAMPS_MAX = 5 };
+       LAMP_DARK = 0x7f19, LAMP_LIT = 0x7f18, LAMPS_MAX = 5,
+       FIGHT_FRAMES = 0x800afa4c, BLINK_BIT = 16 };
 static struct {
     int seen; unsigned frame; int x0, x1; uint32_t tpage, clut;   /* the title; frame: of the list seen */
     int figure[2]; unsigned figure_frame; int figure_x[2], figure_y, figure_rank;
+    int won[2], blink[2]; uint32_t ko_life[2];    /* issue #4: a side's last lamp blinking; the loser's life at the KO */
 } hud;
 static void lamp_prims(TmstPrims *k);
 static void hud_figure(uint32_t clut_at, int x, int y, int w, int h, unsigned op) {
@@ -1660,27 +1662,52 @@ static void lamp(TmstPrims *k, int x, int y, int lit) {
     tmst_prim_word(k, (uint32_t)LAMP_UV | (uint32_t)(lit ? LAMP_LIT : LAMP_DARK) << 16);
     tmst_prim_word(k, tmst_xy(LAMP_W, LAMP_H));
 }
+/* Issue #4: the Arcade's newly won lamp blinks (lit / dark, bit 4 of the
+ * fight's frame counter 0x800AFA4C: 16 frames each) from the KO until the
+ * fallen one's life comes back (the next round), at the match's last KO
+ * till the fight's end (measured: i4a, i4b). The same here: a side's last
+ * lamp blinks from its round won (the record's +0x44 up) until the other's
+ * life is above what it was then. */
+static void lamp_blink(void) {
+    for (int side = 0; side < 2; side++) {
+        int won = psx_mod_read_byte(RECORD + (uint32_t)side * RECORD_STRIDE + ROUNDS_WON);
+        uint32_t loser = psx_mod_read_word(RECORD + (uint32_t)!side * RECORD_STRIDE + LIFE);
+        if (!mt.life_set || won < hud.won[side]) hud.blink[side] = 0;          /* a new fight (or member) */
+        else if (won > hud.won[side]) {
+            hud.blink[side] = 1; hud.ko_life[side] = loser;
+            tmst_log("tournament: P%d won a round, its lamp %d blinks", side + 1, won);
+        }
+        else if (hud.blink[side] && loser > hud.ko_life[side]) hud.blink[side] = 0;
+        hud.won[side] = won;
+    }
+}
+static void hud_title_prims(TmstPrims *k);
 /* The lamps where the figures were, in the ordering table (a builder of
  * the figures' rank, seen in the frame before): behind the fighters as
- * they were, not over everything. */
+ * they were, not over everything. The HUD's title too (issue #4: it was
+ * drawn over the fighters; the game's TEAM BATTLE letters are at the
+ * figures' rank, 1006, measured). */
 static void lamp_prims(TmstPrims *k) {
-    if (mt.flow == FLOW_MATCH && psx_mod_read_word(SCREEN) == FIGHT && hud.figure_frame == tm.frames &&
-        (hud.figure[0] || hud.figure[1])) {
-        int lamps = psx_mod_read_byte(ROUNDS) + 1;
+    if (mt.flow != FLOW_MATCH || psx_mod_read_word(SCREEN) != FIGHT) return;
+    hud_title_prims(k);
+    lamp_blink();
+    if (hud.figure_frame == tm.frames && (hud.figure[0] || hud.figure[1])) {
+        int lamps = psx_mod_read_byte(ROUNDS) + 1, dark = !(psx_mod_read_half(FIGHT_FRAMES) & BLINK_BIT);
         if (lamps > LAMPS_MAX) lamps = LAMPS_MAX;
         tmst_prim_room(k, 1);
         tmst_prim_word(k, 0xe1000000u | LAMP_TPAGE);
         for (int side = 0; side < 2; side++) {
             if (!hud.figure[side]) continue;
-            int won = psx_mod_read_byte(RECORD + (uint32_t)side * RECORD_STRIDE + ROUNDS_WON);
+            int won = hud.won[side];
             int x = side ? hud.figure_x[1] : hud.figure_x[0] + LAMP_DX, step = side ? LAMP_STEP : -LAMP_STEP;
-            for (int i = 0; i < lamps; i++, x += step) lamp(k, x, hud.figure_y + LAMP_DY, i < won);
+            for (int i = 0; i < lamps; i++, x += step)
+                lamp(k, x, hud.figure_y + LAMP_DY, i < won && !(i == won - 1 && hud.blink[side] && dark));
         }
     }
 }
-static void hud_prims(TmstPrims *k) {
+static void hud_prims(TmstPrims *k) { big_prims(k); }
+static void hud_title_prims(TmstPrims *k) {
     static const char title[] = "TOURNAMENT MODE";
-    big_prims(k);
     if (!hud.seen || hud.frame != tm.frames) return;   /* the HUD not drawn in this list */
     int n = (int)sizeof title - 1, width = (n - 1) * HUD_ADVANCE + HUD_W, x = (hud.x0 + hud.x1) / 2 - width / 2;
     tmst_prim_room(k, 1);
