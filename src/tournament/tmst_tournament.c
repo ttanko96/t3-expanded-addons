@@ -346,7 +346,8 @@ static struct {
     int loading_vs; unsigned loading_at;      /* its VS picture drawn (the grid's last lists before), since when */
     int loading_ok; unsigned loading_vs_at;   /* its portraits checked (vs_portraits_good) or given up on; since when drawn */
     unsigned rounds_won, round_end;           /* both fighters' rounds won; the frame a round ended, 0 none */
-    int want, want_now, card_turns;           /* the MOVESET card: the player's TTT1 choice; the card's now */
+    int want, want_now, card_now;             /* the MOVESET card (moves_count's choices, 0 Tekken 3's): the player's
+                                               * choice; where the Expanded's card stands; where it is turned to */
     int unlocked;                             /* the tournament the win opened, -1 none */
 } mt = {.match = -1, .opponent = -1, .second = -1, .unlocked = -1};
 
@@ -901,6 +902,47 @@ static void between_watch(unsigned screen) {
     }
 }
 
+/* The MOVESET card's choices for a native (L1, 2026-11-12): Tekken 3's
+ * moves, then each line of the Expanded's natives.txt for it, read as
+ * src/tekken3_native_moves.c reads them (it has no call that says them): the
+ * optional fourth column the source ("ttt1" without), "dr" only with the
+ * Tekken 5 DR Content mod on, a line only with its <Name>-<SOURCE>-combat.jmv,
+ * at most 4. Its card turns through them in that order, round. A source
+ * we do not know shows as its own name. */
+extern int tekken3_dr_content_enabled(void) __attribute__((weak));
+enum { MOVES_MAX = 5, MOVES_NAME = 24 };
+static struct { int read; unsigned char n[STOCK]; char name[STOCK][MOVES_MAX][MOVES_NAME]; } moves;
+static void moves_read(void) {
+    if (moves.read) return;
+    moves.read = 1;
+    for (unsigned id = 0; id < STOCK; id++) { moves.n[id] = 1; snprintf(moves.name[id][0], MOVES_NAME, "TEKKEN 3"); }
+    const char *root = tekken3_ttt1_asset_root ? tekken3_ttt1_asset_root() : NULL;
+    char path[1024], line[96];
+    if (!root || snprintf(path, sizeof path, "%s/natives.txt", root) >= (int)sizeof path) return;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    while (fgets(line, sizeof line, f)) {
+        unsigned id, moveset; char key[32], source[24] = "ttt1";
+        if (sscanf(line, "%u %31s %u %23s", &id, key, &moveset, source) < 3 || id >= STOCK || moves.n[id] >= MOVES_MAX) continue;
+        if (!strcmp(source, "dr") && !(tekken3_dr_content_enabled && tekken3_dr_content_enabled())) continue;
+        char tag[24], combat[1024];
+        for (int i = 0; i < 24; i++) tag[i] = (char)toupper((unsigned char)source[i]);
+        key[0] = (char)toupper((unsigned char)key[0]);
+        if (snprintf(combat, sizeof combat, "%s/%s-%s-combat.jmv", root, key, tag) >= (int)sizeof combat) continue;
+        FILE *c = fopen(combat, "rb");
+        if (!c) continue;
+        fclose(c);
+        char *name = moves.name[id][moves.n[id]++];
+        snprintf(name, MOVES_NAME, "%s", !strcmp(source, "ttt1") ? "TEKKEN TAG TOURNAMENT" : !strcmp(source, "dr") ? "TEKKEN 5 DR" : tag);
+        tmst_log("tournament: %s's moveset %u: %s", key, (unsigned)moves.n[id] - 1, name);
+    }
+    fclose(f);
+}
+static int moves_count(unsigned id) { moves_read(); return id < STOCK ? moves.n[id] : 1; }
+static const char *moves_name(unsigned id, int k) {
+    return k > 0 && k < moves_count(id) ? moves.name[id][k] : "TEKKEN 3";
+}
+
 /* The player's fighter picked again on the grid: its page, the cursor on its
  * cell, its costume's button, the MOVESET card confirmed where it shows. */
 static void pick_tick(void) {
@@ -937,9 +979,12 @@ static void pick_tick(void) {
         break;
     case STEP_CARD:                           /* the pick not taken yet: the card is up, on the player's moves */
         if (id < STOCK && tekken3_native_moves_available && tekken3_native_moves_available(id)) {
-            int turn = mt.want_now != mt.want;
-            if (turn && t < 4) mt.hold = B_RIGHT;
-            if (t >= 10 && t < 14) { mt.hold = B_CROSS; mt.want_now = mt.want; }
+            /* RIGHT as often as the card is from the choice (4 frames down,
+             * 4 up each), then CROSS. The card opens where the Expanded's
+             * stands, within this native's choices. */
+            int n = moves_count(id), now = mt.want_now < n ? mt.want_now : n - 1;
+            int turns = ((mt.want - now) % n + n) % n;            if ((int)t < turns * 8 && t % 8 < 4) mt.hold = B_RIGHT;
+            if ((int)t >= turns * 8 + 6 && (int)t < turns * 8 + 10) { mt.hold = B_CROSS; mt.want_now = mt.want; }
         }
         if (t >= 60) { mt.step = STEP_CURSOR; mt.step_at = tm.frames; }
         break;
@@ -947,6 +992,7 @@ static void pick_tick(void) {
 }
 
 static int card_open;
+static unsigned card_id;                      /* the native whose card is open */
 static uint16_t screen_input(uint16_t buttons) {
     uint16_t pressed = (uint16_t)~buttons, edges = pressed & tm.previous;    /* previous: last read's released bits */
     tm.previous = buttons;
@@ -995,12 +1041,17 @@ static uint16_t screen_input(uint16_t buttons) {
         /* The MOVESET card (natives with TTT1 moves): opened by the pick's
          * button, LEFT / RIGHT turn it, CROSS takes it, CIRCLE closes it. The Expanded draws it over the team panel, under ours:
          * shown in ours (tournament_prims). */
-        else if (card_open) {
-            if (edges & (B_LEFT | B_RIGHT)) { mt.card_turns++; tm.version++; }
-            if (edges & B_CROSS) { card_open = 0; tm.version++; mt.want = mt.want_now ^ (mt.card_turns & 1); }
-            else if (edges & B_CIRCLE) { card_open = 0; tm.version++; }
+        else if (card_open) {                 /* as the Expanded's card turns: round, kept when closed */
+            int n = moves_count(card_id);
+            if (edges & B_RIGHT) { mt.card_now = (mt.card_now + 1) % n; tm.version++; }
+            if (edges & B_LEFT) { mt.card_now = (mt.card_now + n - 1) % n; tm.version++; }
+            if (edges & B_CROSS) { card_open = 0; tm.version++; mt.want = mt.want_now = mt.card_now; }
+            else if (edges & B_CIRCLE) { card_open = 0; tm.version++; mt.want_now = mt.card_now; }
         } else if ((edges & B_FACE) && under < STOCK && tekken3_native_moves_available &&
-                   tekken3_native_moves_available(under)) { card_open = 1; mt.card_turns = 0; tm.version++; }
+                   tekken3_native_moves_available(under)) {
+            card_open = 1; card_id = under; tm.version++;
+            mt.card_now = mt.want_now < moves_count(under) ? mt.want_now : moves_count(under) - 1;
+        }
         return out;
     }
     return buttons;                           /* picked: the MOVESET card and the game's own way on */
@@ -1184,9 +1235,9 @@ static void tournament_prims(TmstPrims *k) {
             if (*state) font_line(k, state, 346, y + 2, 2, 1, 2, !open ? 0x2020a0 : !ok ? 0x484848 : 0x30a0c0);
         }
     } else if (tm.view == VIEW_GRID && card_open) {      /* the MOVESET card, as the Expanded's */
-        int ttt1 = mt.want_now ^ (mt.card_turns & 1), sway = (int)(tm.frames % 60 < 30 ? tm.frames % 60 : 60 - tm.frames % 60) / 8;
+        int sway = (int)(tm.frames % 60 < 30 ? tm.frames % 60 : 60 - tm.frames % 60) / 8;
         font_line(k, "MOVESET", CENTRE_X, 266, 1, 3, 5, 0x30a0c0);
-        font_line(k, ttt1 ? "TEKKEN TAG TOURNAMENT" : "TEKKEN 3", CENTRE_X, 300, 1, 1, 1, 0x808080);
+        font_line(k, moves_name(card_id, mt.card_now), CENTRE_X, 300, 1, 1, 1, 0x808080);
         tmst_ui_prim_text(k, 14 - sway, 300, "<", 2, 0x3040f0);        /* the UI font's, as tall as the title's line */
         tmst_ui_prim_text(k, 342 + sway, 300, ">", 2, 0x3040f0);
     } else if (tm.view == VIEW_GRID) {
@@ -1893,7 +1944,7 @@ static void tick(void) {
             mt.flow = FLOW_BETWEEN; mt.outcome = NEXT_MATCH; mt.cover = 1; mt.confirmed = 0; mt.previous = 0;
             mt.story_done = 0; mt.scr = story_load(tm.tourney) ? SCR_STORY : SCR_DRAW;
             mt.scr_at = tm.frames; mt.step = STEP_SETTLE; mt.step_at = tm.frames; mt.tries = 0;
-            tmst_log("tournament: the pick held for the draw (0x%x, %s moves)", choice, mt.want ? "TTT1" : "T3");
+            tmst_log("tournament: the pick held for the draw (0x%x, %s moves)", choice, moves_name(choice >> 2, mt.want));
         } else {
             tm.view = VIEW_PICKED; tm.version++; pic_on = 0; tmst_overlay_hide();
         }
