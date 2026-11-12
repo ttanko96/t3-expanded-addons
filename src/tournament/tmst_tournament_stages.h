@@ -25,8 +25,14 @@ int tmst_tourney_stage(int t, const char *key, int school, int *stage);
  * T1 and T2 the Tekken 2 stage's piece (T1's own: a future Tekken 1
  * Content), T3 the fighter's own theme (the disc's XA), TTT the TTT stage's
  * piece. The Jukebox's file or XA name ("t2-paul.bgm", "xa-42"), its
- * category in *cat ("t2-console", "t3-console", "ttt-console"); NULL none. */
-const char *tmst_tourney_music(int t, const char *key, int kind, int stage, const char **cat);
+ * category in *cat ("t2-console", "t3-console", "ttt-console"); NULL none.
+ * arcade (GAME OPTION's BGM SELECT, issue #9): T1, T2 and TTT the Arcade
+ * piece ("t2-arcade", "ttt-arcade"); T3 still the Console's XA, which the
+ * game side turns into its Arcade piece by the game's own music table. */
+const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int arcade, const char **cat);
+/* A Tekken 2 stage's piece (0..22: its owner's theme), Console or Arcade;
+ * the tournaments' and the STAGE line's (src/tekken2/tmst_tekken2_stages.c). */
+const char *tmst_t2_stage_music(int stage, int arcade);
 
 #ifdef __cplusplus
 }

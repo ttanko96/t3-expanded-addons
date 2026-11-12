@@ -30,6 +30,16 @@ function(tmst_detect_features out)
             list(APPEND _defs "TMST_HAS_GAME_OPTIONS=1")
         endif()
     endif()
+    # GAME OPTION's BGM SELECT with RANDOM (src/tekken3_bgm_select.c): the
+    # fight's music version, for the Tekken 2 stages' and the tournaments'
+    # pieces (src/core/tmst_music.c tmst_music_version, issue #9).
+    if(EXISTS "${CMAKE_SOURCE_DIR}/src/tekken3_bgm_select.h")
+        file(READ "${CMAKE_SOURCE_DIR}/src/tekken3_bgm_select.h" _bgm)
+        string(FIND "${_bgm}" "int tekken3_bgm_select_version(void)" _at)
+        if(NOT _at EQUAL -1)
+            list(APPEND _defs "TMST_HAS_BGM_SELECT=1")
+        endif()
+    endif()
     # The stage engine and the STAGE line (Tekken 2 Content's Stages wraps
     # these functions, called from other files of theirs).
     set(_engine 1)

@@ -14,6 +14,13 @@ typedef int (*TmstMusicHook)(int id);
 /* Up to 4 hooks, run in the order added; the first -1 skips the call. */
 int tmst_music_add_hook(TmstMusicHook hook);
 
+/* The version of the fight's music (issue #9): GAME OPTION's BGM SELECT, as
+ * the Expanded plays Tekken 3's and TTT's stages: its RANDOM's draw for the
+ * fight (tekken3_bgm_select_version) where the Expanded has it, else the
+ * card's byte (0x80097F05). */
+enum { TMST_MUSIC_CONSOLE = 0, TMST_MUSIC_ARCADE = 1, TMST_MUSIC_SILENT = 2 };
+int tmst_music_version(void);
+
 #ifdef __cplusplus
 }
 #endif

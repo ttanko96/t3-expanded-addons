@@ -182,8 +182,31 @@ class TournamentTest(unittest.TestCase):
         return {k: (int(a), int(b)) for k, a, b, _ in
                 (l.split() for l in self.run_exe('stage', t, school, *keys))}
 
-    def music(self, t, keys, school=0):
-        return {k: m for k, _, _, m in (l.split() for l in self.run_exe('stage', t, school, *keys))}
+    def music(self, t, keys, school=0, arcade=False):
+        return {k: m for k, _, _, m in
+                (l.split() for l in self.run_exe('stage-arcade' if arcade else 'stage', t, school, *keys))}
+
+    def test_music_arcade(self):
+        """Issue #9: BGM SELECT's ARCADE (RANDOM's draw): T1, T2 and TTT the Arcade pieces, every one in its list;
+        T3 still the Console XA (the game side maps it by the game's table)."""
+        lists = {}
+        for cat, files in (('t2-arcade', ['tekken1-arcade', 'tekken2-arcade']), ('ttt-arcade', ['ttt-arcade'])):
+            lists[cat] = {l.split('=')[0].strip() for f in files
+                          for l in (ADDON / 'data/jukebox' / (f + '.txt')).read_text().splitlines()
+                          if '=' in l and not l.startswith('#')}
+        p = self.pools(); everyone = STOCK + GUESTS
+        for t, cat in ((0, 't2-arcade'), (1, 't2-arcade'), (3, 'ttt-arcade')):
+            tid = ['t1', 't2', 't3', 'ttt'][t]
+            keys = p[tid][1] or [k for k in everyone if k not in self.out[tid]]
+            for school in (0, 1):
+                for k, m in self.music(t, keys, school, True).items():
+                    c, name = m.split('/')
+                    self.assertEqual(c, cat, (tid, k)); self.assertIn(name, lists[cat], (tid, k))
+        self.assertEqual(self.music(1, ['bruce', 'jack2', 'devil'], arcade=True),
+                         {'bruce': 't2-arcade/t2-bruce.bgm', 'jack2': 't2-arcade/t2-jack-2.bgm',
+                          'devil': 't2-arcade/t2-devil.bgm'})
+        self.assertEqual(self.music(3, ['xiaoyu'], 1, True), {'xiaoyu': 'ttt-arcade/arcade-school.bgm'})
+        self.assertEqual(self.music(2, ['anna'], arcade=True), {'anna': 't3-console/xa-21'})
 
     def test_music(self):
         lists = {}

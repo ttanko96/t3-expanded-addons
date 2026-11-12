@@ -45,6 +45,17 @@ static const char *const ttt_music[15] = {
     "ps2-paul.bgm", "ps2-law.bgm", "ps2-yoshimitsu.bgm", "ps2-xiaoyu.bgm", "ps2-hwoarang.bgm", "ps2-lei.bgm",
     "ps2-ogre.bgm", "ps2-school.bgm", "ps2-jin.bgm", "ps2-nina.bgm", "ps2-eddy.bgm", "ps2-king.bgm",
     "ps2-heihachi.bgm", NULL, "ps2-unknown.bgm"};
+/* The Arcade pieces (issue #9: GAME OPTION's BGM SELECT; t2-music/arcade,
+ * ttt-music/arcade). Tekken 3's come from the game's own table (the game side). */
+static const char *const t2_arcade[23] = {
+    "t2-bruce.bgm", "t2-wang.bgm", "t2-jun.bgm", "t2-paul.bgm", "t2-king.bgm", "t2-lei.bgm", "t2-heihachi.bgm",
+    "t2-yoshimitsu.bgm", "t2-jack-2.bgm", "t2-law.bgm", "t2-kunimitsu.bgm", "t2-nina.bgm", "t2-armor-king.bgm",
+    "t2-lee.bgm", "t2-kuma.bgm", "t2-ganryu.bgm", "t2-anna.bgm", "t2-roger.bgm", "t2-pjack.bgm", "t2-michelle.bgm",
+    "t2-baek.bgm", "t2-kazuya.bgm", "t2-devil.bgm"};
+static const char *const ttt_arcade[15] = {
+    "arcade-paul.bgm", "arcade-law.bgm", "arcade-yoshimitsu.bgm", "arcade-xiaoyu.bgm", "arcade-hwoarang.bgm",
+    "arcade-lei.bgm", "arcade-ogre.bgm", "arcade-school.bgm", "arcade-jin.bgm", "arcade-nina.bgm", "arcade-eddy.bgm",
+    "arcade-king.bgm", "arcade-heihachi.bgm", NULL, "arcade-unknown.bgm"};
 typedef struct { const char *key, *piece; } Theme;
 static const Theme t3_music[] = {
     {"paul", "xa-42"}, {"law", "xa-35"}, {"yoshimitsu", "xa-46"}, {"xiaoyu", "xa-45"}, {"hwoarang", "xa-30"},
@@ -53,15 +64,20 @@ static const Theme t3_music[] = {
     {"julia", "xa-32"}, {"heihachi", "xa-29"}, {"gon", "xa-26"}, {"drb", "xa-22"}, {"bryan", "xa-23"},
     {"kuma", "xa-34"}, {"panda", "xa-34"}, {"mokujin", "xa-37"}, {NULL, NULL}};
 
-const char *tmst_tourney_music(int t, const char *key, int kind, int stage, const char **cat) {
+const char *tmst_t2_stage_music(int stage, int arcade) {
+    if (stage < 0 || stage >= 23) return NULL;
+    return arcade ? t2_arcade[stage] : t2_music[stage];
+}
+
+const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int arcade, const char **cat) {
     *cat = NULL;
     if (kind == TMST_TSTAGE_T2 && (t == TMST_TOURNEY_T1 || t == TMST_TOURNEY_T2) && stage >= 0 && stage < 23) {
-        *cat = "t2-console";
-        return t2_music[stage];
+        *cat = arcade ? "t2-arcade" : "t2-console";
+        return tmst_t2_stage_music(stage, arcade);
     }
     if (kind == TMST_TSTAGE_TTT && t == TMST_TOURNEY_TTT && stage >= 0 && stage < 15 && ttt_music[stage]) {
-        *cat = "ttt-console";
-        return ttt_music[stage];
+        *cat = arcade ? "ttt-arcade" : "ttt-console";
+        return arcade ? ttt_arcade[stage] : ttt_music[stage];
     }
     if (kind == TMST_TSTAGE_T3 && t == TMST_TOURNEY_T3 && key)
         for (const Theme *m = t3_music; m->key; m++)

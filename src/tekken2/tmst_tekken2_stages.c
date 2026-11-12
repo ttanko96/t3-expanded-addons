@@ -93,6 +93,7 @@
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "tmst_tournament_stages.h"
+#include "tmst_music.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include <math.h>
@@ -741,27 +742,17 @@ int __wrap_tekken3_stage_select_music(void) {
 
 /* The stage's own piece, as Tekken 3's and TTT's on the STAGE line (the
  * user's, 2026-11-08): its owner's theme (tmst_tournament_stages.c's), in
- * the game's music mode (OPTION: arranged the Console's, arcade the
- * Arcade's). The Jukebox plays it unless the player chose a piece for the
- * opponent; without Tekken 2 Content's Music its categories are off and the
- * fighter's piece plays. */
-static const char *const music_console[STAGES] = {
-    "bruce.bgm", "t2-wang.bgm", "t2-jun.bgm", "t2-paul.bgm", "t2-king.bgm", "t2-lei.bgm", "t2-heihachi.bgm",
-    "t2-yoshimitsu.bgm", "jack2.bgm", "t2-law.bgm", "t2-kunimitsu.bgm", "t2-nina.bgm", "t2-armor-king.bgm", "lee.bgm",
-    "t2-kuma.bgm", "t2-ganryu.bgm", "t2-anna.bgm", "t2-roger.bgm", "pjack.bgm", "michelle.bgm", "t2-baek.bgm",
-    "t2-kazuya.bgm", "devil.bgm" };
-static const char *const music_arcade[STAGES] = {
-    "t2-bruce.bgm", "t2-wang.bgm", "t2-jun.bgm", "t2-paul.bgm", "t2-king.bgm", "t2-lei.bgm", "t2-heihachi.bgm",
-    "t2-yoshimitsu.bgm", "t2-jack-2.bgm", "t2-law.bgm", "t2-kunimitsu.bgm", "t2-nina.bgm", "t2-armor-king.bgm",
-    "t2-lee.bgm", "t2-kuma.bgm", "t2-ganryu.bgm", "t2-anna.bgm", "t2-roger.bgm", "t2-pjack.bgm", "t2-michelle.bgm",
-    "t2-baek.bgm", "t2-kazuya.bgm", "t2-devil.bgm" };
-enum { MUSIC_OPTION = 0x80097f05 };   /* OPTION's music: 0 arranged, 1 arcade */
+ * the version of the fight's music (issue #9: GAME OPTION's BGM SELECT,
+ * RANDOM's draw included, tmst_music_version; SILENT: the game starts no
+ * music, so neither does the Jukebox). The Jukebox plays it unless the player
+ * chose a piece for the opponent; without Tekken 2 Content's Music its
+ * categories are off and the fighter's piece plays. */
 int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name) {
     if (!line_fight || fight < 0 || fight >= STAGES || psx_mod_read_word(MODE) != (uint32_t)fight_mode) return 0;
-    int arcade = psx_mod_read_byte(MUSIC_OPTION) == 1;
+    int arcade = tmst_music_version() == TMST_MUSIC_ARCADE;
     *key = "t2-stage";
     *cat = arcade ? "t2-arcade" : "t2-console";
-    *name = arcade ? music_arcade[fight] : music_console[fight];
+    *name = tmst_t2_stage_music(fight, arcade);
     return 1;
 }
 int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stage, int *arena) {

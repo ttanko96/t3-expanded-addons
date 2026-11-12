@@ -426,14 +426,39 @@ static int due_stage(const Fighter *f, int *stage, int *school) {
 static int in_match(void) {
     return on && mt.flow == FLOW_MATCH && mt.opponent >= 0 && psx_mod_read_word(MODE) == TEAM_BATTLE;
 }
+/* Tekken 3's Arcade piece for its Console XA "xa-NN" (issue #9): the game's
+ * music table (0x80024FD0, 32 entries of two bytes: Console, Arcade; 0x80 a
+ * CD track), the entry whose Console byte it is, its Arcade byte; as the
+ * Jukebox's find_default, a CD track stays in t3-console. NULL none. */
+static const char *t3_arcade_piece(const char *console, const char **cat) {
+    static char name[16];
+    unsigned xa;
+    if (!console || sscanf(console, "xa-%u", &xa) != 1) return NULL;
+    for (unsigned n = 0; n < 32; n++) {
+        if (psx_mod_read_byte(0x80024fd0u + n * 4) != xa) continue;
+        unsigned b = psx_mod_read_byte(0x80024fd0u + n * 4 + 2);
+        if (b & 0x80) { snprintf(name, sizeof name, "cd-track-%u", b & 0x7f); *cat = "t3-console"; }
+        else { snprintf(name, sizeof name, "xa-%02u", b); *cat = "t3-arcade"; }
+        return name;
+    }
+    return NULL;
+}
 /* The fight's music (tmst_core.h): the CPU's member due, its piece in this
- * tournament (src/tournament/tmst_tournament_stages.c); the Jukebox plays it. */
+ * tournament (src/tournament/tmst_tournament_stages.c) in the version of the
+ * fight's music (issue #9: GAME OPTION's BGM SELECT, RANDOM's draw included;
+ * SILENT: the game starts no music, the Jukebox none either); the Jukebox
+ * plays it. */
 int tmst_tournament_fight_music(const char **key, const char **cat, const char **name) {
     if (!in_match()) return 0;
     const Fighter *f = member_fighter(member_due());
-    int stage, school, kind = due_stage(f, &stage, &school);
+    int stage, school, kind = due_stage(f, &stage, &school), arcade = tmst_music_version() == TMST_MUSIC_ARCADE;
     *key = f->key;
-    *name = tmst_tourney_music(tm.tourney, f->key, kind, stage, cat);
+    *name = tmst_tourney_music(tm.tourney, f->key, kind, stage, arcade, cat);
+    if (arcade && *name && *cat && !strcmp(*cat, "t3-console")) {
+        const char *a = t3_arcade_piece(*name, cat);
+        if (a) *name = a;
+        else tmst_log("tournament: no Arcade piece for %s, the Console's plays", *name);
+    }
     return *name != NULL;
 }
 int tmst_tournament_fight_stage(unsigned mode, int *stage) {
@@ -734,7 +759,9 @@ static void boss_intro_tick(unsigned screen, int due) {
              intro_phase(alone), e->frames);
     /* The boss's piece from the intro's first frame on (the Jukebox; the
      * game starts it only with the round). */
-    if (!tmst_jukebox_lead_in()) tmst_log("tournament: the intro without music (no Jukebox piece)");
+    /* BGM SELECT's SILENT: no music, the intro's either (issue #9). */
+    if (tmst_music_version() == TMST_MUSIC_SILENT) tmst_log("tournament: the intro without music (BGM SELECT: SILENT)");
+    else if (!tmst_jukebox_lead_in()) tmst_log("tournament: the intro without music (no Jukebox piece)");
 }
 /* The fight frame's piece after its pause check (src/tekken3_cine.c runs its
  * frames there): a skip at a frame's start. */

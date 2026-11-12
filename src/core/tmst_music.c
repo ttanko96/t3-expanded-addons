@@ -5,7 +5,20 @@
  * the game's own routine. Either way ours runs first and theirs after. */
 #include "tmst_music.h"
 #include "cpu_state.h"
+#include "mod_plugins.h"
 #include <stdint.h>
+#ifdef TMST_HAS_BGM_SELECT
+#include "tekken3_bgm_select.h"
+#endif
+
+int tmst_music_version(void) {
+#ifdef TMST_HAS_BGM_SELECT
+    int v = tekken3_bgm_select_version();
+#else
+    int v = psx_mod_read_byte(0x80097f05u);
+#endif
+    return v == TMST_MUSIC_ARCADE ? TMST_MUSIC_ARCADE : v >= TMST_MUSIC_SILENT ? TMST_MUSIC_SILENT : TMST_MUSIC_CONSOLE;
+}
 
 enum { MAX_HOOKS = 4 };
 static TmstMusicHook hooks[MAX_HOOKS];
