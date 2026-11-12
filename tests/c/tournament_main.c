@@ -105,10 +105,11 @@ int main(int argc, char **argv) {
         for (int i = 0; i < s.lines; i++) printf("|%s\n", s.out + s.line[i]);
         return 0;
     }
-    if (argc >= 5 && !strcmp(argv[1], "stage")) {
+    if (argc >= 5 && (!strcmp(argv[1], "stage") || !strcmp(argv[1], "stage-arcade"))) {
+        int arcade = !strcmp(argv[1], "stage-arcade");
         for (int i = 4; i < argc; i++) {
             int stage, kind = tmst_tourney_stage(atoi(argv[2]), argv[i], atoi(argv[3]), &stage);
-            const char *cat, *music = tmst_tourney_music(atoi(argv[2]), argv[i], kind, stage, &cat);
+            const char *cat, *music = tmst_tourney_music(atoi(argv[2]), argv[i], kind, stage, arcade, &cat);
             printf("%s %d %d %s/%s\n", argv[i], kind, stage, cat ? cat : "-", music ? music : "-");
         }
         return 0;
