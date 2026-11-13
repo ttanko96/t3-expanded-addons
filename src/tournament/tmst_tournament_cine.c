@@ -61,6 +61,31 @@ static const TmstCineKey heihachi_cam[] = {
     {230, {500, -900, -1500}, {250, -950, 2450}},
     {330, {550, -950, -1450}, {300, -1000, 2380}},  /* his whole figure */
 };
+/* True Ogre (the user's T3 Grand Final, 2026-11-09): Ogre, beaten, lying on
+ * the ground (his TTT1 record 812's first frames, barely moving), gets up
+ * slowly (812 on), draws himself up, arms spread, in his lightning (record
+ * 2, his tag move: lightning properties 25..85; the user's pick for his
+ * "invulnerable" move), rises into the air (733's frames 30..79, high up:
+ * the blend lifts him there), a white flash and he is True Ogre (the
+ * engine's swap), who lands on his wings (his own 735 from frame 60) into
+ * his stance, then black. Both natives: their own TTT1 packs. */
+static const TmstCinePart trueogre_parts[] = {
+    {"Ogre-TTT1", 812, 0, 10, 30, 0},            /* lying on the ground: clip frames 0..3 */
+    {"Ogre-TTT1", 812, 4, 80, 86, 0},            /* getting up: 4..72 */
+    {"Ogre-TTT1", 2, 0, 100, 90, 14},            /* arms spread, lightning: 0..89 */
+    {"Ogre-TTT1", 733, 30, 100, 50, 20},         /* rising: 30..79 */
+    {NULL, 735, 60, 100, 90, 10},                /* True Ogre landing: 60..149 */
+    {NULL, -1, 0, 100, 50, 16},                  /* his stance */
+};
+static const TmstCineKey trueogre_cam[] = {
+    {0, {600, -700, -1400}, {0, -400, 1800}},       /* low, by him on the ground */
+    {116, {400, -850, -1700}, {0, -950, 1800}},     /* up with him */
+    {180, {350, -1000, -1600}, {0, -1100, 1800}},   /* his lightning */
+    {240, {450, -600, -2800}, {0, -1900, 1800}},    /* back and low: he rises */
+    {270, {450, -500, -3200}, {0, -2300, 1800}},    /* the flash, high up */
+    {310, {450, -800, -2800}, {0, -1500, 1800}},    /* True Ogre coming down */
+    {396, {400, -950, -1900}, {0, -1050, 1800}},    /* landed: his whole figure */
+};
 /* The fallback: standing in its stance, the camera coming closer. */
 static const TmstCinePart stance_parts[] = {{NULL, -1, 0, 100, 240, 0}};
 static const TmstCineKey stance_cam[] = {
@@ -73,6 +98,8 @@ static const TmstBossIntro intros[] = {
      "kazuya", 134, 6, 129, 200, 2, {14, 16, 11, 9, 1, 4, 17, 2}, 8, NULL},
     {"heihachi", heihachi_parts, N(heihachi_parts), 330, {0, 0, 2100, 0x8000}, 30, 24, heihachi_cam, N(heihachi_cam),
      NULL, 0, 0, 221, 266, 2, {2, 4, 11, 16, 17, 14, 9}, 7, "Heihachi-TTT1"},
+    {"trueogre", trueogre_parts, N(trueogre_parts), 396, {0, 0, 1800, 0x8000}, 30, 24, trueogre_cam, N(trueogre_cam),
+     "ogre", 256, 8, 141, 256, 2, {2, 5, 8, 10, 13, 14, 16, 17}, 8, "Trueogre-TTT1"},
 };
 static const TmstBossIntro fallback = {NULL, stance_parts, N(stance_parts), 240, {0, 0, 1800, 0x8000}, 30, 24,
                                        stance_cam, N(stance_cam), NULL, 0, 0, 0, 0, 0, {0}, 0, NULL};

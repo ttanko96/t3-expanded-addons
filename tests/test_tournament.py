@@ -419,6 +419,38 @@ class TournamentTest(unittest.TestCase):
         # without his pack: not written (no intro)
         self.assertEqual(self.cine('heihachi', self.pack())[0], 1)
 
+    def test_intro_trueogre(self):
+        # two natives: Ogre's parts from his pack (Ogre-TTT1, channel 3 from
+        # 1000), True Ogre's from his own (Trueogre-TTT1, from 5000), not P2's
+        ogre = self.pack(records=820, clips={812: (75, 0), 2: (126, 0), 733: (150, 0)}, ch3=1000)
+        to = self.pack(records=820, clips={735: (150, 0)}, ch3=5000)
+        code, out = self.cine('trueogre', self.pack(ch3=30000), Ogre=ogre, Trueogre=to)
+        self.assertEqual((code, out[0]), (0, 'entry trueogre'))
+        head, cam, poses = self.blocks(out)
+        n = int(head['length'][0][0])
+        self.assertEqual((len(cam), len(poses[1])), (n, n))
+        # Ogre first, True Ogre (the boss) from the swap on, in a white flash
+        self.assertEqual(head['actor'][1], ['1', 'ogre', '0'])
+        swap = int(head['swap'][0][3])
+        self.assertEqual(head['swap'][0][:3], ['1', '33', '0'])
+        fades = [list(map(int, f)) for f in head['fade']]
+        self.assertIn([swap - 8, swap - 1, 0, 256], fades)
+        self.assertIn([swap, swap + 16, 256, 0], fades)
+        # his lightning from his arms spread up to the flash
+        aura = list(map(int, head['aura'][0]))
+        self.assertEqual(aura[:3], [1, 141, swap])
+        c3 = [p[3] for p in poses[1]]
+        self.assertTrue(1000 <= c3[0] < 1100)
+        self.assertTrue(all(1000 <= v < 1000 + 150 * 8 for v in c3[:swap]), (min(c3[:swap]), max(c3[:swap])))
+        self.assertTrue(all(5000 <= v < 5000 + 150 * 8 for v in c3[swap + 10:]))
+        self.assertTrue(all(self.turn(a, b) <= 2500 for a, b in zip(c3, c3[1:])))   # blended, no jump
+        for a, b in zip(cam, cam[1:]):                                               # the camera eased
+            self.assertTrue(all(abs(x - y) <= 40 for x, y in zip(a, b)), (a, b))
+        # without Ogre's pack: still written (True Ogre's stance in its place);
+        # without True Ogre's: not (no intro)
+        self.assertEqual(self.cine('trueogre', self.pack(), Trueogre=to)[0], 0)
+        self.assertEqual(self.cine('trueogre', self.pack(), Ogre=ogre)[0], 1)
+
     def test_intro_fallback(self):
         own = self.pack()
         code, out = self.cine('-', own)
