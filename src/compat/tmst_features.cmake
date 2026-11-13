@@ -68,6 +68,17 @@ function(tmst_detect_features out)
     if(_engine)
         list(APPEND _defs "TMST_HAS_STAGE_ENGINE=1")
     endif()
+    # GAME OPTION's STAGES row given TEKKEN 2 (issue #11): the engine, GAME
+    # OPTION's rows and the stage source's decision, called from other files.
+    set(_text "")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/src/tekken3_stage_source.h")
+        file(READ "${CMAKE_SOURCE_DIR}/src/tekken3_stage_source.h" _text)
+    endif()
+    string(FIND "${_text}" "void tekken3_stage_source_decide(unsigned mode, int player, const char *guest, int arena)" _at1)
+    string(FIND "${_text}" "int tekken3_stage_source_load_arena(void)" _at2)
+    if(_engine AND "TMST_HAS_GAME_OPTIONS=1" IN_LIST _defs AND NOT _at1 EQUAL -1 AND NOT _at2 EQUAL -1)
+        list(APPEND _defs "TMST_HAS_STAGE_OPTION=1")
+    endif()
     # Unknown's wolf (src/tekken3_ttt1_wolf.c, built with TTT1 Characters):
     # its two entry points, wrapped to keep the wolf to Unknown's own fights
     # (src/compat/tmst_compat.c, docs/COMPAT.md).
