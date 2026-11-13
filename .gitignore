@@ -2,6 +2,7 @@
 /dev/build/
 /docs/INVENTORY.md
 /docs/API_GAPS.md
+/docs/cutscene_recipe.md
 # the add-on's data made on the player's machine (setup): never committed
 /workspace/
 # handoffs and their test scripts stay local

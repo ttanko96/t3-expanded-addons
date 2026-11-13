@@ -586,10 +586,11 @@ enum { INTRO_PHASE = 4, ALONE_PHASE = 7, FRAME_PIECE = 0x80050450, ACTORS = 0x80
 static struct {
     int played_match, playing, skip;
     int swap;                                 /* the intro's character change (its frame), 0 none: no skip before it */
+    int native_swap;                          /* a native boss it changes into (its ID), its moves put back after; -1 */
     uint16_t previous;                        /* the player's last read (a START held from before is no press) */
     uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
     unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
-} intro = {.played_match = -2};
+} intro = {.played_match = -2, .native_swap = -1};
 static int intro_phase(int alone) {
     const char *e = getenv("TMST_BOSS_INTRO_PHASE");
     return e && *e ? atoi(e) : alone ? ALONE_PHASE : INTRO_PHASE;
@@ -726,10 +727,28 @@ static void intro_mix(int16_t *out, int frames, int audible, int music_gain) {
         }
     }
 }
+/* A native boss the intro changed into (the engine's `swap`: True Ogre)
+ * comes back on its TTT1 moves (the engine's load_begin forces them,
+ * tekken3_native_moves_force, so the poses play) and would fight on them:
+ * the moves the tournament picked for it (member_on, the CPU MOVESET row)
+ * again, as the game's own reload chooses them (tekken3_native_moves_reload;
+ * an ID no native's in between, or it takes the forced choice for made).
+ * Mid-fight the Expanded follows the change itself (its TTT1 combat's
+ * follow_identity), before the round starts. */
+extern void tekken3_native_moves_reload(unsigned p, unsigned id) __attribute__((weak));
+enum { NO_NATIVE_ID = 0xffff };
+static void intro_moves_back(void) {
+    if (intro.native_swap < 0 || !tekken3_native_moves_reload) return;
+    tekken3_native_moves_reload(1, NO_NATIVE_ID);
+    tekken3_native_moves_reload(1, (unsigned)intro.native_swap);
+    tmst_log("tournament: the boss (ID %d) on the moves picked for it again", intro.native_swap);
+    intro.native_swap = -1;
+}
 static void boss_intro_tick(unsigned screen, int due) {
     if (intro.playing && !(tekken3_cine_engine_active && tekken3_cine_engine_active())) {
         intro.playing = 0; intro.skip = 0;
         tmst_log("tournament: the boss intro over");
+        intro_moves_back();
     }
     /* The Grand Final's last member: the second form, or the boss alone
      * (only with an entry of its own: the Free Tournament's drawn one not). */
@@ -763,6 +782,7 @@ static void boss_intro_tick(unsigned screen, int due) {
     intro_save();
     if (!tekken3_cine_play(path, 0, NULL)) { tmst_log("tournament: %s not played", path); return; }
     intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0;
+    intro.native_swap = e->start && boss->id < STOCK ? (int)boss->id : -1;
     tmst_log("tournament: %s's intro (%s) at phase %d, %d frames", boss->name, e->key ? e->key : "the fallback",
              intro_phase(alone), e->frames);
     /* The boss's piece from the intro's first frame on (the Jukebox; the
@@ -789,6 +809,7 @@ void __wrap_func_80050450(CPUState *cpu) {
             intro_restore();
             intro.playing = 0; intro.skip = 0;
             tmst_log("tournament: the boss intro left, the fight goes on");
+            intro_moves_back();
         }
     }
     __tmst_chain_func_80050450(cpu);
