@@ -244,6 +244,12 @@ int art_text(const char *s, int x, int y, int align, int scale, uint32_t colour)
             int cx = x + unit_x(i * ADVANCE * scale / 100), g = glyph_of(s[i]);
             if (pass && s[i] >= ART_CROSS && s[i] <= ART_SQUARE)    /* over this cell and the next */
                 button(s[i], cx + unit_x(ADVANCE * scale / 100), y + h / 2, h * 6 / 10);
+            if (s[i] == '.') {               /* the title font has no full stop: a square on the line (DOCTOR B., issue #14) */
+                int d = h / 5 > 2 ? h / 5 : 2, dx = cx, dy = y + h * 7 / 8 - d;
+                if (pass == 0) art_fill(dx + off, dy + off, unit_x(d), d, 0xff000000u | SHADOW);
+                else art_fill(dx, dy, unit_x(d), d, 0xff000000u | (colour ? colour : 0xe8b830));
+                continue;
+            }
             if (g < 0) continue;
             if (pass == 0) glyph_blit(g, cx + off, y + off, w, h, 0, SHADOW);
             else glyph_blit(g, cx, y, w, h, colour, 0);

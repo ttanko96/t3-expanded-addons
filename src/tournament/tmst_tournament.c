@@ -75,23 +75,27 @@ extern int tekken3_native_moves_available(unsigned id) __attribute__((weak));
 extern int tekken3_native_moves_assign(unsigned slot, unsigned id, int ttt1) __attribute__((weak));
 /* A guest that switches movesets on a button (Unknown). */
 extern int tekken3_guest_switches_on_button(unsigned player) __attribute__((weak));
+/* A native drawn by its TTT1 model with a triangle (RP) model of its own: R1
+ * gives its third costume (src/tekken3_native_moves.c turn_keys; issue #14). */
+extern int tekken3_ttt1_native_rp_model(unsigned id) __attribute__((weak));
 
 enum { SCREEN = 0x800ae204, PHASE = 0x800ae224, MODE = 0x800afa88, MENU = 4, GRID = 10, TEAM_BATTLE = 2,
-       TEKKEN_FORCE = 8, STOCK_GRID = 0x80022768,
+       TEKKEN_FORCE = 8, STOCK_GRID = 0x80022768, THIRD_COSTUMES = 0x80097ef4,
        GRID_BLOCK = 0x800b8d70, BLOCK_STRIDE = 172, B_X = 8, B_Y = 12, B_MASK = 36, B_SIZE = 40, B_COUNT = 44,
        B_CHOICES = 56, SIZE_PROMPT = 1, CHOOSING = 2, EMPTY = 88,
        STOCK = 21, TRUE_OGRE = 20, GUEST_FIRST = 23, GUEST_MAX = 32, KUMA = 11, EDDY = 8, MAX_FIGHTERS = 64, KEY = 24 };
 enum { B_SELECT = TMST_PAD_SELECT, B_START = TMST_PAD_START, B_UP = TMST_PAD_UP, B_RIGHT = TMST_PAD_RIGHT,
        B_DOWN = TMST_PAD_DOWN, B_LEFT = TMST_PAD_LEFT, B_L2 = TMST_PAD_L2, B_R2 = TMST_PAD_R2,
        B_TRIANGLE = TMST_PAD_TRIANGLE, B_CIRCLE = TMST_PAD_CIRCLE, B_CROSS = TMST_PAD_CROSS, B_SQUARE = TMST_PAD_SQUARE,
-       B_FACE = B_TRIANGLE | B_CIRCLE | B_CROSS | B_SQUARE };
+       B_R1 = TMST_PAD_R1, B_FACE = B_TRIANGLE | B_CIRCLE | B_CROSS | B_SQUARE };
 enum { VIEW_OFF, VIEW_LIST, VIEW_GRID, VIEW_PICKED };
 
 static const char *const stock_keys[STOCK] = {"paul","law","lei","king","yoshimitsu","nina","hwoarang","xiaoyu",
     "eddy","jin","julia","kuma","bryan","heihachi","ogre","mokujin","gunjack","gon","anna","drb","trueogre"};
+/* The bracket's names (DOCTOR B.: the user's, issue #14). */
 static const char *const stock_names[STOCK] = {"PAUL PHOENIX","FOREST LAW","LEI WULONG","KING","YOSHIMITSU",
     "NINA WILLIAMS","HWOARANG","LING XIAOYU","EDDY GORDO","JIN KAZAMA","JULIA CHANG","KUMA","BRYAN FURY",
-    "HEIHACHI MISHIMA","OGRE","MOKUJIN","GUN JACK","GON","ANNA WILLIAMS","DR. B","TRUE OGRE"};
+    "HEIHACHI MISHIMA","OGRE","MOKUJIN","GUN JACK","GON","ANNA WILLIAMS","DOCTOR B.","TRUE OGRE"};
 
 static int on;                         /* the feature, at activation */
 
@@ -333,6 +337,7 @@ static struct {
     int match, opponent;                      /* the bracket's match, the opponent's roster index */
     int second, member;                       /* the boss's second form (-1 none), the CPU member placed */
     unsigned pick;                            /* the player's fighter, ID * 4 + costume */
+    uint16_t key;                             /* the button that picked it (issue #14), 0 not known */
     int life_set, size_held, ai_saved, ai_was;    /* life_set: the fight begun (both lives full) */
     int fight_over;                           /* the fight's end seen (covered from there) */
     int cover, confirmed;                     /* the black cover up; START pressed on it */
@@ -363,8 +368,8 @@ static const char *screen_key(int i) {
     if (i >= 0 && i == bracket.player && player_alt()) return player_alt() == 1 ? "panda" : "tiger";
     return fighter_key(i);
 }
-static const char *screen_name(int i) {
-    if (i >= 0 && i == bracket.player && player_alt()) return player_alt() == 1 ? "PANDA" : "TIGER";
+static const char *screen_name(int i) {             /* Tiger by his full name, as the roster's (issue #14) */
+    if (i >= 0 && i == bracket.player && player_alt()) return player_alt() == 1 ? "PANDA" : full_name("tiger");
     return fighter_name(i);
 }
 static const ScreenRoster screen_roster = {screen_key, screen_name};
@@ -383,6 +388,9 @@ static void arm_match(void) {
     mt.opponent = tmst_bracket_opponent(&bracket);
     if (mt.match < 0 || mt.opponent < 0) { end_tournament("no match left"); return; }
     mt.flow = FLOW_MATCH; mt.life_set = 0; mt.fight_over = 0; mt.stalled = 0; mt.loading_seen = 0;
+    /* Left from the pause (RESET), the main menu comes back on our row, not
+     * TEAM BATTLE's (issue #14). */
+    if (menu_row >= 0) tmst_menu_select_next_time(menu_row);
     mt.loading_vs = 0; mt.loading_ok = 0; mt.loading_vs_at = 0; mt.loading_at = 0; mt.round_end = 0; mt.member = 0;
     const TmstTourney *d = tmst_tourney(tm.tourney);
     mt.second = mt.match == TMST_GRAND_FINAL && d->boss2 ? roster_find(d->boss2) : -1;
@@ -889,7 +897,6 @@ static void between_tick(unsigned screen) {
         mt.cover = 1; mt.previous = 0;                   /* a button held from before is no press */
         mt.scr = SCR_RESULT; mt.scr_at = tm.frames;
     }
-    if (screen == MENU) mt.want_now = 0;                 /* the Expanded's card starts on Tekken 3's moves again */
     mt.hold = 0;
     /* The results are not shown: START on them (from their phase 2, read at
      * 0x800EEEF8) continues, straight back to the grid (12, 8, 10). */
@@ -1001,7 +1008,10 @@ static void pick_tick(void) {
         break;
     }
     case STEP_COSTUME:
-        if (t >= 6 && t < 10) mt.hold = costume_button[costume];
+        /* The player's own button (issue #14): the Expanded's model follows
+         * the key, not the costume alone (square / triangle both costume 0,
+         * triangle the RP model; R1 the third costume, triangle to the game). */
+        if (t >= 6 && t < 10) mt.hold = mt.key ? mt.key : costume_button[costume];
         if (t >= 30) { mt.step = STEP_CARD; mt.step_at = tm.frames; }
         break;
     case STEP_CARD:                           /* the pick not taken yet: the card is up, on the player's moves */
@@ -1020,6 +1030,7 @@ static void pick_tick(void) {
 
 static int card_open;
 static unsigned card_id;                      /* the native whose card is open */
+static uint16_t grid_key;                     /* the last pick's button on the grid (issue #14), 0 none */
 static uint16_t screen_input(uint16_t buttons) {
     uint16_t pressed = (uint16_t)~buttons, edges = pressed & tm.previous;    /* previous: last read's released bits */
     tm.previous = buttons;
@@ -1047,7 +1058,7 @@ static uint16_t screen_input(uint16_t buttons) {
         if (edges & B_DOWN) moved = (tm.sel + 1) % TMST_TOURNEYS;
         if (moved != tm.sel) { tm.sel = moved; tm.version++; }
         if ((edges & B_CROSS) && tmst_progress_open(&progress, tm.sel) && playable(tm.sel)) {
-            tm.tourney = tm.sel; tm.view = VIEW_GRID; tm.version++; tm.armed = 0;
+            tm.tourney = tm.sel; tm.view = VIEW_GRID; tm.version++; tm.armed = 0; grid_key = 0;
             if (unified() && tmst_unified_select_set_allowed) tmst_unified_select_set_allowed(unified_allowed);
             tmst_log("tournament: %s chosen", tmst_tourney(tm.tourney)->name);
         }
@@ -1064,20 +1075,33 @@ static uint16_t screen_input(uint16_t buttons) {
         restrict_grid(tm.tourney);
         uint16_t out = buttons | B_SELECT | B_START;
         unsigned under = cursor_fighter();
-        if (!unified() && (pressed & B_FACE) && !allowed_id(tm.tourney, under)) out |= B_FACE;   /* refused */
+        /* R1, as the Expanded turns it (turn_keys): a native whose third
+         * costume is unlocked (0x80097EF4) and that has a TTT1 RP model. */
+        int r1 = under < STOCK && (psx_mod_read_word(THIRD_COSTUMES) >> under & 1) && tekken3_ttt1_native_rp_model &&
+                 tekken3_ttt1_native_rp_model(under);
+        uint16_t picks = (uint16_t)(edges & (B_FACE | (r1 ? B_R1 : 0)));
+        if (pressed & B_SQUARE) picks &= (uint16_t)~B_TRIANGLE;     /* square with triangle: Devil Jin's */
+        if (!unified() && (pressed & (B_FACE | B_R1)) && !allowed_id(tm.tourney, under)) out |= B_FACE | B_R1;   /* refused */
         /* The MOVESET card (natives with TTT1 moves): opened by the pick's
-         * button, LEFT / RIGHT turn it, CROSS takes it, CIRCLE closes it. The Expanded draws it over the team panel, under ours:
+         * button, LEFT / RIGHT turn it, CROSS or START takes it, CIRCLE or
+         * SELECT closes it, as the Expanded's (issue #14). The Expanded draws it over the team panel, under ours:
          * shown in ours (tournament_prims). */
         else if (card_open) {                 /* as the Expanded's card turns: round, kept when closed */
             int n = moves_count(card_id);
+            out = buttons;                    /* START and SELECT go on to the Expanded's card */
             if (edges & B_RIGHT) { mt.card_now = (mt.card_now + 1) % n; tm.version++; }
             if (edges & B_LEFT) { mt.card_now = (mt.card_now + n - 1) % n; tm.version++; }
-            if (edges & B_CROSS) { card_open = 0; tm.version++; mt.want = mt.want_now = mt.card_now; }
-            else if (edges & B_CIRCLE) { card_open = 0; tm.version++; mt.want_now = mt.card_now; }
-        } else if ((edges & B_FACE) && under < STOCK && tekken3_native_moves_available &&
-                   tekken3_native_moves_available(under)) {
-            card_open = 1; card_id = under; tm.version++;
-            mt.card_now = mt.want_now < moves_count(under) ? mt.want_now : moves_count(under) - 1;
+            if (edges & (B_CROSS | B_START)) { card_open = 0; tm.version++; mt.want = mt.want_now = mt.card_now; }
+            else if (edges & (B_CIRCLE | B_SELECT)) { card_open = 0; tm.version++; mt.want_now = mt.card_now; grid_key = 0; }
+        } else if (picks) {
+            /* The pick's button, kept for the picks before each match
+             * (pick_tick; issue #14): R1 first, else the lowest face bit, as
+             * the Expanded's record_key. */
+            grid_key = picks & B_R1 ? B_R1 : (uint16_t)(picks & -picks);
+            if (under < STOCK && tekken3_native_moves_available && tekken3_native_moves_available(under)) {
+                card_open = 1; card_id = under; tm.version++;
+                mt.card_now = mt.want_now < moves_count(under) ? mt.want_now : moves_count(under) - 1;
+            }
         }
         return out;
     }
@@ -1543,6 +1567,19 @@ static void log_loading(uint32_t clut_at, int x, int y, int w, int h, unsigned o
         tmst_log("tournament: loading prim %02x at %d,%d %dx%d uv %08x tpage %03x", op, x, y, w, h,
                  psx_mod_read_word(clut_at), walk_tpage);
 }
+/* The loading screen before a boss's second form (Devil, True Ogre): Team
+ * Battle's lost member under its name, sliding in with it (y 369..433): its
+ * icon greyed (one 32 x 58 sprite, Ogre's; a guest's in three, 32 x 10,
+ * 24, 24, Kazuya's) and a mark over it (two 32 x 32 sprites, palette
+ * 0x7F1D), in primitive lists of their own. Every 32-wide sprite there goes
+ * (issue #14, measured: i14d.py; the names' letters are 24 wide, the
+ * portraits 126). */
+enum { LOST_W = 32, LOST_FROM_Y = 360 };
+static void lost_member(uint32_t clut_at, int x, int y, int w, int h, unsigned op) {
+    (void)x;
+    if ((op & 0xfc) == 0x64 && w == LOST_W && y >= LOST_FROM_Y && (h == 10 || h == 24 || h == 32 || h == 58))
+        psx_mod_write_word(clut_at - 4, tmst_xy(-512, -512));
+}
 /* The fight's HUD (Team Battle's): over P1's bar TEAM BATTLE, sprites of
  * the HUD's letters (10 x 16, every 9 units from x 37, y 24, the white
  * palette; CREDIT on the right in the yellow one). Its letters go, the
@@ -1755,7 +1792,10 @@ static void grid_visitor(uint32_t node) {
     if (mt.flow == FLOW_MATCH && psx_mod_read_word(SCREEN) == FIGHT) { each_textured(node, hud_title); return; }
     if (psx_mod_read_word(SCREEN) == LOADING_SCREEN) {
         if (prim_log < 0) each_textured(node, log_loading);
-        if (mt.flow == FLOW_MATCH && mt.match >= 0) { each_prim(node, fight_letters); each_prim(node, vs_band); }
+        if (mt.flow == FLOW_MATCH && mt.match >= 0) {
+            each_prim(node, fight_letters); each_prim(node, vs_band);
+            if (mt.second >= 0) each_textured(node, lost_member);
+        }
         each_textured(node, capture_vs);
     }
     hide_below_grid(node);
@@ -1957,6 +1997,10 @@ static void tick(void) {
     tmst_overlay_vblank();
     tm.frames++;
     unsigned screen = psx_mod_read_word(SCREEN);
+    /* The Expanded's card starts on Tekken 3's moves again on every main
+     * menu (tekken3_native_moves.c, screen MENU), also after a pause's RESET
+     * or the list's way out: ours too (issue #14). */
+    if (screen == MENU) mt.want_now = 0;
     /* The grid opened from our row, or (between the matches) again straight
      * from the results, as the game does after a button there. */
     if ((tm.pending || (mt.flow == FLOW_BETWEEN && !tm.active)) && team_grid()) {
@@ -1994,6 +2038,8 @@ static void tick(void) {
             psx_mod_write_word(block(0) + B_COUNT, 0); psx_mod_write_word(block(0) + B_CHOICES, EMPTY);
             psx_mod_write_word(block(0), SIZE_PROMPT);       /* where START does nothing (above) */
             mt.pick = choice; mt.shown = mt.fresh = 0; mt.unlocked = -1;
+            mt.key = grid_key; grid_key = 0;
+            tmst_log("tournament: the pick's button 0x%04x (issue #14)", mt.key);
             mt.want_now = mt.want;
             mt.match = tmst_bracket_player_match(&bracket); mt.opponent = tmst_bracket_opponent(&bracket);
             mt.flow = FLOW_BETWEEN; mt.outcome = NEXT_MATCH; mt.cover = 1; mt.confirmed = 0; mt.previous = 0;
