@@ -88,7 +88,8 @@
  * arena held until the fight by the tournament's VBlank
  * (tmst_stage_forced_arena; ours runs only with this part on).
  *
- * Benches: TMST_T2_STAGE=N gives every fight Tekken 2's stage N (0..22),
+ * Benches: TMST_T2_STAGE=N gives every fight Tekken 2's stage N (0..22)
+ * (with TMST_T2_LINE as the STAGE line's: its music ours, issue #9.2),
  * TMST_T2_STAGES_DIR the folder holding classic/ and remake/. */
 #include "tmst_core.h"
 #include "tmst_compat.h"
@@ -707,7 +708,7 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     }
     int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1, theirs = 0;
     const char *e = getenv("TMST_T2_STAGE");
-    if (e && *e) stage = atoi(e) % STAGES;
+    if (e && *e) { stage = atoi(e) % STAGES; line_fight = getenv("TMST_T2_LINE") != NULL; }
     else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
     else if (line >= 0 && armed[line]) { stage = chosen[line] >= 0 ? chosen[line] : pick(STAGES); line_fight = 1; }
     else if (line >= 0 && their_random[line]) {      /* their GAME RANDOM: ours among the lots */
@@ -943,6 +944,7 @@ static void light_tick(void) {
 }
 
 static void tick(void) {
+    tmst_jukebox_player_tick();                      /* the stage's piece without the Jukebox (issue #9.2) */
     if (!psx_mod_game_started() || !ready()) return;
     light_tick();
     unsigned screen = psx_mod_read_word(SCREEN);
@@ -975,7 +977,10 @@ static void activate(void) {
     if (!version_made(CLASSIC)) tmst_log("tekken2: no Tekken 2 stage packs (Setup TMST.cmd with the disc), stages off");
     else if (!tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_T3))
         tmst_log("tekken2: the stage engine is off (Arcade Stages off, or no upper VRAM), stages off");
-    else tmst_log("tekken2: Tekken 2 stages on (TEKKEN 2 on the STAGE line), %s Tekken 3's packs", t3_real() ? "with" : "without");
+    else {
+        tmst_log("tekken2: Tekken 2 stages on (TEKKEN 2 on the STAGE line), %s Tekken 3's packs", t3_real() ? "with" : "without");
+        tmst_jukebox_player_on("Tekken 2's stages");    /* their pieces with the Jukebox off too (issue #9.2) */
+    }
 }
 
 PSX_MOD_CONSTRUCTOR(tmst_register_tekken2_stages) {

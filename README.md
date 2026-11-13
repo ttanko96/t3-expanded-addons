@@ -122,6 +122,7 @@ everything whether it is switched on or not, so switching it on needs only a res
 #### Music
 - Tekken 2's music and the ten Tekken 1 stage themes it plays again, Console and Arcade.
 - They are the Jukebox's **TEKKEN 1** and **TEKKEN 2** categories (switch the Jukebox on too).
+- The Tekken 2 stages and Tournament Mode play their own pieces with the Jukebox off too.
 - **Off:** those categories are hidden; a fighter given such music plays the game's own until it is on again (the
   choice stays saved).
 

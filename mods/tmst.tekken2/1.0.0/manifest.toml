@@ -28,7 +28,7 @@ id = "tmst.tekken2"
 [[feature]]
 id = "music"
 name = "Music"
-description = "The Tekken 1 and Tekken 2 music (Console and Arcade) in the Jukebox (switch the Jukebox on too), made by Setup TMST.cmd from your Tekken 2 disc: Tekken 2's and the ten Tekken 1 stage themes it plays again. Off: those categories are hidden, and a fighter given such music plays the game's own until it is on again. Needs Tekken 2 Content. Restart after changing."
+description = "The Tekken 1 and Tekken 2 music (Console and Arcade) in the Jukebox (switch the Jukebox on too), made by Setup TMST.cmd from your Tekken 2 disc: Tekken 2's and the ten Tekken 1 stage themes it plays again. The Tekken 2 stages and Tournament Mode play their pieces with the Jukebox off too. Off: those categories are hidden, and a fighter given such music plays the game's own until it is on again. Needs Tekken 2 Content. Restart after changing."
 group = "TMST / Tekken 2 Content"
 default_enabled = false
 

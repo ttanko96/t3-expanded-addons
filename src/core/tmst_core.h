@@ -46,8 +46,15 @@ int tmst_tekken2_fight_music(const char **key, const char **cat, const char **na
  * Jukebox choice, a tournament's piece) started now, ahead of the game's,
  * at the player's music volume: Tournament Mode's boss intro plays under it.
  * The game's own start of the same piece later takes it over unbroken.
- * 1 when one plays (the Jukebox on, a piece there). */
+ * 1 when one plays (the Jukebox's player on, a piece there). */
 int tmst_jukebox_lead_in(void);
+/* src/jukebox/tmst_jukebox.c: the Jukebox's player (its music hook and
+ * mixer) without the Jukebox (issue #9.2), for Tekken 2's stages' and
+ * Tournament Mode's pieces: from their activation (who: for the log; once,
+ * nothing more with the Jukebox on) and each VBlank (the fight's piece ends
+ * with the fight's screens). */
+void tmst_jukebox_player_on(const char *who);
+void tmst_jukebox_player_tick(void);
 /* src/tekken2/tmst_tekken2_stages.c: a tournament's Tekken 3 arena (or TTT
  * stage's arena) to hold until its fight, -1 none; the tournament's VBlank
  * writes it. */
