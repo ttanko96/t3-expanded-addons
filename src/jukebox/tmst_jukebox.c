@@ -108,6 +108,7 @@ static const char *const stock_names[STOCK] = {"PAUL PHOENIX","FOREST LAW","LEI 
     "HEIHACHI MISHIMA","OGRE","MOKUJIN","GUN JACK","GON","ANNA WILLIAMS","DR. B","TRUE OGRE"};
 
 static int on;                         /* the feature, at activation */
+static int hooked;                     /* the player (music hook, mixer): the feature's, or tmst_jukebox_player_on's */
 
 /* ---- where things are ---------------------------------------------------- */
 static char exe_dir[4096], root_dir[4096];
@@ -1229,7 +1230,7 @@ static int stand_in(int id) {
 }
 
 static void mix(int16_t *out, int frames, int audible, int gain) {
-    if (!on) return;
+    if (!hooked) return;
     if (jb.active) { stream_mix(&preview, out, frames, audible, gain); return; }
     if (!fight_armed) return;
     /* The lead-in: ours alone, at the player's music volume, until the
@@ -1284,10 +1285,13 @@ static Choice *opponent_choice(const char **key) {
     Choice *c = NULL;
     *key = NULL;
     /* Kuma's second costume is Panda, Eddy's third Tiger: their own choice
-     * first, then their fighter's. */
-    if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) *key = "panda";
-    else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) *key = "tiger";
-    else if ((*key = fighter_key(fid))) c = heard_choice(*key);
+     * first, then their fighter's. The fighters' choices are the Jukebox's:
+     * without it (the player only, issue #9.2) none. */
+    if (on) {
+        if (fid == KUMA_ID && costume == 1 && (c = heard_choice("panda"))) *key = "panda";
+        else if (fid == EDDY_ID && costume == 2 && (c = heard_choice("tiger"))) *key = "tiger";
+        else if ((*key = fighter_key(fid))) c = heard_choice(*key);
+    }
     /* Tournament Mode's match (src/tournament/tmst_tournament.c): its
      * piece, unless the player chose one for this opponent. */
     const char *t_key, *t_cat, *t_name;
@@ -1321,7 +1325,7 @@ static Choice *opponent_choice(const char **key) {
  * game's, at the player's music volume, until the game starts that fight's
  * music (music(): the same choice, taken over unbroken). */
 int tmst_jukebox_lead_in(void) {
-    if (!on || jb.active) return 0;
+    if (!hooked || jb.active) return 0;
     const char *key;
     Choice *c = opponent_choice(&key);
     if (!c) return 0;
@@ -1332,7 +1336,7 @@ int tmst_jukebox_lead_in(void) {
 }
 
 static int music(int id) {
-    if (!on) return id;
+    if (!hooked) return id;
     if (jb.active) return -1;                             /* the preview only, while open */
     unsigned screen = psx_mod_read_word(SCREEN);
     if (screen != FIGHT && screen != LOADING) { if (fight_armed) fight_stop(); lead_in = 0; return id; }
@@ -1370,6 +1374,7 @@ static int music(int id) {
 
 /* ---- the frame ------------------------------------------------------------------ */
 static int team_grid(void) { return psx_mod_read_word(SCREEN) == 10 && psx_mod_read_word(MODE) == TEAM_BATTLE; }
+static void fight_screens(unsigned screen);
 static void tick(void) {
     if (!on) return;
     tmst_menu_vblank();
@@ -1399,8 +1404,31 @@ static void tick(void) {
      * Team Battle screen never shows through. */
     if (jb.active) show_picture();
     if (jb.pending && screen == 4 && psx_mod_read_half(PHASE) == 1) jb.pending = 0;   /* the menu again, never left */
-    /* A fight's choice ends with the fight's screens. */
+    fight_screens(screen);
+}
+
+/* A fight's choice ends with the fight's screens. */
+static void fight_screens(unsigned screen) {
     if (fight_armed && screen != FIGHT && screen != LOADING && screen != 9 && screen != 10) fight_stop();
+}
+
+static void player_hooks(void) {
+    if (hooked) return;
+    hooked = 1;
+    tmst_music_add_hook(music);
+    tmst_spu_add_mixer(mix);
+}
+/* The player without the Jukebox (tmst_core.h, issue #9.2): Tekken 2's
+ * stages and Tournament Mode play their own pieces with the Jukebox off too.
+ * The Expanded runs only a switched-on feature's plugins, so its
+ * activation and VBlank come from theirs. */
+void tmst_jukebox_player_on(const char *who) {
+    if (hooked || !tmst_guard("tmst.jukebox", TMST_NEED_ACTIVATION | TMST_NEED_VBLANK | TMST_NEED_GUEST_MEMORY)) return;
+    player_hooks();
+    tmst_log("jukebox: its player on for %s (the stage's and the tournament's pieces)", who);
+}
+void tmst_jukebox_player_tick(void) {
+    if (hooked && !on) fight_screens(psx_mod_read_word(SCREEN));
 }
 
 static void activate(void) {
@@ -1410,8 +1438,7 @@ static void activate(void) {
     if (menu_row < 0) tmst_log("jukebox: no main-menu row (no room)");
     tmst_menu_set_colour(menu_row, 0xA8E020);                  /* lime */
     tmst_input_add_filter(input);
-    tmst_music_add_hook(music);
-    tmst_spu_add_mixer(mix);
+    player_hooks();
     tmst_overlay_set_prims(jukebox_prims);
     tmst_overlay_prepare();
     tmst_overlay_set_visitor(hide_below_grid);

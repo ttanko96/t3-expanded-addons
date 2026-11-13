@@ -1951,6 +1951,7 @@ static void close_screen(void) {
 }
 static void tick(void) {
     if (!on) return;
+    tmst_jukebox_player_tick();                      /* the tournament's piece without the Jukebox (issue #9.2) */
     tmst_tournament_options_tick();
     tmst_menu_vblank();
     tmst_overlay_vblank();
@@ -2117,6 +2118,7 @@ static void activate(void) {
     tmst_input_add_filter(input);
     tmst_spu_add_mixer(intro_mix);
     tmst_music_add_hook(music);
+    tmst_jukebox_player_on("Tournament Mode");       /* its pieces with the Jukebox off too (issue #9.2) */
     tmst_overlay_set_prims(tournament_prims);
     tmst_overlay_prepare();
     tmst_overlay_set_visitor(grid_visitor);
