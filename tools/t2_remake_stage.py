@@ -1647,7 +1647,7 @@ def floor_indices(vram: np.ndarray, entry: tuple) -> np.ndarray:
 
 def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict | None = None,
           tint=None, recolouring: dict | None = None, flowers: dict | None = None, chase: dict | None = None,
-          puddles: dict | None = None, roll=None, grains: dict | None = None) -> scene.Floor:
+          puddles: dict | None = None, roll=None, grains: dict | None = None, blend: dict | None = None) -> scene.Floor:
     """tufts ("floor_tufts"): "count" cells of the floor, picked at random
     ("seed"), each with a dry tuft of grass drawn on it (seen from above:
     the arcade engine drops scenery round the fight, the floor is all there
@@ -1659,9 +1659,17 @@ def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict 
     "pictures" of them at most (cells of the same tile share them).
     chase ("floor_chase"): Hong Kong's running lights, Tekken 2's own: the
     tiles of the palettes "cluts" (Tekken 2's) keep their indices, the
-    "dots" colours of them lit one at a time in turn ("colour" lit, the
-    rest as drawn), the light running along the dots; those palettes a run
-    of their own (CHASE_ROW, its frames under it: fl.chase, ANI3).
+    "dots" colours of them turned round one place a frame as Tekken 2 turns
+    them (issue #12: colour i takes i + 1's; tools/tekken2_stages.py
+    LAYOUTS); those palettes a run of their own (CHASE_ROW), the frames'
+    colours in fl.chase (T2CH, stepped as Tekken 2 steps them: "period",
+    "add").
+    blend ("floor_blend"): Hong Kong's floor fading from palette "clut"
+    towards "to" and back, as Tekken 2 does (issue #12): every picture of
+    those tiles (the cell, its quarters, a puddle's) gets a second palette,
+    the same picture drawn from "to" (the same tint, puddle, enlarging),
+    each colour the mean of its texels there (faded()); fl.blend those
+    palettes' places and both colours (T2BL, colours "first".."last").
     puddles ("floor_puddles"): "count" cells (not the chase's), each with a
     rain puddle on it (puddle_from_above()).
     roll ("floor_roll" [rows, columns]): Tekken 2's 10 x 10 cells moved
@@ -1723,14 +1731,14 @@ def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict 
             pal[pal == 0] = 0x0421
             run.append(pal)
             chase_at[c] = (16 * (len(run) - 1), CHASE_ROW)
-        lit = int(bgr555(np.array(chase.get('colour', [255, 236, 150]), float)))
+        # the disc's colours turned round, frame f f places (frame 0 the disc's)
         frames = []
         for f in range(len(dots)):
-            on = dots[(-f if chase.get('reverse') else f) % len(dots)]
-            frames.append([[int(lit) if j == on else int(c) for j, c in enumerate(pal)] for pal in run])
+            frames.append([[int(pal[dots[(dots.index(j) + f) % len(dots)]]) if j in dots else int(c)
+                            for j, c in enumerate(pal)] for pal in run])
         palette_run(vr, CHASE_ROW, frames[0])
-        fl_chase = [palette_run(vr, CHASE_ROW - 1 - f, pals) for f, pals in enumerate(frames)]
-    words, quarters = {}, {}
+        fl_chase = frames
+    words, quarters, fades = {}, {}, {}
     for key in dict.fromkeys(cells[k] if k not in painted else (cells[k], painted[k]) for k in range(100)):
         e = key[0] if isinstance(key[0], tuple) else key
         tile = t2_stage.floor_tile(vram, e)
@@ -1739,6 +1747,15 @@ def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict 
         if recolouring:
             tile = recolour(tile.astype(float), recolouring, mean).astype(np.uint8)
         big = np.asarray(Image.fromarray(tile).resize((128, 128), Image.LANCZOS)).astype(float)
+        tile_b = big_b = None
+        if blend and e[3] == blend['clut']:
+            # the same tile drawn from the palette it fades to
+            tile_b = t2_stage.floor_tile(vram, (*e[:3], blend['to']))
+            if tint is not None:
+                tile_b = np.clip(tile_b * tint, 0, 255).astype(np.uint8)
+            if recolouring:
+                tile_b = recolour(tile_b.astype(float), recolouring, mean).astype(np.uint8)
+            big_b = np.asarray(Image.fromarray(tile_b).resize((128, 128), Image.LANCZOS)).astype(float)
         if grains:
             big = over(big, grass_grains(grains, hash(key) & 0xFFFFFF), (64, 64))
             if e is key:
@@ -1780,16 +1797,28 @@ def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict 
             shown = rgb_of(pal)
             idx = ((tile.reshape(-1, 1, 3).astype(float) - shown[None]) ** 2).sum(2).argmin(1).reshape(64, 64)
             x, y, cl = vr.picture(idx, [int(c) for c in pal])
+            if tile_b is not None:
+                fades[cl] = ([int(c) for c in pal], faded(tile_b, idx, pal))
         else:
             kind, seed, at = art[key[1]]
-            big = over(big, tuft_from_above(seed), at) if kind == 'tuft' else                 over(big, puddle_from_above(seed), (64, 64)) if kind == 'puddle' else over(big, flowers_from_above(seed), (64, 64))
-            x, y, cl = vr.picture(*sixteen(np.asarray(Image.fromarray(big.astype(np.uint8)).resize((64, 64), Image.LANCZOS)))[::-1])
+            lay = (lambda img: over(img, tuft_from_above(seed), at)) if kind == 'tuft' else \
+                (lambda img: over(img, puddle_from_above(seed), (64, 64))) if kind == 'puddle' else \
+                (lambda img: over(img, flowers_from_above(seed), (64, 64)))
+            big = lay(big)
+            colours, idx = sixteen(np.asarray(Image.fromarray(big.astype(np.uint8)).resize((64, 64), Image.LANCZOS)))
+            x, y, cl = vr.picture(idx, colours)
+            if big_b is not None:
+                big_b = lay(big_b)
+                small_b = np.asarray(Image.fromarray(np.clip(big_b, 0, 255).astype(np.uint8)).resize((64, 64), Image.LANCZOS))
+                fades[cl] = (colours, faded(small_b, idx, colours))
         words[key] = pack_floor_words(x, y, cl)
         for hr in range(2):
             for hc in range(2):
                 colours, q = sixteen(big[64 * hr:64 * hr + 64, 64 * hc:64 * hc + 64])
                 qx, qy, qc = vr.picture(q, colours)
                 quarters[key, hr, hc] = pack_floor_words(qx, qy, qc)
+                if big_b is not None:
+                    fades[qc] = (colours, faded(big_b[64 * hr:64 * hr + 64, 64 * hc:64 * hc + 64], q, colours))
     keys = [cells[k] if k not in painted else (cells[k], painted[k]) for k in range(100)]
     fl.cells = [[words[keys[10 * r + c]] for c in range(10)] for r in range(10)]
     fl.halves = [[quarters[keys[10 * (r // 2) + c // 2], r % 2, c % 2] for c in range(20)] for r in range(20)]
@@ -1797,8 +1826,28 @@ def floor(base: scene.Floor, vram: np.ndarray, rec: dict, vr: Vram, tufts: dict 
     if len(seen) > 40:
         raise SystemExit(f'{len(seen)} distinct floor cells: the game gives up over 40')
     fl.unique = [[seen.index(fl.cells[r][c][0] & 0x39FFFFFF) for c in range(10)] for r in range(10)]
-    fl.chase = fl_chase if chase else None
+    fl.chase = (fl_chase, [chase_at[c] for c in chase['cluts']]) if chase else None
+    fl.blend = [(at, a, b) for at, (a, b) in fades.items()] if blend else None
+    if fl.blend and len(fl.blend) > BLEND_MAX:
+        raise SystemExit(f'{len(fl.blend)} palettes fade: the runtime takes {BLEND_MAX}')
     return fl
+
+
+BLEND_MAX = 64                       # src/tekken2/tmst_tekken2_stages.c BLEND_MAX
+
+
+def faded(img_b: np.ndarray, idx: np.ndarray, colours) -> list[int]:
+    """floor()'s "floor_blend": the palette a picture of indices idx (its
+    colours the shown ones) fades to, img_b the same picture drawn from the
+    other palette: each colour the mean of img_b's texels it takes (a colour
+    no texel takes stays as it is; never colour 0)."""
+    out = [int(c) for c in colours]
+    flat, ix = np.asarray(img_b, float).reshape(-1, 3), np.asarray(idx).reshape(-1)
+    for k in range(len(out)):
+        taken = ix == k
+        if taken.any():
+            out[k] = int(bgr555(flat[taken].mean(0))) or 0x0421
+    return out
 
 
 def grass_grains(spec: dict, seed: int) -> np.ndarray:
@@ -10125,7 +10174,7 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
     fl_base = scene.Stage(arc, cfg['floor_base']).floor if 'floor_base' in cfg else st.floor
     fl = floor(fl_base, vram, rec, vr, cfg.get('floor_tufts'), cfg.get('grade', {}).get('floor', cfg.get('floor_tint')),
                cfg.get('floor_recolour'), cfg.get('floor_flowers'), cfg.get('floor_chase'), cfg.get('floor_puddles'), cfg.get('floor_roll'),
-               cfg.get('floor_grains'))
+               cfg.get('floor_grains'), cfg.get('floor_blend'))
     mote = dust(cfg['dust'], vr) if cfg.get('dust') else None
     feathers = eagle_picture(vr) if cfg.get('eagle') else None
     paint = ship_pictures(vr) if cfg.get('ship') else None
@@ -10310,12 +10359,22 @@ def build(owner: str, src, tekken3: Path, out: Path, cfg: dict | None = None) ->
         extra.append((b'ANI3', struct.pack('<6H', wx, wy, 16, 64, cfg['weave'].get('period', 30), len(places))
                       + b''.join(struct.pack('<2H', *pl) for pl in places) + struct.pack('<H', 0)))
     if getattr(fl, 'chase', None):
-        if weave:
-            raise SystemExit('the floor chase and the weave: both are ANI3')
+        # T2CH (issue #12; src/tekken2/tmst_tekken2_stages.c): the running
+        # lights' palettes where the relocation put them, each frame's
+        # colours, stepped as Tekken 2 steps them
         at = lambda x, y: (reloc.map[x // 16, y][0] * 16 + x % 16, reloc.map[x // 16, y][1])
-        extra.append((b'ANI3', struct.pack('<6H', *at(0, CHASE_ROW), 16 * len(cfg['floor_chase']['cluts']), 1,
-                                           cfg['floor_chase'].get('period', 8), len(fl.chase))
-                      + b''.join(struct.pack('<2H', *at(0, y)) for y in fl.chase) + struct.pack('<H', 0)))
+        frames, places = fl.chase
+        spec = cfg['floor_chase']
+        extra.append((b'T2CH', struct.pack('<4H', spec.get('period', 60), len(frames), len(places), spec.get('add', 1))
+                      + b''.join(struct.pack('<2H', *at(*pl)) for pl in places)
+                      + b''.join(struct.pack('<16H', *pal) for pals in frames for pal in pals)))
+    if getattr(fl, 'blend', None):
+        # T2BL (issue #12): the fading palettes where the relocation put them
+        at = lambda x, y: (reloc.map[x // 16, y][0] * 16 + x % 16, reloc.map[x // 16, y][1])
+        spec = cfg['floor_blend']
+        extra.append((b'T2BL', struct.pack('<4H', len(fl.blend), spec.get('first', 0), spec.get('last', 15), spec.get('add', 17))
+                      + b''.join(struct.pack('<2H', *at(*pl)) + struct.pack('<16H', *a) + struct.pack('<16H', *b)
+                                 for pl, a, b in fl.blend)))
     if flutter:
         (sx, sy, _), places = flutter
         extra.append((b'ANIM', struct.pack('<6H', sx, sy, 16, 64, cfg['banners'].get('period', 6), len(places))

@@ -1670,13 +1670,15 @@
      12,
      13
     ],
-    "period": 60,
-    "reverse": true,
-    "colour": [
-     255,
-     236,
-     150
-    ]
+    "period": 16384,
+    "add": 1706
+   },
+   "floor_blend": {
+    "clut": 31492,
+    "to": 31497,
+    "first": 0,
+    "last": 15,
+    "add": 17
    },
    "floor_puddles": {
     "count": 8,

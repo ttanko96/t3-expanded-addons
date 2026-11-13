@@ -159,23 +159,52 @@ class Tekken2StagesTest(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<6i', s['T2MR']), t2.layout(22)['mirror'])
 
     def test_running_lights(self):
+        # Hong Kong's own (issue #12): the disc's colours turned round, as Tekken 2 turns them
+        self.assertEqual(t2.turned([0, 1, 2, 3, 4], (1, 2, 3), 1), [0, 2, 3, 1, 4])
+        hk = t2.layout(5)['chase']
+        self.assertEqual((hk['period'], hk['add'], hk['dots']), (16384, 1706, (10, 11, 12, 13)))
+        self.assertNotIn('colour', hk)
         st = t2.stage_data(source(5), 5)
-        st['layout'] = dict(st['layout'], chase=dict(cluts=(492 << 6,), dots=(1, 15), period=60, reverse=True,
-                                                    colour=(255, 255, 255)))   # 255: no carry into the next colour
+        st['layout'] = dict(st['layout'], chase=dict(cluts=(492 << 6,), dots=(1, 15), period=16384, add=1706),
+                            blend=None)
         s = t2.sections(t2.build(st))
-        period, frames, count, _ = struct.unpack_from('<4H', s['T2CH'])
-        self.assertEqual((period, frames, count), (60, 2, 1))
+        period, frames, count, add = struct.unpack_from('<4H', s['T2CH'])
+        self.assertEqual((period, frames, count, add), (16384, 2, 1, 1706))
         x, y = struct.unpack_from('<2H', s['T2CH'], 8)
-        lit = 31 | 31 << 5 | 31 << 10
         first = struct.unpack_from('<16H', s['T2CH'], 12)
         second = struct.unpack_from('<16H', s['T2CH'], 44)
-        self.assertEqual((first[1], first[15], second[1], second[15]), (lit, FLOOR_CLUT[15], FLOOR_CLUT[1], lit))
+        self.assertEqual(first, tuple(FLOOR_CLUT))                      # the disc's own first: no colour of ours
+        self.assertEqual((second[1], second[15]), (FLOOR_CLUT[15], FLOOR_CLUT[1]))
+        self.assertEqual(second[2:15], tuple(FLOOR_CLUT[2:15]))
+        self.assertNotIn('T2BL', s)
         # the floor's cells and halves use that one palette, at x, y: the runtime changes it there
         clut = t2.clut_word(x, y)
         flor = s['FLOR']
         cells = struct.unpack_from('<200I', flor, 8)
         halves = struct.unpack_from('<800I', flor, 808)
         self.assertEqual({w >> 16 for w in cells[1::2]} | {w >> 16 for w in halves[1::2]}, {clut})
+
+    def test_floor_fade(self):
+        # issue #12: Hong Kong's 0x7B04 towards 0x7B09; here the floor's palette towards the panorama's second
+        to = 480 << 6 | 1
+        st = t2.stage_data(source(5), 5)
+        st['layout'] = dict(st['layout'], chase=None, blend=dict(clut=492 << 6, to=to, first=0, last=14, add=17))
+        st['blend_to'] = t2.palette(t2.vram_of(source(5).files[t2.GROUP0 + t2.GROUP * t2.FIGHTER_OF[5]]), to)
+        s = t2.sections(t2.build(st))
+        self.assertNotIn('T2CH', s)
+        count, first, last, add = struct.unpack_from('<4H', s['T2BL'])
+        self.assertEqual((count, first, last, add), (1, 0, 14, 17))
+        x, y = struct.unpack_from('<2H', s['T2BL'], 8)
+        self.assertEqual(struct.unpack_from('<16H', s['T2BL'], 12), tuple(FLOOR_CLUT))
+        self.assertEqual(struct.unpack_from('<16H', s['T2BL'], 44), tuple(PANO_CLUTS[1]))
+        # the cells and the halves keep the disc's indices on that one palette
+        clut = t2.clut_word(x, y)
+        flor = s['FLOR']
+        cells = struct.unpack_from('<200I', flor, 8)
+        halves = struct.unpack_from('<800I', flor, 808)
+        self.assertEqual({w >> 16 for w in cells[1::2]} | {w >> 16 for w in halves[1::2]}, {clut})
+        # Hong Kong's own: the disc's slot 2
+        self.assertEqual(t2.layout(5)['blend'], dict(clut=0x7B04, to=0x7B09, first=0, last=14, add=17))
 
     def test_upper_half_room(self):
         """The slots and palettes never on Unknown's wolf or TTT Hitspark's
