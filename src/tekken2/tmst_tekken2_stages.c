@@ -128,7 +128,10 @@ enum { SCREEN = 0x800ae204, MENU = 4, OPTIONS = 5, FIGHT = 8, MODE = 0x800afa88,
        PAUSED = 0x80095494,     /* 1 while the pause menu is open (the engine's anim_tick reads it) */
        DARK_ARENA = 0x800afaa0, /* True Ogre's fight (0x80050F5C): the dark arena */
        NIGHT_KIND = 1,          /* the dark arena's floor: FLOR kind 1, lit round each fighter */
-       VS = 1, PRACTICE = 5, ROW_MODES = 1u << VS | 1u << PRACTICE };
+       VS = 1, PRACTICE = 5,
+       /* TEKKEN 2 STAGES' lamps: Arcade to Practice, where the STAGES row
+        * (TEKKEN 2, RANDOM) brings Tekken 2's stages too (issue #11) */
+       ROW_MODES = 0x3f };
 /* Pad bits, active low. */
 enum { PAD_SELECT = 0x0001, PAD_START = 0x0008, PAD_UP = 0x0010, PAD_RIGHT = 0x0020, PAD_DOWN = 0x0040,
        PAD_LEFT = 0x0080, PAD_CIRCLE = 0x2000, PAD_CROSS = 0x4000 };
@@ -481,14 +484,20 @@ FILE *__wrap_fopen(const char *path, const char *mode) {
 }
 
 /* Kept beside the memory card, as the Expanded's stage-select.txt. */
-static void setting_path(char *out, size_t size) {
+static void file_path(const char *file, char *out, size_t size) {
     const char *card = NULL; out[0] = 0;
     if (memcard_debug_info(0, &card, NULL, NULL, NULL) || !card || !*card) return;
     const char *slash = strrchr(card, '/'), *back = strrchr(card, '\\');
     if (back && (!slash || back > slash)) slash = back;
     int n = slash ? (int)(slash - card) : 1;
-    snprintf(out, size, "%.*s/t2-stages.txt", n, slash ? card : ".");
+    snprintf(out, size, "%.*s/%s", n, slash ? card : ".", file);
 }
+static void setting_path(char *out, size_t size) { file_path("t2-stages.txt", out, size); }
+/* GAME OPTION's STAGES = TEKKEN 2 (issue #11): ours, or theirs (the Expanded's
+ * value, kept in its ttt-stages.txt) */
+enum { OPT_THEIRS, OPT_TEKKEN2 };
+static const char *const option_words[2] = { "theirs", "tekken2" };
+static int option = OPT_THEIRS, option_forced;     /* option_forced: TMST_STAGES */
 static void save(void) {
     char path[4096]; setting_path(path, sizeof path);
     FILE *f = path[0] ? fopen(path, "wb") : NULL;
@@ -499,6 +508,7 @@ static void save(void) {
         fprintf(f, "%s %s %s\n", line_words[i], t2[i] ? "on" : "off", stage);
     }
     fprintf(f, "version %s\n", version_words[version]);
+    fprintf(f, "stages %s\n", option_words[option]);
     fclose(f);
 }
 static void load(void) {
@@ -506,6 +516,8 @@ static void load(void) {
     if (done) return;
     done = 1;
     draw ^= (uint64_t)time(NULL) * 1000003u + (uint64_t)clock();
+    const char *e = getenv("TMST_STAGES");
+    if (e && *e) { option = !strcmp(e, "tekken2") ? OPT_TEKKEN2 : OPT_THEIRS; option_forced = 1; }
     char path[4096]; setting_path(path, sizeof path);
     FILE *f = path[0] ? fopen(path, "rb") : NULL;
     if (!f) return;
@@ -513,6 +525,7 @@ static void load(void) {
     while (fgets(line, sizeof line, f)) {
         int n = sscanf(line, "%15s %15s %15s", key, a, b);
         if (n == 2 && !strcmp(key, "version")) version = !strcmp(a, "remake") ? REMAKE : CLASSIC;
+        if (n == 2 && !strcmp(key, "stages") && !option_forced) option = !strcmp(a, "tekken2") ? OPT_TEKKEN2 : OPT_THEIRS;
         for (int i = 0; n == 3 && i < LINES; i++) {
             if (strcmp(key, line_words[i])) continue;
             t2[i] = !strcmp(a, "on");
@@ -704,16 +717,19 @@ int __wrap_tekken3_stage_ttt_stage(void) { return our_fight() ? -1 : __real_tekk
 /* A tournament's Tekken 3 arena or TTT stage for this fight (its mode, -1
  * none): the source, the TTT stage (-1), the arena loaded; held until the
  * fight. */
-enum { TTT_UNKNOWN = 14, TTT_LAST_ARENA = 12, OGRE_ARENA = 6 };
+enum { TTT_UNKNOWN = 14, TTT_EDDY_A = 13, TTT_LAST_ARENA = 12, OGRE_ARENA = 6, EDDY_ARENA = 10 };
 static int forced_mode = -1, forced_source, forced_ttt, forced_arena, forced_held;
-static void force(unsigned mode, int kind, int stage) {
+static int option_mode = -1;             /* the fight's stage GAME OPTION's STAGES row's (TEKKEN 2, RANDOM's lot): its mode */
+static void force(unsigned mode, int kind, int stage, const char *whose) {
     int ttt = kind == TMST_TSTAGE_TTT && tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_TTT);
     forced_mode = (int)mode; forced_held = 1;
     forced_source = ttt ? TEKKEN3_STAGE_TTT : TEKKEN3_STAGE_T3;
     forced_ttt = ttt ? stage : -1;
-    /* TTT's Unknown stage is drawn in Ogre's arena (the Expanded's arena_of_stage) */
-    forced_arena = ttt && stage > TTT_LAST_ARENA ? (stage == TTT_UNKNOWN ? OGRE_ARENA : stage) : stage;
-    tmst_log("tekken2: tournament fight on %s %d (arena %d)%s", ttt ? "TTT's stage" : "Tekken 3's arena",
+    /* TTT's Unknown stage is drawn in Ogre's arena, Eddy-A in Eddy's (the
+     * Expanded's arena_of_stage) */
+    forced_arena = ttt && stage > TTT_LAST_ARENA
+        ? (stage == TTT_UNKNOWN ? OGRE_ARENA : stage == TTT_EDDY_A ? EDDY_ARENA : stage) : stage;
+    tmst_log("tekken2: %s fight on %s %d (arena %d)%s", whose, ttt ? "TTT's stage" : "Tekken 3's arena",
              ttt ? stage : forced_arena, forced_arena,
              kind == TMST_TSTAGE_TTT && !ttt ? ", no TTT stage packs: Tekken 3's" : "");
 }
@@ -727,9 +743,9 @@ int tmst_stage_forced_arena(void) {
 /* From the routine that picks the fight's arena (0x8004F3B0), each fight. */
 void __wrap_tekken3_stage_select_fight(unsigned mode) {
     __real_tekken3_stage_select_fight(mode);
-    fight = fight_mode = -1; moving = 0; line_fight = 0; forced_mode = -1; forced_held = 0;
+    fight = fight_mode = -1; moving = 0; line_fight = 0; forced_mode = -1; forced_held = 0; option_mode = -1;
     int tournament_stage, tournament = tmst_tournament_fight_stage(mode, &tournament_stage);
-    if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage); return; }
+    if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage, "tournament"); return; }
     if (!ready()) {
         if (tournament == TMST_TSTAGE_T2) tmst_log("tekken2: tournament fight, Tekken 2's stages off: the system's stage");
         return;
@@ -793,6 +809,166 @@ int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stag
     *source = TEKKEN3_STAGE_T3; *ttt_stage = -1; *arena = T2_ARENA;
     return 1;
 }
+
+/* ---- GAME OPTION's STAGES row: TEKKEN 2, and RANDOM's Tekken 2 lot (issue #11) ----
+ *
+ * The row is the Expanded's (src/tekken3_stage_source.c): it is added with
+ * TEKKEN 2 after TEKKEN TAG TOURNAMENT (the user's order, 2026-11-13), and
+ * the Expanded reads its own values only: on TEKKEN 2 the one it had, so it
+ * keeps (and saves) that. Ours is kept in t2-stages.txt ("stages tekken2").
+ * Offered with this part on and the row there (it is, with TTT's packs).
+ *
+ * TEKKEN 2: the fighter who decides the fight's stage (the Expanded's: the
+ * CPU in Arcade, the player who chose last in VS, the member on the field in
+ * Team Battle) gets its stage of the user's list (tmst_option_t2_stage): a
+ * Tekken 2 fighter its Tekken 2 stage, the others their Tekken 3 arena or
+ * TTT stage. RANDOM: a Tekken 2 fighter's pool is T3, TTT and its Tekken 2
+ * stage, one chance in three each; the Expanded draws the two others. The
+ * STAGE line of VS and Practice and the tournaments decide first. A Continue
+ * keeps the stage. A Tekken 2 stage plays its own music, as from the STAGE
+ * line (tmst_tekken2_fight_music). */
+#ifdef TMST_HAS_STAGE_OPTION
+int __real_tekken3_game_options_add(const char *name, const char *const *labels, unsigned count,
+                                    unsigned value, unsigned default_value, unsigned modes);
+int __real_tekken3_game_options_value(int row);
+void __real_tekken3_stage_source_decide(unsigned mode, int player, const char *guest, int arena);
+int __real_tekken3_stage_source_load_arena(void);
+
+enum { DEMO_MODE = 6, LOADING_SCREEN = 11, FIGHTERS = 0x800add5c, COSTUMES = 0x800add98, HUMANS = 0x800ae1f8,
+       KUMA_ID = 11, EDDY_ID = 8, TIGER_ID = 22, STOCK_IDS = 21, SCHOOL_ARENA = 7, THEIR_MAX = 8 };
+static const char *const stock_keys[STOCK_IDS] = {"paul","law","lei","king","yoshimitsu","nina","hwoarang","xiaoyu",
+    "eddy","jin","julia","kuma","bryan","heihachi","ogre","mokujin","gunjack","gon","anna","drb","trueogre"};
+static int stages_row = -1, t2_at = -1, their_count, their_last = -1;
+static const char *their_labels[THEIR_MAX];
+static int opt_last_mode = -1, opt_kind, opt_stage, opt_continuing;
+static uint16_t opt_was_human[2];
+
+static int ttt_ready(void) {
+    const char *t = getenv("TEKKEN3_STAGES_TTT");
+    return tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_TTT) || (t && *t == '1');
+}
+static int option_on(void) { return ready() && ttt_ready() && option == OPT_TEKKEN2; }
+/* Theirs on RANDOM: the row's label once it is there, their file before. */
+static int their_on_random(void) {
+    static int read = -1;
+    if (!ready() || !ttt_ready()) return 0;
+    if (stages_row >= 0 && their_last >= 0 && their_last < their_count) return !strcmp(their_labels[their_last], "RANDOM");
+    if (read < 0) {
+        char word[32] = "";
+        const char *e = getenv("TEKKEN3_STAGES");
+        if (e && *e) snprintf(word, sizeof word, "%s", e);
+        else {
+            char path[4096]; file_path("ttt-stages.txt", path, sizeof path);
+            FILE *f = path[0] ? fopen(path, "rb") : NULL;
+            if (f) { if (fscanf(f, "%31s", word) != 1) word[0] = 0; fclose(f); }
+        }
+        read = !strcmp(word, "random");
+    }
+    return read;
+}
+static void set_option(int o) {
+    option = o;
+    if (!option_forced) save();
+    tmst_log("tekken2: STAGES set to %s", o == OPT_TEKKEN2 ? "TEKKEN 2" : "theirs");
+}
+
+int __wrap_tekken3_game_options_add(const char *name, const char *const *labels, unsigned count,
+                                    unsigned value, unsigned default_value, unsigned modes) {
+    if (strcmp(name, "STAGES") || stages_row >= 0 || count + 1 > THEIR_MAX || value >= count || !ready())
+        return __real_tekken3_game_options_add(name, labels, count, value, default_value, modes);
+    const char *list[THEIR_MAX];
+    int at = -1;
+    for (unsigned i = 0; i < count; i++) {
+        their_labels[i] = labels[i];
+        if (!strcmp(labels[i], "TEKKEN TAG TOURNAMENT")) at = (int)i + 1;
+    }
+    for (unsigned i = 0; at < 0 && i < count; i++) if (!strcmp(labels[i], "TEKKEN 3")) at = (int)i + 1;
+    if (at < 0) at = (int)count;
+    for (int i = 0, j = 0; i <= (int)count; i++) list[i] = i == at ? "TEKKEN 2" : labels[j++];
+    unsigned shown = option == OPT_TEKKEN2 ? (unsigned)at : value + (value >= (unsigned)at);
+    unsigned fallback = default_value + (default_value >= (unsigned)at);
+    int row = __real_tekken3_game_options_add(name, list, count + 1, shown, fallback, modes);
+    if (row < 0) return row;
+    stages_row = row; t2_at = at; their_count = (int)count; their_last = (int)value;
+    tmst_log("tekken2: TEKKEN 2 on the STAGES row (value %d of %u), shows %s", at, count + 1, list[shown]);
+    return row;
+}
+int __wrap_tekken3_game_options_value(int row) {
+    int v = __real_tekken3_game_options_value(row);
+    if (row < 0 || row != stages_row || v < 0) return v;
+    if (v == t2_at) {
+        if (option != OPT_TEKKEN2) set_option(OPT_TEKKEN2);
+        return their_last;                           /* theirs unchanged: nothing saved there */
+    }
+    if (option != OPT_THEIRS) set_option(OPT_THEIRS);
+    return their_last = v > t2_at ? v - 1 : v;
+}
+
+static const char *native_key(int p) {
+    unsigned id = psx_mod_read_half(FIGHTERS + 2u * (unsigned)p), costume = psx_mod_read_half(COSTUMES + 2u * (unsigned)p) & 3;
+    if (id == KUMA_ID && costume == 1) return "panda";
+    if (id == EDDY_ID && costume == 2) return "tiger";
+    if (id == TIGER_ID) return "tiger";
+    return id < STOCK_IDS ? stock_keys[id] : NULL;
+}
+static const char *const kind_words[] = { "theirs", "Tekken 2's stage", "Tekken 3's arena", "TTT's stage" };
+
+void __wrap_tekken3_stage_source_decide(unsigned mode, int player, const char *guest, int arena) {
+    /* decided again (Team Battle's member swapped in): ours undone first */
+    if (option_mode >= 0) { fight = fight_mode = -1; moving = line_fight = 0; forced_mode = -1; forced_held = 0; option_mode = -1; }
+    int t2 = option_on(), lot = !t2 && their_on_random(), s, t, a;
+    if ((!t2 && !lot) || !(mode <= PRACTICE || mode == DEMO_MODE) || player < 0 || player > 1 ||
+        __wrap_tekken3_stage_select_choice(mode, &s, &t, &a)) {
+        opt_continuing = 0;
+        __real_tekken3_stage_source_decide(mode, player, guest, arena);
+        return;
+    }
+    const char *key = guest ? guest : native_key(player);
+    int kind = TMST_TSTAGE_NONE, stage = -1, again = opt_continuing && opt_last_mode == (int)mode;
+    opt_continuing = 0;
+    if (again) { kind = opt_kind; stage = opt_stage; }
+    else if (t2) kind = tmst_option_t2_stage(key, !guest && arena == SCHOOL_ARENA, &stage);
+    else if (tmst_random_t2_stage(key, &stage) && pick(3) == 0) kind = TMST_TSTAGE_T2;
+    else stage = -1;
+    opt_last_mode = (int)mode; opt_kind = kind; opt_stage = stage;
+    tmst_log("tekken2: mode %u, P%d's %s decides, STAGES %s -> %s %d%s", mode, player + 1, key ? key : "-",
+             t2 ? "TEKKEN 2" : "RANDOM", kind_words[kind], stage, again ? " (Continue: the same)" : "");
+    if (kind == TMST_TSTAGE_T2) {
+        fight = stage; fight_mode = (int)mode; moving = 1; line_fight = 1; option_mode = (int)mode;
+        fight_extras();
+    } else if (kind == TMST_TSTAGE_T3 || kind == TMST_TSTAGE_TTT) {
+        force(mode, kind, stage, "STAGES row"); option_mode = (int)mode;
+    }
+    __real_tekken3_stage_source_decide(mode, player, guest, arena);
+}
+/* The arena the roster loads for it (and gives a guest). */
+int __wrap_tekken3_stage_source_load_arena(void) {
+    if (option_mode >= 0 && forced_mode >= 0 && forced_held) return forced_arena;
+    if (option_mode >= 0 && fight >= 0 && moving) return T2_ARENA;
+    return __real_tekken3_stage_source_load_arena();
+}
+/* Every VBlank: a Continue (a human side handed to the CPU in the fight, as
+ * the Expanded sees it), and the forced arena held until the fight. */
+static void option_tick(unsigned screen) {
+    if (screen == MENU) opt_last_mode = -1;
+    if (screen != FIGHT && screen != LOADING_SCREEN && screen != 9 && screen != 1) {
+        opt_continuing = 0; opt_was_human[0] = opt_was_human[1] = 0;
+    }
+    if (screen == FIGHT)
+        for (unsigned p = 0; p < 2; p++) {
+            uint16_t human = psx_mod_read_half(HUMANS + p * 2);
+            if (opt_was_human[p] && !human) opt_continuing = 1;
+            opt_was_human[p] = human;
+        }
+    int a = tmst_stage_forced_arena();
+    if (option_mode >= 0 && a >= 0 && psx_mod_read_half(ARENA) != (uint16_t)a) {
+        psx_mod_write_half(ARENA, (uint16_t)a);
+        psx_mod_write_byte(ARENA_COPY, (uint8_t)a);
+    }
+}
+#else
+static void option_tick(unsigned screen) { (void)screen; }
+#endif
 
 /* ---- the STAGE line ---- */
 
@@ -997,6 +1173,7 @@ static void tick(void) {
     light_tick();
     unsigned screen = psx_mod_read_word(SCREEN);
     if (screen == OPTIONS) menu();
+    option_tick(screen);
     if (screen == MENU) fight = -1;
     if (moving && screen == FIGHT) moving = 0;
     /* arena 9 until the fight */

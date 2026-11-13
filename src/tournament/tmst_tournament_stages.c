@@ -106,3 +106,27 @@ int tmst_tourney_stage(int t, const char *key, int school, int *stage) {
     *stage = s;
     return kind;
 }
+
+/* GAME OPTION's STAGES = TEKKEN 2 (issue #11, the user's list, 2026-11-13):
+ * Tekken 2's fighters their Tekken 2 stage (the T2 tournament's), the others
+ * their Tekken 3 arena or, for TTT1's, their TTT stage. */
+static const Home option_t3[] = {
+    {"bryan", 0}, {"mokujin", 2}, {"xiaoyu", 3}, {"hwoarang", 4}, {"ogre", 6}, {"trueogre", 6}, {"jin", 8},
+    {"gunjack", 9}, {"eddy", 10}, {"julia", 12}, {"gon", 13}, {"drb", 14}, {NULL, -1}};
+static const Home option_ttt[] = {
+    {"panda", 1}, {"tetsujin", 2}, {"tiger", 13}, {"unknown", 14}, {NULL, -1}};
+
+int tmst_option_t2_stage(const char *key, int school, int *stage) {
+    int s;
+    *stage = -1;
+    if (!key) return TMST_TSTAGE_NONE;
+    if (school && (!strcmp(key, "xiaoyu") || !strcmp(key, "jin"))) { *stage = SCHOOL; return TMST_TSTAGE_T3; }
+    if ((s = home(tekken2, key)) >= 0) { *stage = s; return TMST_TSTAGE_T2; }
+    if ((s = home(option_t3, key)) >= 0) { *stage = s; return TMST_TSTAGE_T3; }
+    if ((s = home(option_ttt, key)) >= 0) { *stage = s; return TMST_TSTAGE_TTT; }
+    return TMST_TSTAGE_NONE;
+}
+int tmst_random_t2_stage(const char *key, int *stage) {
+    *stage = key ? home(tekken2, key) : -1;
+    return *stage >= 0;
+}

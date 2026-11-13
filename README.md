@@ -135,6 +135,10 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
 - **Needs:** **Arcade Stages** switched on.
 - **Picking one:** in VS and Practice (Stage Select on), **TEKKEN 2** is a game on the STAGE line, after the others;
   press **Down** for its stages (RANDOM, then the 23).
+- **Every mode:** GAME OPTION's **STAGES** row has **TEKKEN 2** (with TTT's stages installed): the fighter whose stage
+  it is (the CPU in Arcade) fights on its own stage, a Tekken 2 fighter on its Tekken 2 stage, the others on their
+  Tekken 3 or TTT stage. **RANDOM** draws a Tekken 2 fighter's Tekken 2 stage too, one chance in three. The STAGE line
+  and Tournament Mode come first.
 - **Version:** GAME OPTION's **TEKKEN 2 STAGES** row, **CLASSIC** or **REMAKE**.
 - **Light:** on both versions the fighters are lit by daylight, dimmed only on the dark stages (Church, Pagoda,
   Serene Forest, Taj Mahal, Mirror and Eternal Darkness).

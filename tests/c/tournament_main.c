@@ -5,6 +5,7 @@
  *                                       Prints "slots ...", "step <mask> <winners...>" per step, "out|champion ..."
  *   progress <path> load|win:<t>        prints "won <mask> open <t...> [opens <t>]"
  *   stage <t> <school> <key...>         prints "<key> <kind> <stage> <cat>/<music>" per key
+ *   option-stage <school> <key...>     STAGES = TEKKEN 2: "<key> <kind> <stage> <random-t2>" per key
  *   cine <key|-> <own.jmv> [<stem>=<file>...]
  *                                       "entry <key|->", then the boss intro's .cine (player 7/1, boss 33/0)
  *   sounds <key|-> <own.jmv> [<stem>=<file>...]
@@ -111,6 +112,14 @@ int main(int argc, char **argv) {
             int stage, kind = tmst_tourney_stage(atoi(argv[2]), argv[i], atoi(argv[3]), &stage);
             const char *cat, *music = tmst_tourney_music(atoi(argv[2]), argv[i], kind, stage, arcade, &cat);
             printf("%s %d %d %s/%s\n", argv[i], kind, stage, cat ? cat : "-", music ? music : "-");
+        }
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "option-stage")) {
+        for (int i = 3; i < argc; i++) {
+            int stage, t2, kind = tmst_option_t2_stage(argv[i], atoi(argv[2]), &stage);
+            int lot = tmst_random_t2_stage(argv[i], &t2) ? t2 : -1;
+            printf("%s %d %d %d\n", argv[i], kind, stage, lot);
         }
         return 0;
     }

@@ -34,6 +34,15 @@ const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int 
  * the tournaments' and the STAGE line's (src/tekken2/tmst_tekken2_stages.c). */
 const char *tmst_t2_stage_music(int stage, int arcade);
 
+/* GAME OPTION's STAGES = TEKKEN 2 (issue #11, outside the tournaments): the
+ * stage of the fighter who decides the fight's (TMST_TSTAGE_T2, _T3 or _TTT;
+ * NONE: not on the list, the system decides), its number in *stage. school:
+ * Xiaoyu or Jin in the school outfit, Tekken 3's arena 7. */
+int tmst_option_t2_stage(const char *key, int school, int *stage);
+/* STAGES = RANDOM's Tekken 2 lot: 1 and the fighter's Tekken 2 stage when it
+ * was in Tekken 2 (its pool then T3, TTT and T2, one chance in three each). */
+int tmst_random_t2_stage(const char *key, int *stage);
+
 #ifdef __cplusplus
 }
 #endif
