@@ -434,15 +434,16 @@ class TournamentTest(unittest.TestCase):
         swap = int(head['swap'][0][3])
         self.assertEqual(head['swap'][0][:3], ['1', '33', '0'])
         fades = [list(map(int, f)) for f in head['fade']]
-        self.assertIn([swap - 8, swap - 1, 0, 256], fades)
-        self.assertIn([swap, swap + 16, 256, 0], fades)
-        # his lightning from his arms spread up to the flash
+        self.assertIn([swap - 16, swap - 1, 0, 256], fades)
+        self.assertIn([swap, swap + 32, 256, 0], fades)
+        # his lightning from his arms spread, on through the flash
         aura = list(map(int, head['aura'][0]))
-        self.assertEqual(aura[:3], [1, 141, swap])
+        self.assertEqual(aura[:2], [1, 147])
+        self.assertGreater(aura[2], swap + 32)
         c3 = [p[3] for p in poses[1]]
         self.assertTrue(1000 <= c3[0] < 1100)
         self.assertTrue(all(1000 <= v < 1000 + 150 * 8 for v in c3[:swap]), (min(c3[:swap]), max(c3[:swap])))
-        self.assertTrue(all(5000 <= v < 5000 + 150 * 8 for v in c3[swap + 10:]))
+        self.assertTrue(all(5000 <= v < 5000 + 150 * 8 for v in c3[swap + 12:]))
         self.assertTrue(all(self.turn(a, b) <= 2500 for a, b in zip(c3, c3[1:])))   # blended, no jump
         for a, b in zip(cam, cam[1:]):                                               # the camera eased
             self.assertTrue(all(abs(x - y) <= 40 for x, y in zip(a, b)), (a, b))

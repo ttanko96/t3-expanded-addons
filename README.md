@@ -85,7 +85,9 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
   own sounds too. START skips it (from the change on). Made from the fighters' own TTT1 moves in your install
   (TTT1 Characters needed; without them the fight starts as before). Before Heihachi (the Tekken 1 Grand Final,
   after the VS screen): he sits cross-legged, his back to you, gets up and turns to you in his blue lightning, into
-  his stance. Ogre / True Ogre and Unknown are coming in the future.
+  his stance. Before True Ogre (the Tekken 3 Grand Final, after Ogre's knock-out): Ogre gets up from the ground,
+  draws himself up, arms spread, in his lightning, rises into the air, a white flash, and True Ogre lands on his
+  wings; he fights on the moves the tournament picked for him (CPU MOVESET). Unknown is coming in the future.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end. The Tekken 3 fighters' big VS
   portraits on them come from your Tekken 3 disc (the add-on's setup takes them, USA SLUS-00402); without them a
