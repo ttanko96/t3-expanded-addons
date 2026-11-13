@@ -66,7 +66,9 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
     · Free Tournament.
 - Up/down choose · ✕ enter · ○ back to the main menu.
 - **Your fighter:** Only the highlighted fighters take part in the tournament; the face
-  buttons pick the costume (a fighter with a TTT1 moveset asks for it on the MOVESET card)
+  buttons pick the costume (a fighter with a TTT1 moveset asks for it on the MOVESET card); the costume and model
+  you pick stay for every match
+    · R1 the third Tekken 3 costume, once unlocked (Start does not pick a costume here, as in Team Battle)
     · L2/R2 switch the character panel (with TTT1 characters added)
     · SELECT back to the tournaments.
 - **The bracket:** 16 fighters, single elimination: first round, quarter final, semi final, final, then the Grand
