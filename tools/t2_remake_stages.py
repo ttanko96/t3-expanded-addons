@@ -57,7 +57,7 @@ import tekken2_stages as classic  # noqa: E402
 from disc_image import open_disc  # noqa: E402
 
 # Increase whenever the packs this writes change: the setup makes them again.
-VERSION = 12
+VERSION = 13
 REMAKE = 'remake'
 PICTURES = 'pictures'                       # tools/t2_remake_patch.py's (in t2-stages/, never staged)
 RENAMED = {b'OBJS': b'T2OB', b'ROTT': b'T2RT', b'OBJA': b'T2OA'}

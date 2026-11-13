@@ -808,3 +808,25 @@ class WolfVariant(unittest.TestCase):
             else:
                 self.assertEqual(rs.on_wolf(whole), 0, path.name)
                 self.assertIsNotNone(rs.font_place(whole), path.name)
+
+
+class HongKongFloor(unittest.TestCase):
+    """Issue #12: the Remake's running lights and floor fade, Tekken 2's own."""
+
+    def test_recipe(self):
+        hk = gen.DATA['arcade']['gunjack']
+        self.assertEqual({k: hk['floor_chase'][k] for k in ('cluts', 'dots', 'period', 'add')},
+                         dict(cluts=[0x7B02, 0x7B03], dots=[10, 11, 12, 13], period=16384, add=1706))
+        self.assertNotIn('colour', hk['floor_chase'])                  # no lit colour of ours
+        self.assertEqual(hk['floor_blend'], dict(clut=0x7B04, to=0x7B09, first=0, last=15, add=17))
+        self.assertLessEqual(gen.BLEND_MAX, 64)                          # the runtime's
+
+    def test_faded(self):
+        idx = np.array([[0, 1], [1, 3]])
+        img_b = np.array([[[8, 16, 24], [80, 0, 0]], [[160, 0, 0], [0, 0, 0]]], float)
+        colours = [0x1111, 0x2222, 0x3333, 0x4444]
+        out = gen.faded(img_b, idx, colours)
+        self.assertEqual(out[0], int(gen.bgr555(np.array([8, 16, 24], float))))
+        self.assertEqual(out[1], int(gen.bgr555(np.array([120, 0, 0], float))))     # the mean of its texels
+        self.assertEqual(out[2], 0x3333)                                             # no texel: as it was
+        self.assertEqual(out[3], 0x0421)                                             # never colour 0

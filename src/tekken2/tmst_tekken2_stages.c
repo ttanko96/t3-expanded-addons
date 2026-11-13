@@ -51,7 +51,10 @@
  *
  * The pack's own sections (the engine reads only its own): T2FX, the
  * fighters' light (SetBackColor, 0x800826E8, dimmed on the dark stages, as the
- * remake's FDIM); T2CH, Hong Kong's running lights (palettes uploaded in turn);
+ * remake's FDIM); T2CH, Hong Kong's running lights (palettes uploaded in turn,
+ * stepped as Tekken 2 steps them: a clock adding "add" a frame, a step each
+ * "period"); T2BL, Hong Kong's floor fading from one palette to another and
+ * back, as Tekken 2's own palette animation does it (issue #12);
  * T2MR, Mirror Darkness's mirror (src/tekken2/tmst_tekken2_mirror.c); T2AN,
  * the Remake's animations whose frames are not in the VRAM (the engine's ANIM
  * keeps its frames there; tools/t2_remake_stages.py frames_out()): each
@@ -140,7 +143,7 @@ static const char *const version_labels[VERSIONS] = { "CLASSIC", "REMAKE" };
 /* What the engine holds for an arena: the game's own pack, the empty one, or
  * Tekken 2's stage n (0..22). */
 enum { HELD_NONE = -3, HELD_BLANK = -2, HELD_REAL = -1 };
-enum { NO_DIM = 0x80, CHASE_MAX = 8, CHASE_FRAMES = 8, ANIMS_MAX = 32 };   /* ANIMS_MAX: Eternal Darkness 15 (its lights in short runs) */
+enum { NO_DIM = 0x80, CHASE_MAX = 8, CHASE_FRAMES = 8, BLEND_MAX = 64, ANIMS_MAX = 32 };   /* ANIMS_MAX: Eternal Darkness 15 (its lights in short runs) */
 static const double TAU = 6.283185307179586;
 
 int __real_tekken3_stage_source(void);
@@ -229,10 +232,20 @@ static int32_t mirror_at[6];             /* T2MR: radius, angle, width, top, bot
 static uint8_t mirror_style[20];         /* the Remake's MIRR after its place: the frame, the glow (0: none) */
 static int mirror_styled;
 static struct {
-    unsigned period, frames, count, frame, clock;
+    unsigned period, add, frames, count, frame, clock;
     uint16_t at[CHASE_MAX][2];
     uint16_t colours[CHASE_FRAMES][CHASE_MAX][16];
 } chase;
+/* T2BL (issue #12): Tekken 2's palette blend (its program's 0x80082424, the
+ * table at 0x800A3010: Hong Kong's 0x7B04 towards 0x7B09): each frame
+ * f = ((cos(clock) * 4096 + 4096) / 2) / 4 (0..1024, the clock 4096 a turn),
+ * then clock += add; the colours from..to of each palette A + (((B - A) * f
+ * + 512) >> 10), 5 bits a channel. */
+static struct {
+    unsigned count, from, to, add, clock;
+    uint16_t at[BLEND_MAX][2];
+    uint16_t a[BLEND_MAX][16], b[BLEND_MAX][16];
+} blend;
 /* T2AN: the place (halfwords), the period, the entries (each a frame), the
  * frames' pixels; in the section's copy (anim_data) */
 static uint8_t *anim_data;
@@ -538,6 +551,7 @@ static void fight_extras(void) {
     coll_data = NULL;
     coll_n = coll_radius = 0;
     memset(&chase, 0, sizeof chase);
+    memset(&blend, 0, sizeof blend);
     memset(mirror_at, 0, sizeof mirror_at);
     free(anim_data);
     anim_data = NULL;
@@ -583,11 +597,25 @@ static void fight_extras(void) {
     if (o && len >= 8) {
         uint16_t h[4]; memcpy(h, o, 8);
         if (h[1] && h[1] <= CHASE_FRAMES && h[2] && h[2] <= CHASE_MAX && len >= 8 + 4u * h[2] + 32u * h[1] * h[2]) {
-            chase.period = h[0] ? h[0] : 1; chase.frames = h[1]; chase.count = h[2];
+            /* h[3]: the clock's step (0, the packs before issue #12: 1) */
+            chase.period = h[0] ? h[0] : 1; chase.add = h[3] ? h[3] : 1; chase.frames = h[1]; chase.count = h[2];
             memcpy(chase.at, o + 8, 4u * h[2]);
             for (unsigned f = 0; f < h[1]; f++)
                 for (unsigned p = 0; p < h[2]; p++)
                     memcpy(chase.colours[f][p], o + 8 + 4u * h[2] + 32u * (f * h[2] + p), 32);
+        }
+    }
+    /* T2BL: u16 palettes, from, to, add; each palette (u16 x, y), A[16], B[16] */
+    o = section(b, size, "T2BL", &len);
+    if (o && len >= 8) {
+        uint16_t h[4]; memcpy(h, o, 8);
+        if (h[0] && h[0] <= BLEND_MAX && h[1] <= h[2] && h[2] < 16 && len >= 8 + 68u * h[0]) {
+            blend.count = h[0]; blend.from = h[1]; blend.to = h[2]; blend.add = h[3];
+            for (unsigned p = 0; p < h[0]; p++) {
+                memcpy(blend.at[p], o + 8 + 68u * p, 4);
+                memcpy(blend.a[p], o + 12 + 68u * p, 32);
+                memcpy(blend.b[p], o + 44 + 68u * p, 32);
+            }
         }
     }
     o = section(b, size, "T2AN", &len);
@@ -943,6 +971,26 @@ static void light_tick(void) {
     }
 }
 
+/* T2BL's frame (issue #12): Tekken 2's 0x80082424 and 0x80087164 */
+static void blend_tick(void) {
+    long c = lround(cos(TAU * (double)(blend.clock & 0xFFF) / 4096.0) * 4096.0);
+    int f = (int)((c + 4096) / 2 / 4);
+    blend.clock += blend.add;
+    for (unsigned p = 0; p < blend.count; p++) {
+        uint16_t out[16];
+        memcpy(out, blend.a[p], sizeof out);
+        for (unsigned i = blend.from; i <= blend.to; i++) {
+            uint16_t col = 0;
+            for (int ch = 0; ch < 15; ch += 5) {
+                int a = blend.a[p][i] >> ch & 31, d = (blend.b[p][i] >> ch & 31) - a;
+                col |= (uint16_t)(((a + ((d * f + 512) >> 10)) & 31) << ch);
+            }
+            out[i] = col ? col : 0x0421;            /* never the see-through black (the packs' rule) */
+        }
+        (void)psx_mod_gpu_high_vram_upload(blend.at[p][0], blend.at[p][1], 16, 1, out);
+    }
+}
+
 static void tick(void) {
     tmst_jukebox_player_tick();                      /* the stage's piece without the Jukebox (issue #9.2) */
     if (!psx_mod_game_started() || !ready()) return;
@@ -963,12 +1011,13 @@ static void tick(void) {
     }
     if (!checked) { checked = 1; fight_start(); }
     /* Hong Kong's running lights: the next frame's palettes */
-    if (chase.count && drawn() && ++chase.clock >= chase.period) {
-        chase.clock = 0;
+    if (chase.count && drawn() && (chase.clock += chase.add) >= chase.period) {
+        chase.clock -= chase.period;
         chase.frame = (chase.frame + 1) % chase.frames;
         for (unsigned p = 0; p < chase.count; p++)
             (void)psx_mod_gpu_high_vram_upload(chase.at[p][0], chase.at[p][1], 16, 1, chase.colours[chase.frame][p]);
     }
+    if (blend.count && drawn()) blend_tick();
 }
 
 static void activate(void) {

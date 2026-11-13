@@ -51,8 +51,8 @@ gives the fight as it hands the pack over):
 - the add-on's own (src/tekken2/tmst_tekken2_stages.c; the engine reads only
   its own sections): T2FX the fighters' light ("dim", 0x80 as the game
   sets it), T2LT the arena whose light the fighters take (DAY_ARENA, but
-  on DARK_LIGHT), T2CH Hong Kong's running lights ("chase"), T2MR Mirror
-  Darkness's mirror ("mirror").
+  on DARK_LIGHT), T2CH Hong Kong's running lights ("chase"), T2BL its floor's
+  fade ("blend"), T2MR Mirror Darkness's mirror ("mirror").
 
 Nothing from the disc goes into git; the packs are staged beside the game as
 mods/t2-stages/classic (addon.cmake TMST_STAGED) and read there through
@@ -77,7 +77,7 @@ from tekken2_disc import REGIONS  # noqa: E402
 OUT = 'addons/tmst/workspace/t2-stages'
 CLASSIC, PREVIEW = 'classic', 'preview'
 # Increase whenever the packs this writes change: the setup makes them again.
-VERSION = 5
+VERSION = 6
 
 BNS_FILE, BNS_TABLE, BNS_ENTRIES = 'TEKKEN2/TEKKEN2.BNS', 0x964, 400
 GROUP0, GROUP = 24, 16                      # a fighter's group of BNS entries
@@ -101,8 +101,13 @@ FIGHTER_OF = {21: 0, 3: 1, 9: 2, 8: 3, 11: 4, 4: 5, 7: 6, 19: 7, 1: 8, 6: 9, 13:
 # far it moves with the camera's;
 # "lit": the floor lit round the fighters only, "dim" the fighters' light
 # (0x80 the game's; the user's, 2026-11-03: the dark stages); "chase" Tekken
-# 2's running lights round Hong Kong's yin and yang, its palettes' "dots"
-# lit one at a time, anticlockwise (the remake's, gunjack-full.zip);
+# 2's running lights round Hong Kong's yin and yang, as its program turns them
+# (issue #12: its table at 0x800A3010, slots 0 and 1): the palettes' "dots"
+# colours turned round one place (colour i takes i + 1's), a turn whenever a
+# clock adding "add" a frame passes a multiple of "period" (0x800C4928:
+# 1706, bit 14); "blend" its floor's fade (slot 2): palette "clut" towards
+# palette "to" and back, colours "first".."last", the clock adding "add" a
+# frame (4096 a turn; src/tekken2/tmst_tekken2_stages.c blend_tick());
 # "mirror" Mirror Darkness's (devil-full.zip's MIRR: radius, centre angle,
 # width, top, bottom, panels round the camera).
 # bottom 160: the panorama's last row ends at y 160 at a level camera, its
@@ -127,8 +132,8 @@ DAY_ARENA = 8
 DARK_LIGHT = {4, 6, 7, 16, 21, 22}
 LAYOUTS = {
     4: dict(DARK, dim=0x4F), 6: dict(DARK, dim=0x66), 7: dict(DARK, dim=0x66), 16: dict(dim=0x4F), 21: DARK,
-    5: dict(chase=dict(cluts=(0x7B02, 0x7B03), dots=(10, 11, 12, 13), period=60, reverse=True,
-                       colour=(255, 236, 150))),
+    5: dict(chase=dict(cluts=(0x7B02, 0x7B03), dots=(10, 11, 12, 13), period=16384, add=1706),
+            blend=dict(clut=0x7B04, to=0x7B09, first=0, last=14, add=17)),
     22: dict(DARK, mirror=(6400, 5, 2700, -1260, 400, 13)),
     13: dict(lit=True, places=[*range(12, 16), *range(16, 24), *range(8), *range(16, 24), *range(8), *range(8, 12)],
              repeat=1),
@@ -232,7 +237,10 @@ def stage_data(src: Source, stage: int) -> dict:
     floor = []
     for uv, page, _, clut in rec['floor']:
         floor.append((texels(vram, page & 0xFF, uv & 255, uv >> 8, 64, 64), palette(vram, clut), page >> 14 & 3, clut))
-    return dict(stage=stage, name=NAMES[stage], pano=pano, floor=floor, layout=lay)
+    st = dict(stage=stage, name=NAMES[stage], pano=pano, floor=floor, layout=lay)
+    if lay.get('blend'):
+        st['blend_to'] = palette(vram, lay['blend']['to'])
+    return st
 
 
 # --- the pack ---------------------------------------------------------------
@@ -443,12 +451,13 @@ def flor(st: dict, vram: Vram) -> bytes:
     cell."""
     lay = st['layout']
     chase = lay.get('chase') or {}
+    blend = lay.get('blend') or {}
     kind, fog, near = FLOOR_LIT if lay.get('lit') else FLOOR_PLAIN
     cells, halves, made = [], [None] * 400, {}
     for r in range(FLOOR_N):
         for c in range(FLOOR_N):
             idx, colours, turn, clut = st['floor'][r * FLOOR_N + c]
-            key = ('chase', clut) if clut in chase.get('cluts', ()) else None
+            key = ('chase', clut) if clut in chase.get('cluts', ()) else ('blend', clut) if clut == blend.get('clut') else None
             x, y = vram.slot(idx)
             cells.append((texture_word(x, y) | turn << 30, vram.clut(colours, key) << 16))
             if (idx, colours, key) not in made:
@@ -475,16 +484,25 @@ def flor(st: dict, vram: Vram) -> bytes:
     return out + bytes(2 * 4 * 4 * (2 + 4))  # the 2 and 4 sub-quad corners: no cell has them
 
 
+def turned(colours, dots, f: int) -> list:
+    """A palette with its "dots" colours turned round f places, as Tekken 2
+    turns them (issue #12): colour dots[j] takes dots[j + f]'s."""
+    out = list(colours)
+    for j, d in enumerate(dots):
+        out[d] = colours[dots[(j + f) % len(dots)]]
+    return out
+
+
 def chase_section(st: dict, vram: Vram) -> bytes | None:
     """T2CH (the add-on's, src/tekken2/tmst_tekken2_stages.c): Tekken 2's
-    running lights, its palettes "cluts" with one of the "dots" colours lit
-    at a time, the next every "period" frames: u16 period, frames, palettes,
-    0; (u16 x, y) a palette; then each frame's palettes."""
+    running lights, its palettes "cluts" with their "dots" colours turned
+    round, a turn whenever the clock (adding "add" a frame) passes "period":
+    u16 period, frames, palettes, add; (u16 x, y) a palette; then each
+    frame's palettes (the first the disc's own)."""
     chase = st['layout'].get('chase')
     if not chase:
         return None
-    lit = colour_of(*(v / 8 for v in chase['colour']))
-    places, runs = [], []
+    places = []
     for (idx, colours, turn, clut) in st['floor']:
         if clut in chase['cluts'] and ('chase', clut) in vram.cluts and clut not in [p[0] for p in places]:
             w = vram.cluts['chase', clut]
@@ -492,13 +510,25 @@ def chase_section(st: dict, vram: Vram) -> bytes | None:
     if not places:
         return None
     dots = chase['dots']
-    out = struct.pack('<4H', chase['period'], len(dots), len(places), 0)
+    out = struct.pack('<4H', chase['period'], len(dots), len(places), chase.get('add', 1))
     out += b''.join(struct.pack('<2H', x, y) for _, x, y, _ in places)
     for f in range(len(dots)):
-        on = dots[(-f if chase.get('reverse') else f) % len(dots)]
         for *_, colours in places:
-            out += struct.pack('<16H', *(lit if j == on else c for j, c in enumerate(colours)))
+            out += struct.pack('<16H', *turned(colours, dots, f))
     return out
+
+
+def blend_section(st: dict, vram: Vram) -> bytes | None:
+    """T2BL (the add-on's, src/tekken2/tmst_tekken2_stages.c): Tekken 2's
+    floor fade (issue #12), palette "clut" towards "to" and back: u16
+    palettes, first, last, add; each palette (u16 x, y), A[16], B[16]."""
+    blend = st['layout'].get('blend')
+    if not blend or ('blend', blend['clut']) not in vram.cluts:
+        return None
+    w = vram.cluts['blend', blend['clut']]
+    colours = next(c for (_, c, _, clut) in st['floor'] if clut == blend['clut'])
+    out = struct.pack('<4H', 1, blend['first'], blend['last'], blend['add'])
+    return out + struct.pack('<2H', (w & 63) * 16, w >> 6 & 0x3FF) + struct.pack('<16H', *colours)         + struct.pack('<16H', *st['blend_to'])
 
 
 def build(st: dict) -> bytes:
@@ -513,6 +543,9 @@ def build(st: dict) -> bytes:
     chase = chase_section(st, vram)
     if chase:
         sections.append((b'T2CH', chase))
+    fade = blend_section(st, vram)
+    if fade:
+        sections.append((b'T2BL', fade))
     if st['layout'].get('mirror'):
         sections.append((b'T2MR', struct.pack('<6i', *st['layout']['mirror'])))
     head = 16 + 12 * len(sections)
