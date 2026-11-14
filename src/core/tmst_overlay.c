@@ -487,17 +487,13 @@ int tmst_ui_prim_text(TmstPrims *k, int x, int y, const char *text, int scale, u
     int base = atlas_y < 768 ? 512 : 768, v_top = atlas_y - base, pen = 0, baseline = t * y + FACE->cap;
     uint32_t clut = 0x8000u | (uint32_t)(atlas_y + ATLAS_H - 1 - 512) << 6 | (uint32_t)(atlas_x / 16);
     const char *p = text;
-    while (*p) {
-        /* the face is ASCII (and U+2026): any other character is '?' */
-        unsigned c = (unsigned char)*p++;
-        if (c >= 0x80) {
-            if (c == 0xE2 && (unsigned char)p[0] == 0x80 && (unsigned char)p[1] == 0xA6) { c = 0x2026; p += 2; }
-            else { while (((unsigned char)*p & 0xC0) == 0x80) p++; c = '?'; }
-        }
-        int i = 0;
-        while (i < FACE->count && FACE->glyphs[i].code != c) i++;
-        if (i == FACE->count || i >= ATLAS_GLYPHS) { i = 0; while (FACE->glyphs[i].code != '?') i++; }
-        const TmstUiGlyph *g = &FACE->glyphs[i];
+    unsigned c;
+    while ((c = tmst_ui_next_code(&p)) != 0) {
+        /* the face's glyph (ASCII, the ellipsis, the icons; an accented
+         * letter as its plain one), '?' for any other or one off the sheet */
+        const TmstUiGlyph *g = tmst_ui_glyph(FACE, c);
+        int i = (int)(g - FACE->glyphs);
+        if (i >= ATLAS_GLYPHS) { g = tmst_ui_glyph(FACE, '?'); i = (int)(g - FACE->glyphs); }
         if (g->w && g->h) {
             int gx = t * x + ((pen + 32) >> 6) + g->left, gy = baseline + g->top;
             int qx = floor_div(gx, t), qy = floor_div(gy, t), offx = gx - t * qx, offy = gy - t * qy;

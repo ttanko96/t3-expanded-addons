@@ -109,7 +109,8 @@ typedef struct TmstPrims TmstPrims;
 void tmst_prim_room(TmstPrims *k, unsigned words);
 void tmst_prim_word(TmstPrims *k, uint32_t word);
 static inline uint32_t tmst_xy(int x, int y) { return ((uint32_t)(y & 0xffff) << 16) | (uint32_t)(x & 0xffff); }
-/* Text in the UI font (tmst_ui_font.h, its SCREEN face: ASCII, Fira Sans)
+/* Text in the UI font (tmst_ui_font.h, its SCREEN face: ASCII, Fira Sans,
+ * an accented letter as its plain one, the TMST_UI_ICON_* symbols)
  * as textured quads, from a 4-bit sheet of its glyphs (192 x 77 halfwords:
  * three texture pages, its palette in its last row) the core keeps in the
  * upper VRAM half, in a corner the stage engine leaves free (placed, kept

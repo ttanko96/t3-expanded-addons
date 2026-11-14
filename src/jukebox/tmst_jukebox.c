@@ -48,11 +48,11 @@
  * stage's piece (tmst_tekken2_fight_music). While the Jukebox is open the game's
  * music is silent and the preview plays.
  *
- * The list is a picture of our own over the lower part of the grid screen
- * (src/core/tmst_overlay.c), in the UI font (Fira Sans); the pads go through our
- * filter (src/core/tmst_input.c) before the game and the Expanded see them.
- * Benches: TMST_JUKEBOX_ROOT (the Expanded's folder), TMST_JUKEBOX_PCM=<raw>
- * (the streamed frames), TMST_JUKEBOX_DUMP=<ppm> (the picture). */
+ * The list is drawn by the GPU over the lower part of the grid screen
+ * (src/core/tmst_overlay.c's primitives), in the UI font (Fira Sans); the pads
+ * go through our filter (src/core/tmst_input.c) before the game and the
+ * Expanded see them. Benches: TMST_JUKEBOX_ROOT (the Expanded's folder),
+ * TMST_JUKEBOX_PCM=<raw> (the streamed frames). */
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "tmst_ui_font.h"
@@ -727,12 +727,11 @@ static struct {
     int exiting;                              /* Start + Select until the menu */
     unsigned frames, left_at;                 /* left_at: the frame the grid's screen was left */
     uint16_t previous; int held, repeat;
-    unsigned version;
 } jb = {.play_cat = -1, .play_sel = -1};
-enum { ROWS = 10, COLS = 2 };
+enum { ROWS = 7, COLS = 2 };
 static int menu_row = -1;
 
-static void stop_preview(void) { stream_close(&preview); jb.play_cat = jb.play_sel = -1; jb.version++; }
+static void stop_preview(void) { stream_close(&preview); jb.play_cat = jb.play_sel = -1; }
 static int first_category(int from, int dir) {
     for (int k = 0; k < CATS; k++) {
         int c = ((from + dir * k) % CATS + CATS) % CATS;
@@ -791,11 +790,11 @@ static void open_list(unsigned id) {
     int cat, sel; current_of(&cat, &sel);
     jb.cat = cat >= 0 && cats[cat].count ? cat : first;
     jb.sel = cat == jb.cat && sel >= 0 ? sel : 0; jb.top = 0; keep_visible();
-    jb.view = VIEW_LIST; jb.version++;
+    jb.view = VIEW_LIST;
     tmst_log("jukebox: %s (%s), %s", jb.name, jb.key, cats[jb.cat].id);
 }
 static void exit_to_menu(void) {
-    stop_preview(); jb.exiting = 1; jb.version++;
+    stop_preview(); jb.exiting = 1;
     if (menu_row >= 0) tmst_menu_select_next_time(menu_row);
     tmst_log("jukebox: back to the main menu");
 }
@@ -813,12 +812,12 @@ static int unsaved(void) {
 static void dialog_choice(int yes) {
     if (jb.asks == ASK_RESET) {               /* every fighter back to its default: YES only */
         if (yes) { choice_count = 0; tmst_log("jukebox: every fighter back to its default music"); }
-        jb.view = VIEW_GRID; jb.version++;
+        jb.view = VIEW_GRID;
         return;
     }
     if (yes) save_choices();
     else { memcpy(choices, saved, sizeof choices); choice_count = saved_count; }
-    if (jb.from == VIEW_LIST) { stop_preview(); jb.view = VIEW_GRID; jb.version++; }
+    if (jb.from == VIEW_LIST) { stop_preview(); jb.view = VIEW_GRID; }
     else exit_to_menu();
 }
 
@@ -832,18 +831,18 @@ static uint16_t screen_input(uint16_t buttons) {
     const uint16_t none = 0xffff;
     if (jb.exiting) return (uint16_t)~(B_START | B_SELECT);              /* the game's own way out */
     if (jb.view == VIEW_DIALOG) {
-        if (edges & (B_LEFT | B_RIGHT | B_UP | B_DOWN)) { jb.dialog ^= 1; jb.version++; }
+        if (edges & (B_LEFT | B_RIGHT | B_UP | B_DOWN)) { jb.dialog ^= 1; }
         else if (edges & B_CROSS) dialog_choice(jb.dialog == 0);
-        else if (edges & B_CIRCLE) { jb.view = jb.from; jb.version++; }
+        else if (edges & B_CIRCLE) { jb.view = jb.from; }
         return none;
     }
     /* Circle: the list goes back to the grid (its choices kept, saved or not
      * on the way out); the grid leaves, asking SAVE? first when a choice is
      * not saved yet. */
     if (edges & B_CIRCLE) {
-        if (jb.view == VIEW_LIST) { stop_preview(); jb.view = VIEW_GRID; jb.version++; return none; }
+        if (jb.view == VIEW_LIST) { stop_preview(); jb.view = VIEW_GRID; return none; }
         if (!unsaved()) { exit_to_menu(); return none; }
-        jb.from = jb.view; jb.view = VIEW_DIALOG; jb.asks = ASK_SAVE; jb.dialog = 0; jb.version++; return none;
+        jb.from = jb.view; jb.view = VIEW_DIALOG; jb.asks = ASK_SAVE; jb.dialog = 0; return none;
     }
     if (jb.view == VIEW_GRID) {
         /* The team size prompt, answered for the player: pressed for 4
@@ -853,7 +852,7 @@ static uint16_t screen_input(uint16_t buttons) {
         if (edges & B_CROSS) { unsigned id = cursor_fighter(); if (fighter_key(id)) open_list(id); return none; }
         /* Every fighter back to its default, asked first (NO highlighted). */
         if ((edges & B_SQUARE) && choice_count) {
-            jb.from = VIEW_GRID; jb.view = VIEW_DIALOG; jb.asks = ASK_RESET; jb.dialog = 1; jb.version++;
+            jb.from = VIEW_GRID; jb.view = VIEW_DIALOG; jb.asks = ASK_RESET; jb.dialog = 1;
             return none;
         }
         return buttons | (uint16_t)~(B_UP | B_DOWN | B_LEFT | B_RIGHT | B_L2 | B_R2);   /* the grid's moves and its page switch */
@@ -864,7 +863,7 @@ static uint16_t screen_input(uint16_t buttons) {
         if (next >= 0 && next != jb.cat) {
             jb.cat = next;
             int cat, sel; current_of(&cat, &sel);
-            jb.sel = cat == jb.cat && sel >= 0 ? sel : 0; jb.top = 0; keep_visible(); jb.version++;
+            jb.sel = cat == jb.cat && sel >= 0 ? sel : 0; jb.top = 0; keep_visible();
         }
         return none;
     }
@@ -876,23 +875,22 @@ static uint16_t screen_input(uint16_t buttons) {
     }
     if ((edges & B_LEFT) && col > 0) moved = jb.sel - 1;
     if ((edges & B_RIGHT) && col + 1 < COLS && jb.sel + 1 < n) moved = jb.sel + 1;
-    if (moved >= 0) { jb.sel = moved; keep_visible(); jb.version++; }
+    if (moved >= 0) { jb.sel = moved; keep_visible(); }
     if ((edges & B_TRIANGLE) && c->count) {
         if (jb.play_cat == jb.cat && jb.play_sel == jb.sel) stop_preview();
         else if (stream_open(&preview, jb.cat, &c->track[jb.sel])) {
-            jb.play_cat = jb.cat; jb.play_sel = jb.sel; jb.version++;
+            jb.play_cat = jb.cat; jb.play_sel = jb.sel;
             tmst_log("jukebox: preview %s", preview.what);
         } else stop_preview();
     }
     if ((edges & B_CROSS) && c->count) {
         set_choice(jb.key, jb.cat, c->track[jb.sel].name);
         tmst_log("jukebox: %s -> %s/%s", jb.key, c->id, c->track[jb.sel].name);
-        stop_preview(); jb.view = VIEW_GRID; jb.version++;
+        stop_preview(); jb.view = VIEW_GRID;
     }
     if (edges & B_SQUARE) {
         clear_choice(jb.key);
         tmst_log("jukebox: %s back to its default music", jb.key);
-        jb.version++;
     }
     return none;
 }
@@ -923,10 +921,9 @@ static uint16_t input(int player, uint16_t buttons) {
  * teams under the grid (the game's primitives there moved out of sight: the
  * team panels, their frames, the size prompt, the name; the full-width
  * backdrop stays and shows through), the category's name in the title font
- * between two swaying arrows with L2 / R2, and the list: a picture of 1024 x
- * 392 texels on the screen's rows 284..480 (sharp where the renderer draws at
- * a higher resolution), in the UI font (Fira Sans), two columns, the pad's symbols
- * in the hints. In the grid view (choosing a fighter) the page switch of the
+ * between two swaying arrows with L2 / R2, and under it the list, the hints
+ * and the dialog in the UI font (Fira Sans) as GPU primitives (screen_text
+ * below). In the grid view (choosing a fighter) the page switch of the
  * Expanded's grid (L2 / R2) stays.
  *
  * The title font: page (832,0) 4 bpp, palette (336,505), cells of 14 x 24
@@ -990,6 +987,7 @@ static void panel(TmstPrims *k, int x, int y, int w, int h) {
 }
 static int list_view(void) { return jb.view == VIEW_LIST || (jb.view == VIEW_DIALOG && jb.from == VIEW_LIST); }
 static int category_count(void);
+static void screen_text(TmstPrims *k);
 static void jukebox_prims(TmstPrims *k) {
     if (!jb.active) return;                      /* another mod's picture */
     /* The panel: see-through, half the backdrop, half dark (B/2 + F/2),
@@ -1008,6 +1006,7 @@ static void jukebox_prims(TmstPrims *k) {
     shaded_band(k, CENTRE_X + inner, 368, BANNER_TOP, BANNER_H, 0x000000, JB_BANNER);
     flat(k, JB_BANNER, 368, BANNER_TOP, 128, BANNER_H);
     font_text(k, "JUKEBOX", CENTRE_X, 28, 1, 1, 0x808080);
+    screen_text(k);
     if (!list_view()) return;
     const char *name = cats[jb.cat].name;
     int n = (int)strlen(name), num = n > 20 ? 1 : 3, den = n > 20 ? 2 : 5;
@@ -1072,144 +1071,121 @@ static void hide_below_grid(uint32_t node) {
     }
 }
 
-/* ---- the list's picture --------------------------------------------------------- */
-/* 1024 x 392 texels for the screen's 368 x 196 under the category line. Its
- * background is see-through: the panel shows under it. Narrowed to 576 in
- * the upper half where the Expanded draws its HD faces on the grid
- * (TMST_OVERLAY_ROOM_FOR_HD). */
-enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, BG = 0x00000000u,
-       MATTE = 0xff1a1216u };      /* about the half see-through panel under the picture's see-through texels */
-static uint32_t pic[PW * PH];
-static unsigned pic_version = ~0u;
-static void fill(int x, int y, int w, int h, uint32_t c) { tmst_fill_argb(pic, PW, PH, x, y, w, h, c); }
-/* The UI font (Fira Sans), y the capitals' top. */
-static void txt(int x, int y, const char *s, uint32_t c) { tmst_ui_text_argb(pic, PW, PH, x, y, &tmst_ui_face_list, s, c, MATTE); }
-static int text_w(const char *s) { return tmst_ui_width(&tmst_ui_face_list, s); }
-static int txt_w(int x, int y, const char *s, uint32_t c) { txt(x, y, s, c); return text_w(s); }
-/* The pad's symbols, 16 x 16 at (x, y). */
-static void tri(int x0, int y0, int x1, int y1, int x2, int y2, uint32_t c) {
-    int minx = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2), maxx = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
-    int miny = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2), maxy = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
-    for (int y = miny; y <= maxy; y++) for (int x = minx; x <= maxx; x++) {
-        int a = (x1 - x0) * (y - y0) - (y1 - y0) * (x - x0), b = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1), d = (x0 - x2) * (y - y2) - (y0 - y2) * (x - x2);
-        if (((a >= 0 && b >= 0 && d >= 0) || (a <= 0 && b <= 0 && d <= 0)) && x >= 0 && y >= 0 && x < PW && y < PH) pic[y * PW + x] = c;
-    }
+/* ---- the list, the hints and the dialog ------------------------------------------ */
+/* Drawn by the GPU each frame, in screen units of the 368 x 480 screen, over
+ * the panel: the UI font's SCREEN face (tmst_ui_prim_text: capitals 12 tall,
+ * two texels to a unit, sharp where the renderer draws at a higher
+ * resolution) with the pad's symbols among its glyphs, and flat rectangles.
+ * No picture of our own: the roster's HD faces (the Expanded 1.5.1's stock
+ * ones too) keep the upper VRAM half, and the text stays as sharp with them
+ * (issue #10: a picture narrowed for them was too small and soft to read).
+ * The list: two columns of ROWS (cut with an ellipsis to the column); the
+ * fighter and its music now above it, the buttons under it. */
+enum { X0 = 10, X1 = 358, HEAD_Y = 285, SEP_Y = 302, LIST_Y = 309, PITCH = 18, HINT_SEP_Y = 437, HINT_Y = 443,
+       GRID_TEXT_Y = 304, GRID_HINT_SEP_Y = 384, GRID_HINT_Y = 390, COL_W = (X1 - X0) / COLS, MARK_W = 11,
+       C_LINE = 0x5a4a6a, C_CHOSEN_BAR = 0x222a6b };
+/* The tint for an ARGB colour (0xBBGGRR, 128 = as the glyph is). */
+static uint32_t tint(uint32_t argb) {
+    uint32_t r = (argb >> 16 & 255) * 128 / 255, g = (argb >> 8 & 255) * 128 / 255, b = (argb & 255) * 128 / 255;
+    return b << 16 | g << 8 | r;
 }
-static void ring(int cx, int cy, int r, int t, uint32_t c) {
-    for (int y = -r; y <= r; y++) for (int x = -r; x <= r; x++) { int d = x * x + y * y; if (d <= r * r && d >= (r - t) * (r - t)) fill(cx + x, cy + y, 1, 1, c); }
-}
-static void line(int x0, int y0, int x1, int y1, int t, uint32_t c) {
-    int n = abs(x1 - x0) > abs(y1 - y0) ? abs(x1 - x0) : abs(y1 - y0);
-    for (int i = 0; i <= n; i++) fill(x0 + (x1 - x0) * i / (n ? n : 1) - t / 2, y0 + (y1 - y0) * i / (n ? n : 1) - t / 2, t, t, c);
-}
-enum { I_TRIANGLE, I_CIRCLE, I_CROSS, I_SQUARE, I_LEFTRIGHT, I_PLAY, I_TRIGGERS };
-static int icon(int x, int y, int which) {
-    switch (which) {
-    case I_TRIANGLE: line(x + 8, y + 1, x + 1, y + 14, 2, 0xff3ecf8eu); line(x + 8, y + 1, x + 15, y + 14, 2, 0xff3ecf8eu); line(x + 1, y + 14, x + 15, y + 14, 2, 0xff3ecf8eu); return 18;
-    case I_CIRCLE: ring(x + 8, y + 8, 7, 2, 0xffff6b6bu); return 18;
-    case I_CROSS: line(x + 2, y + 2, x + 14, y + 14, 2, 0xff7aa7ffu); line(x + 14, y + 2, x + 2, y + 14, 2, 0xff7aa7ffu); return 18;
-    case I_SQUARE: line(x + 2, y + 2, x + 14, y + 2, 2, 0xffff8fd8u); line(x + 2, y + 14, x + 14, y + 14, 2, 0xffff8fd8u);
-        line(x + 2, y + 2, x + 2, y + 14, 2, 0xffff8fd8u); line(x + 14, y + 2, x + 14, y + 14, 2, 0xffff8fd8u); return 18;
-    case I_LEFTRIGHT: tri(x, y + 8, x + 7, y + 2, x + 7, y + 14, 0xffe8dccfu); tri(x + 20, y + 8, x + 13, y + 2, x + 13, y + 14, 0xffe8dccfu); return 24;
-    case I_PLAY: tri(x + 3, y + 1, x + 3, y + 15, x + 15, y + 8, 0xff57e38bu); return 18;
-    case I_TRIGGERS: txt(x, y, "L2/R2", 0xffe8dccfu); return text_w("L2/R2");
-    }
-    return 0;
-}
-/* A button line: icon, label, gap; centred. */
-typedef struct { int icon; const char *label; } Hint;
-static int icon_w(int which) { return which == I_LEFTRIGHT ? 24 : which == I_TRIGGERS ? text_w("L2/R2") : 18; }
-static void hints(int y, const Hint *h, int n) {
-    int w = 0;
-    for (int i = 0; i < n; i++) w += icon_w(h[i].icon) + 6 + text_w(h[i].label) + (i + 1 < n ? 32 : 0);
-    int x = (PW - w) / 2;
-    for (int i = 0; i < n; i++) {
-        x += icon(x, y, h[i].icon) + 6;
-        txt(x, y, h[i].label, 0xffd8d0c8u); x += text_w(h[i].label) + 32;
-    }
-}
-/* `s` cut with an ellipsis to max_w texels. */
-static void clipped(int x, int y, const char *s, int max_w, uint32_t c) {
+static int say(TmstPrims *k, int x, int y, const char *s, uint32_t argb) { return tmst_ui_prim_text(k, x, y, s, 1, tint(argb)); }
+static int say_w(const char *s) { return tmst_ui_prim_width(s, 1); }
+/* `s` cut with an ellipsis to max_w units. */
+static void fit(const char *s, int max_w, char *out, size_t size) { tmst_ui_fit(&tmst_ui_face_screen, s, max_w * 2, out, size); }
+static void say_fit(TmstPrims *k, int x, int y, const char *s, int max_w, uint32_t argb) {
     char buf[TITLE + 8];
-    tmst_ui_fit(&tmst_ui_face_list, s, max_w, buf, sizeof buf);
-    txt(x, y, buf, c);
+    fit(s, max_w, buf, sizeof buf);
+    say(k, x, y, buf, argb);
 }
-static void draw(void) {
-    fill(0, 0, PW, PH, BG);
-    if (!list_view()) {
-        const char *a = "Choose a fighter", *b = "to pick the music it plays";
-        txt((PW - text_w(a)) / 2, 60, a, 0xfff0e6dau); txt((PW - text_w(b)) / 2, 90, b, 0xffa89c94u);
-    } else {
-        Category *c = &cats[jb.cat];
-        int cur_cat, cur_sel, chosen_now = current_of(&cur_cat, &cur_sel);
-        char head[TITLE + 32], fitted[TITLE + 40];
-        int name_w = txt_w(20, 6, jb.name, 0xffffcb83u);
-        const char *now = cur_cat >= 0 && cur_sel >= 0 ? cats[cur_cat].track[cur_sel].title : "Tekken 3's own";
-        snprintf(head, sizeof head, "Now: %s%s", now, chosen_now ? "" : " (default)");
-        tmst_ui_fit(&tmst_ui_face_list, head, PW - 40 - name_w - 40, fitted, sizeof fitted);
-        txt(PW - 20 - text_w(fitted), 6, fitted, 0xffa89c94u);
-        fill(12, 28, PW - 24, 2, 0xff4a3640u);
-        int col_w = (PW - 40) / COLS, y0 = 40, pitch = 26;
-        for (int r = 0; r < ROWS; r++) for (int k = 0; k < COLS; k++) {
-            int i = (jb.top + r) * COLS + k;
-            if (i >= (int)c->count) continue;
-            int x = 20 + k * col_w, y = y0 + r * pitch;
-            int chosen = i == jb.sel, playing = jb.play_cat == jb.cat && jb.play_sel == i, current = cur_cat == jb.cat && cur_sel == i;
-            if (chosen) fill(x - 4, y - 5, col_w - 8, 26, 0xff6b2a22u);
-            if (playing) icon(x, y, I_PLAY);
-            else if (current) txt(x, y, "*", 0xffffcb83u);
-            clipped(x + 20, y, c->track[i].title, col_w - 32,
-                    playing ? 0xff57e38bu : chosen ? 0xfffff4e8u : current ? 0xffffcb83u : 0xffbdb2aau);
-        }
-        int rows = ((int)c->count + COLS - 1) / COLS;
-        if (jb.top > 0) tri(PW / 2 - 12, y0 - 4, PW / 2 + 12, y0 - 4, PW / 2, y0 - 16, 0xfff8d830u);
-        if (jb.top + ROWS < rows) tri(PW / 2 - 12, y0 + ROWS * pitch - 4, PW / 2 + 12, y0 + ROWS * pitch - 4, PW / 2, y0 + ROWS * pitch + 8, 0xfff8d830u);
+static void say_centred(TmstPrims *k, int cx, int y, const char *s, uint32_t argb) { say(k, cx - say_w(s) / 2, y, s, argb); }
+static void rule(TmstPrims *k, int y) { flat(k, C_LINE, X0, y, X1 - X0, 1); }
+
+/* A button line, centred: each an icon (or L2/R2) and its label. */
+typedef struct { const char *icon; uint32_t colour; const char *label; } Hint;
+#define L2_R2 "L2/R2"
+static void hints(TmstPrims *k, int y, const Hint *h, int n) {
+    int w = 0, gap = 12;
+    for (int i = 0; i < n; i++) w += say_w(h[i].icon) + 3 + say_w(h[i].label);
+    if (n > 1 && w + gap * (n - 1) > X1 - X0) gap = (X1 - X0 - w) / (n - 1);
+    if (gap < 4) gap = 4;
+    int x = CENTRE_X - (w + gap * (n - 1)) / 2;
+    for (int i = 0; i < n; i++) {
+        x += say(k, x, y, h[i].icon, h[i].colour) + 3;
+        x += say(k, x, y, h[i].label, 0xffd8d0c8u) + gap;
     }
-    int hint_y = list_view() ? PH - 56 : 220;   /* well above the screen's last visible rows */              /* the grid view: above the page card */
-    fill(12, hint_y - 14, PW - 24, 2, 0xff4a3640u);
+}
+static const uint32_t C_TRIANGLE = 0xff3ecf8eu, C_CIRCLE = 0xffff6b6bu, C_CROSS = 0xff7aa7ffu, C_SQUARE = 0xffff8fd8u,
+                      C_PLAIN = 0xffe8dccfu, C_PLAYING = 0xff57e38bu, C_CURRENT = 0xffffcb83u;
+
+static void list_text(TmstPrims *k) {
+    Category *c = &cats[jb.cat];
+    int cur_cat, cur_sel, chosen_now = current_of(&cur_cat, &cur_sel);
+    char head[TITLE + 32];
+    int name_w = say(k, X0, HEAD_Y, jb.name, C_CURRENT);
+    const char *now = cur_cat >= 0 && cur_sel >= 0 ? cats[cur_cat].track[cur_sel].title : "Tekken 3's own";
+    snprintf(head, sizeof head, "Now: %s%s", now, chosen_now ? "" : " (default)");
+    char fitted[TITLE + 40];
+    fit(head, X1 - X0 - name_w - 16, fitted, sizeof fitted);
+    say(k, X1 - say_w(fitted), HEAD_Y, fitted, 0xffa89c94u);
+    rule(k, SEP_Y);
+    for (int r = 0; r < ROWS; r++) for (int col = 0; col < COLS; col++) {
+        int i = (jb.top + r) * COLS + col;
+        if (i >= (int)c->count) continue;
+        int x = X0 + col * COL_W, y = LIST_Y + r * PITCH;
+        int chosen = i == jb.sel, playing = jb.play_cat == jb.cat && jb.play_sel == i, current = cur_cat == jb.cat && cur_sel == i;
+        if (chosen) flat(k, C_CHOSEN_BAR, x - 3, y - 3, COL_W - 4, PITCH);
+        if (playing) say(k, x, y, TMST_UI_ICON_PLAY, C_PLAYING);
+        else if (current) say(k, x + 1, y + 2, "*", C_CURRENT);
+        say_fit(k, x + MARK_W, y, c->track[i].title, COL_W - MARK_W - 8,
+                playing ? C_PLAYING : chosen ? 0xfffff4e8u : current ? C_CURRENT : 0xffbdb2aau);
+    }
+    int rows = ((int)c->count + COLS - 1) / COLS, arrow_x = CENTRE_X - say_w(TMST_UI_ICON_UP) / 2;
+    if (jb.top > 0) say(k, arrow_x, SEP_Y - 6, TMST_UI_ICON_UP, 0xfff8d830u);
+    if (jb.top + ROWS < rows) say(k, arrow_x, HINT_SEP_Y - 6, TMST_UI_ICON_DOWN, 0xfff8d830u);
+}
+/* The dialog, centred between top and bottom (the rules around the list, or
+ * the grid view's lines). */
+static void dialog_text(TmstPrims *k, int top, int bottom) {
+    int w = 200, h = 66, x = CENTRE_X - w / 2, y = top + (bottom - top - h) / 2;
+    flat(k, 0x2921b5, x - 2, y - 2, w + 4, h + 4);
+    flat(k, 0x18121c, x, y, w, h);
+    say_centred(k, CENTRE_X, y + 8, jb.asks == ASK_RESET ? "Restore all to default?" : "Save?", 0xfff0e6dau);
+    if (jb.asks == ASK_RESET) say_centred(k, CENTRE_X, y + 24, "Are you sure?", C_CURRENT);
+    static const char *const opt[2] = {"Yes", "No"};
+    for (int i = 0; i < 2; i++) {
+        int bw = 64, bx = CENTRE_X - 76 + i * 88, by = y + 42;
+        flat(k, i == jb.dialog ? C_CHOSEN_BAR : 0x26202a, bx, by, bw, 18);
+        say_centred(k, bx + bw / 2, by + 3, opt[i], i == jb.dialog ? 0xfffff4e8u : 0xffa89c94u);
+    }
+}
+static void screen_text(TmstPrims *k) {
+    if (jb.view == VIEW_GRID) {
+        say_centred(k, CENTRE_X, GRID_TEXT_Y, "Choose a fighter", 0xfff0e6dau);
+        say_centred(k, CENTRE_X, GRID_TEXT_Y + 18, "to pick the music it plays", 0xffa89c94u);
+    } else if (list_view()) list_text(k);
+    int grid = !list_view(), hint_y = grid ? GRID_HINT_Y : HINT_Y;
+    rule(k, grid ? GRID_HINT_SEP_Y : HINT_SEP_Y);
     if (jb.view == VIEW_DIALOG) {
-        int w = 420, h = 130, x = (PW - w) / 2, y = (hint_y - 20 - h) / 2 + 10;
-        fill(x - 4, y - 4, w + 8, h + 8, 0xffb52129u); fill(x, y, w, h, 0xff1c1218u);
-        const char *ask = jb.asks == ASK_RESET ? "Restore all to default?" : "Save?";
-        txt(x + (w - text_w(ask)) / 2, y + 16, ask, 0xfff0e6dau);
-        if (jb.asks == ASK_RESET) {
-            const char *sure = "Are you sure?";
-            txt(x + (w - text_w(sure)) / 2, y + 40, sure, 0xffffcb83u);
-        }
-        const char *opt[2] = {"Yes", "No"};
-        for (int i = 0; i < 2; i++) {
-            int bx = x + 50 + i * 190, by = y + 70;
-            fill(bx, by, 130, 36, i == jb.dialog ? 0xff6b2a22u : 0xff2a2026u);
-            txt(bx + (130 - text_w(opt[i])) / 2, by + 10, opt[i], i == jb.dialog ? 0xfffff4e8u : 0xffa89c94u);
-        }
-        Hint keys[] = {{I_LEFTRIGHT, "Choose"}, {I_CROSS, "Confirm"}, {I_CIRCLE, "Back"}};
-        hints(hint_y, keys, 3);
+        if (grid) dialog_text(k, GRID_TEXT_Y - 10, GRID_HINT_SEP_Y); else dialog_text(k, SEP_Y, HINT_SEP_Y);
+        Hint keys[] = {{TMST_UI_ICON_LEFT_RIGHT, C_PLAIN, "Choose"}, {TMST_UI_ICON_CROSS, C_CROSS, "Confirm"},
+                       {TMST_UI_ICON_CIRCLE, C_CIRCLE, "Back"}};
+        hints(k, hint_y, keys, 3);
     } else if (jb.view == VIEW_GRID) {
         /* L2 / R2 switch the Expanded's grid pages (its TTT1 roster); with
          * Unified Character Select on there is one grid, nothing to switch. */
-        Hint h[] = {{I_TRIGGERS, "Switch character panel"}, {I_CROSS, "Select"},
-                    {I_SQUARE, "Restore all to default"}, {I_CIRCLE, "Exit"}};
+        Hint h[] = {{L2_R2, C_PLAIN, "Switch character panel"}, {TMST_UI_ICON_CROSS, C_CROSS, "Select"},
+                    {TMST_UI_ICON_SQUARE, C_SQUARE, "Restore all to default"}, {TMST_UI_ICON_CIRCLE, C_CIRCLE, "Exit"}};
         int pages = tekken3_ttt1_selector_page && tekken3_ttt1_selector_page() >= 0 &&
                     !(tmst_unified_select_active && tmst_unified_select_active());
-        hints(hint_y, pages ? h : h + 1, pages ? 4 : 3);
+        hints(k, hint_y, pages ? h : h + 1, pages ? 4 : 3);
     } else {
-        Hint all[] = {{I_TRIGGERS, "Category"}, {I_TRIANGLE, "Play / Stop"}, {I_CROSS, "Assign"}, {I_SQUARE, "Restore default"}, {I_CIRCLE, "Back"}};
+        Hint all[] = {{L2_R2, C_PLAIN, "Category"}, {TMST_UI_ICON_TRIANGLE, C_TRIANGLE, "Play / Stop"},
+                      {TMST_UI_ICON_CROSS, C_CROSS, "Assign"}, {TMST_UI_ICON_SQUARE, C_SQUARE, "Restore default"},
+                      {TMST_UI_ICON_CIRCLE, C_CIRCLE, "Back"}};
         int many = category_count() > 1;
-        hints(hint_y, many ? all : all + 1, many ? 5 : 4);
+        hints(k, hint_y, many ? all : all + 1, many ? 5 : 4);
     }
-}
-static void show_picture(void) {
-    if (pic_version != jb.version) {
-        draw(); pic_version = jb.version;
-        const char *dump = getenv("TMST_JUKEBOX_DUMP");
-        FILE *f = dump && *dump ? fopen(dump, "wb") : NULL;
-        if (f) {
-            fprintf(f, "P6 %d %d 255", PW, PH); fputc(10, f);
-            for (int i = 0; i < PW * PH; i++) { fputc(pic[i] >> 16 & 255, f); fputc(pic[i] >> 8 & 255, f); fputc(pic[i] & 255, f); }
-            fclose(f);
-        }
-    }
-    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW | TMST_OVERLAY_ROOM_FOR_HD);
 }
 
 /* ---- sound -------------------------------------------------------------------- */
@@ -1410,7 +1386,7 @@ static void tick(void) {
      * loaded: covered until then (3 seconds at most). */
     if (jb.active && jb.exiting && !team_grid() && screen != 4) {
         if (!jb.left_at) jb.left_at = jb.frames;
-        if (jb.frames - jb.left_at < 180) { show_picture(); return; }
+        if (jb.frames - jb.left_at < 180) { tmst_overlay_show_prims(); return; }
     }
     if (jb.active && !team_grid()) {
         jb.left_at = 0;
@@ -1421,7 +1397,7 @@ static void tick(void) {
     }
     /* Shown until the grid's screen is left, the way out included: the
      * Team Battle screen never shows through. */
-    if (jb.active) show_picture();
+    if (jb.active) tmst_overlay_show_prims();
     if (jb.pending && screen == 4 && psx_mod_read_half(PHASE) == 1) jb.pending = 0;   /* the menu again, never left */
     fight_screens(screen);
 }

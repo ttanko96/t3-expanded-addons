@@ -1,7 +1,8 @@
 /* TMST core: the add-on's UI font, Fira Sans Medium (SIL Open Font License
  * 1.1), drawn ahead by tools/ui_font.py into anti-aliased glyphs of 16
  * levels (tmst_ui_font_data.c), proportional, UTF-8: ASCII, Latin-1, Latin
- * Extended-A and a few punctuation marks; any other character draws '?'.
+ * Extended-A and a few punctuation marks; any other character draws '?'
+ * (tmst_ui_glyph: a face without a letter draws its plain one).
  * It is the add-on's own lettering (in place of its 5 x 7 font before,
  * 2026-11-06); where the game's Tekken 3 font is drawn, that stays. */
 #ifndef TMST_UI_FONT_H
@@ -25,7 +26,28 @@ typedef struct {
 /* The faces (tools/ui_font.py's FACES). */
 extern const TmstUiFace tmst_ui_face_list;     /* 22 texels to the em, texels 1.25 as wide as tall: the Jukebox's picture */
 extern const TmstUiFace tmst_ui_face_screen;   /* 34 texels to the em, 2 to a unit of the 368 x 480 screen each way
-                                                  (texels 1.75 as wide as tall), ASCII: the GPU's (tmst_ui_prim_text) */
+                                                  (texels 1.75 as wide as tall), ASCII and the icons: the GPU's
+                                                  (tmst_ui_prim_text) */
+
+/* The SCREEN face's icons (tools/ui_font.py's ICONS), as tall as its
+ * capitals, one colour each (the text's): in text as their UTF-8 (the
+ * TMST_UI_ICON_* strings). */
+#define TMST_UI_ICON_TRIANGLE   "\xEE\x80\x80"   /* U+E000: the pad's triangle (outline) */
+#define TMST_UI_ICON_CIRCLE     "\xEE\x80\x81"   /* U+E001: circle (ring) */
+#define TMST_UI_ICON_CROSS      "\xEE\x80\x82"   /* U+E002: cross */
+#define TMST_UI_ICON_SQUARE     "\xEE\x80\x83"   /* U+E003: square (outline) */
+#define TMST_UI_ICON_LEFT_RIGHT "\xEE\x80\x84"   /* U+E004: left and right arrows */
+#define TMST_UI_ICON_PLAY       "\xEE\x80\x85"   /* U+E005: play */
+#define TMST_UI_ICON_UP         "\xEE\x80\x86"   /* U+E006: up (filled) */
+#define TMST_UI_ICON_DOWN       "\xEE\x80\x87"   /* U+E007: down (filled) */
+
+/* U+00A0..U+017F: each one's plain ASCII letter, 0 none (tools/ui_font.py). */
+extern const char tmst_ui_fold_latin[224];
+/* The next character of UTF-8 text (0 at its end; a broken byte 0xFFFD). */
+unsigned tmst_ui_next_code(const char **p);
+/* The face's glyph for `code`: its own, else (a face without the letter) its
+ * plain letter's (a for a-acute; dashes, quotes, bullet as ASCII), else '?'. */
+const TmstUiGlyph *tmst_ui_glyph(const TmstUiFace *f, unsigned code);
 
 /* A filled rectangle into the w x h ARGB picture, clipped. */
 void tmst_fill_argb(uint32_t *dst, int w, int h, int x, int y, int rw, int rh, uint32_t argb);
