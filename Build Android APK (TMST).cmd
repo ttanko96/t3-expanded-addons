@@ -3,7 +3,7 @@ rem Tekken 3 Expanded for Android with the TMST add-on, on Windows: the
 rem Expanded's APK build (Build Android APK) with the add-on built in
 rem (setup\tmst_android.py). Run it after the Expanded's setup and Setup TMST.
 rem Double-click it, or with options:
-rem   --music     the Jukebox's Tekken 1, 2 and TTT music too (about 1.8 GB more)
+rem   --no-music  without the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music (about 800 MB)
 rem   --install   then install it on the phone connected by USB (adb)
 rem   --without   the APK without the add-on
 setlocal

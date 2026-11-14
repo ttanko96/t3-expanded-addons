@@ -135,7 +135,8 @@ set(TMST_PACKAGES
 # "folder here|folder beside the game" (dev/tmst_stage_dir.cmake).
 # mods/tmst-data: what the game reads from addons/tmst (src/core/tmst_files.h
 # tmst_files_addon), copied under mods/ because the Expanded's own Android APK
-# holds only the game's mods/ (about 1 MB; the music stays out, ~1.8 GB).
+# holds only the game's mods/ (about 1 MB; the music stays out, ~800 MB:
+# setup/tmst_android.py puts it in).
 set(TMST_STAGED
     "workspace/t2-stages/classic|mods/t2-stages/classic"
     "workspace/t2-stages/remake|mods/t2-stages/remake"

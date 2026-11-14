@@ -313,14 +313,15 @@ downloads Google's Android tools, about 1 GB, into `.setup/android`).
    "C:\<your_folder>\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
    ```
 
-- **The Jukebox's music:** the Tekken 1, 2, TTT and Tekken 5 DR music is left out by default (about 800 MB, and the phone keeps
-  a second copy after the install): the Jukebox then shows only the Tekken 3 disc's music. Add `--music` to put it in.
+- **The Jukebox's music:** the Tekken 1, 2, TTT and Tekken 5 DR music is in the APK (about 800 MB). The phone unpacks it
+  at the install, so it needs about that much free space again. Add `--no-music` to leave it out: the Jukebox then
+  shows only the Tekken 3 disc's music.
 - **Photo Mode** works, but its pictures stay in the game's private storage on the phone: they cannot be copied off
   it yet (a screenshot of the phone is the way for now).
 - The Expanded's own Build Android APK keeps building the add-on in afterwards (as Update & play does on PC; from
   Expanded 1.5.0 on it builds add-ons in by itself); `--without` builds the APK without it. Its APK has every mod
   with its pictures, stories and Jukebox lists (the build copies them under the game's `mods/tmst-data`), but never
-  the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music: for that, use `Build Android APK (TMST)` with `--music`.
+  the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music: for that, use `Build Android APK (TMST)`.
 
 ## Settings
 
