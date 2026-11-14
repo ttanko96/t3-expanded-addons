@@ -595,7 +595,40 @@ static struct {
     uint16_t previous;                        /* the player's last read (a START held from before is no press) */
     uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
     unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
+    int cine_used;                            /* an intro took the engine's prepared cinematic (embu_restore) */
 } intro = {.played_match = -2, .native_swap = -1};
+/* The engine keeps one prepared cinematic (src/tekken3_cine.c `cine`), and
+ * the attract's Embu rotation prepares its TTT Embu ahead (the turn chosen
+ * as the attract is left for the title, src/tekken3_cine_trigger.c
+ * `planned`), then plays whatever is prepared once the attract comes. A
+ * player who leaves the title before it, plays a tournament with an intro
+ * and comes back left that turn pending: the attract played the intro as
+ * its Embu (1.5.0 and 1.5.1 alike, seen 2026-11-14). On the title or the
+ * main menu after an intro, the rotation's .cine (triggers.txt's "attract
+ * rotation=") prepared again, as it was. */
+extern int tekken3_cine_prepare(const char *path) __attribute__((weak));
+static void embu_restore(void) {
+    if (!intro.cine_used || !tekken3_cine_prepare || !tekken3_ttt1_asset_root ||
+        (tekken3_cine_engine_active && tekken3_cine_engine_active()))
+        return;
+    intro.cine_used = 0;
+    const char *root = tekken3_ttt1_asset_root();
+    if (!root) return;
+    char dir[4200], path[4400], line[1200], name[1024] = "";
+    snprintf(dir, sizeof dir, "%s/../ttt-cinematics", root);
+    snprintf(path, sizeof path, "%s/triggers.txt", dir);
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    while (!name[0] && fgets(line, sizeof line, f)) {
+        const char *c = strstr(line, "cine=");
+        if (!strncmp(line, "attract", 7) && strstr(line, "rotation=") && c) sscanf(c + 5, "%1023s", name);
+    }
+    fclose(f);
+    if (!name[0]) return;
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    tmst_log("tournament: the attract's Embu (%s) %s after the intro", name,
+             tekken3_cine_prepare(path) ? "prepared again" : "could not be prepared");
+}
 /* A match armed: its intro not played yet. The Grand Final is match 16 of
  * every tournament, so a mark kept from an earlier one left the next Grand
  * Finals of the same run without their intro (1.5.1 test: Heihachi's, then
@@ -791,6 +824,7 @@ static void boss_intro_tick(unsigned screen, int due) {
     if (bench && *bench) snprintf(path, sizeof path, "%s", bench);
     intro_save();
     if (!tekken3_cine_play(path, 0, NULL)) { tmst_log("tournament: %s not played", path); return; }
+    intro.cine_used = 1;
     intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0;
     intro.native_swap = e->start && boss->id < STOCK ? (int)boss->id : -1;
     tmst_log("tournament: %s's intro (%s) at phase %d, %d frames", boss->name, e->key ? e->key : "the fallback",
@@ -2032,6 +2066,7 @@ static void tick(void) {
      * menu (tekken3_native_moves.c, screen MENU), also after a pause's RESET
      * or the list's way out: ours too (issue #14). */
     if (screen == MENU) mt.want_now = 0;
+    if (screen == MENU || screen == TITLE) embu_restore();   /* before any attract */
     /* The grid opened from our row, or (between the matches) again straight
      * from the results, as the game does after a button there. */
     if ((tm.pending || (mt.flow == FLOW_BETWEEN && !tm.active)) && team_grid()) {
