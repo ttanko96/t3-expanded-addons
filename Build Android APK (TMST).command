@@ -3,7 +3,7 @@
 # the Expanded's APK build (Build Android APK) with the add-on built in
 # (setup/tmst_android.py). Run it after the Expanded's setup and Setup TMST.
 # Double-click it, or from Terminal with options:
-#   --music     the Jukebox's Tekken 1, 2 and TTT music too (about 1.8 GB more)
+#   --no-music  without the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music (about 800 MB)
 #   --install   then install it on the phone connected by USB (adb)
 #   --without   the APK without the add-on
 cd "$(dirname "$0")" || exit 1
