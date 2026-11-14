@@ -195,8 +195,10 @@ head, looking the way the body faces.
 ## Installation
 
 The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
-experimental). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), access to
-this repository and about 1 GB of free space: the Jukebox's music takes it in `addons/tmst/workspace/`
+experimental). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), the
+add-on's ZIP for your platform from the [latest release](https://github.com/ttanko96/t3-expanded-addons/releases/latest)
+(`tmst-<version>-windows.zip`, `-macos.zip` or `-linux.zip`; or `git clone` this repository) and about 1 GB of free
+space: the Jukebox's music takes it in `addons/tmst/workspace/`
 (Tekken 1 and 2 about 320 MB, TTT about 280 MB, Tekken 5 DR about 210 MB; Tekken 1, 2, TTT console and Tekken 5 DR
 keep the games' own ADPCM, which the Jukebox decodes as it plays).
 
@@ -205,8 +207,9 @@ keep the games' own ADPCM, which the Jukebox decodes as it plays).
 The Expanded builds add-ons in by itself
 ([its add-on support](https://github.com/omarma/tekken3-expanded/blob/main/addons/README.md)):
 
-1. **Close the game**, then **put the add-on in place**, exactly at `<the Expanded's folder>/addons/tmst/` (the
-   `git clone` below for your platform, or the ZIP renamed to `tmst`; `addons/tmst/addon.cmake` must exist).
+1. **Close the game**, then **put the add-on in place**, exactly at `<the Expanded's folder>/addons/tmst/`: extract
+   your platform's ZIP into the Expanded's `addons` folder (it holds one folder, `tmst`), or use the `git clone` below
+   for your platform. `addons/tmst/addon.cmake` must exist.
 2. **Start the Expanded's setup and click Update & play.** It runs the add-on's setup (the Jukebox's music, and the
    Tekken 2 content from a disc it already knows), then builds the game with the add-on. Its mods show in the
    launcher's **Mods** page, in the **TMST** group.
@@ -224,11 +227,12 @@ the add-on in.
 Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it if yours is elsewhere.
 
 1. **Close the game.** A running game cannot be rebuilt.
-2. **Put the add-on in place**, exactly at `C:\<your_folder>\tekken3-expanded\addons\tmst\`:
+2. **Put the add-on in place**, exactly at `C:\<your_folder>\tekken3-expanded\addons\tmst\`: extract
+   `tmst-<version>-windows.zip` into `C:\<your_folder>\tekken3-expanded\addons\` (it holds the `tmst` folder;
+   `addons\tmst\addon.cmake` must exist). Or with git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\<your_folder>\tekken3-expanded\addons\tmst"
    ```
-   (Or download the ZIP, rename the folder to `tmst` and put it in `addons\`; `addons\tmst\addon.cmake` must exist.)
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
    progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
    - takes your **Tekken 2** disc (optional; it gives the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages):
@@ -256,11 +260,14 @@ The add-on is built into the Expanded's macOS game, with the Homebrew tools its
 setup window, `brew install python-tk@3.13`). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
 
 1. **Close the game.**
-2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`:
+2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`: extract
+   `tmst-<version>-macos.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
+   git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
    ```
-3. **Double-click `addons/tmst/Setup TMST.command`** (or run it in Terminal: `./"Setup TMST.command"`). With Tk it
+3. **Double-click `addons/tmst/Setup TMST.command`** (or run it in Terminal: `./"Setup TMST.command"`; if macOS says
+   it cannot be opened, right-click it and choose **Open**). With Tk it
    opens the same setup window as on Windows; without it, it asks for the Tekken 2 disc in the Terminal window
    (drag the file onto it; Return goes on without it). Then it makes the same files and rebuilds the game with the
    add-on.
@@ -274,7 +281,9 @@ The add-on is built into the Expanded's native Linux game, with the tools its
 needed). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
 
 1. **Close the game.**
-2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`:
+2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`: extract
+   `tmst-<version>-linux.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
+   git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
    ```
@@ -333,9 +342,15 @@ default). Restart the game after switching a mod.
 - **Expanded update** (Update & play): the add-on stays in the build. If the TMST group is missing afterwards, run
   `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`) again. **Expanded 1.5.0 needs TMST 0.2.0
   or later** (`TMST_VERSION` in `addon.cmake`): update the add-on too, or 1.5.0 builds the game without it.
-- **Add-on update:** `git -C "C:\<your_folder>\tekken3-expanded\addons\tmst" pull`, then, with Expanded 1.5.0 or
-  later, **Update & play** (the setup asks for it); with 1.4.1 or earlier, `Setup TMST.cmd` (macOS:
-  `Setup TMST.command`, Linux: `Setup TMST.sh`).
+- **Add-on update:** close the game, then replace the add-on:
+  - from the ZIP: in `addons/tmst`, delete everything **except the `workspace` folder** (the music and stages the
+    setup made; without it they are made again, which takes a few minutes), then extract the new ZIP into `addons/`
+    as at the install. Deleting first matters: files the new version no longer has must not stay behind;
+  - with git: `git -C "C:\<your_folder>\tekken3-expanded\addons\tmst" pull`.
+
+  Then, with Expanded 1.5.0 or later, **Update & play** (the setup asks for it); with 1.4.1 or earlier,
+  `Setup TMST.cmd` (macOS: `Setup TMST.command`, Linux: `Setup TMST.sh`). Your mod settings, Jukebox choices and
+  tournament progress stay; what the setup made is made again only where the new version needs it.
 - **Removing, Expanded 1.5.0 or later:** close the game, delete the `addons/tmst` folder, then **Update & play**.
 - **Removing, 1.4.1 or earlier:** close the game, rebuild without the add-on, then delete the folder:
   ```bash
@@ -353,6 +368,6 @@ default). Restart the game after switching a mod.
 [Tekken 3 Expanded](https://github.com/omarma/tekken3-expanded) by Matthew Stan (PolyForm Noncommercial 1.0.0), itself
 an adaptation of MAME's C352 by R. Belmont and superctr (BSD-3-Clause, [licenses/MAME-BSD-3-Clause.txt](licenses/MAME-BSD-3-Clause.txt)).
 The add-on's lettering is Fira Sans Medium by The Mozilla Foundation and Telefonica S.A. (SIL Open Font License 1.1,
-[tools/data/fonts/OFL.txt](tools/data/fonts/OFL.txt)), drawn into `src/core/tmst_ui_font_data.c` by `tools/ui_font.py`.
+[tools/data/fonts/OFL.txt](tools/data/fonts/OFL.txt)), drawn into `src/core/tmst_ui_font_data.c` by `tools/ui_font.py` (in the repository, not in the release ZIPs).
 The Tekken 2 Remake's backgrounds (`tools/data/t2-remake-patches/`) are painted over Tekken 2's panoramas; they are
 kept as patches mixed with a key made from the Tekken 2 disc's own data, so they open only with your disc.

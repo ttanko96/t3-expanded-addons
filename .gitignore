@@ -1,5 +1,7 @@
 ﻿# out-of-tree developer builds (dev shim)
 /dev/build/
+# the release export (platform ZIPs): the developer's own tool, stays local
+/dev/export.py
 /docs/INVENTORY.md
 /docs/API_GAPS.md
 /docs/cutscene_recipe.md
