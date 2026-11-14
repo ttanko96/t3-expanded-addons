@@ -299,6 +299,11 @@ class TournamentTest(unittest.TestCase):
             self.assertEqual(got[k][:2], (kinds[kind], stage), k)
         self.assertEqual(self.option_stages(['nobody']), {'nobody': (self.NONE, -1, -1)})
 
+    # RANDOM's Tekken 2 lot for Tekken 3's newcomers (issue #11, the user's list, 2026-11-14)
+    RANDOM_T2 = {'xiaoyu': 1, 'panda': 1, 'jin': 2, 'bryan': 3, 'mokujin': 7, 'tetsujin': 7, 'gunjack': 8,
+                 'drb': 8, 'gon': 17, 'eddy': 17, 'tiger': 17, 'julia': 19, 'hwoarang': 20, 'ogre': 22,
+                 'trueogre': 22, 'unknown': 22}
+
     def test_option_stages_school(self):
         got = self.option_stages(['xiaoyu', 'jin', 'paul', 'panda'], 1)
         self.assertEqual(got['xiaoyu'][:2], (self.T3, 7))
@@ -309,10 +314,18 @@ class TournamentTest(unittest.TestCase):
     def test_option_random_pool(self):
         got = self.option_stages(STOCK + GUESTS)
         for k, (kind, stage, lot) in got.items():
-            # RANDOM's Tekken 2 lot: exactly Tekken 2's fighters, on their own Tekken 2 stage
-            self.assertEqual(lot, stage if kind == self.T2 else -1, k)
+            # RANDOM's Tekken 2 lot: Tekken 2's fighters on their own Tekken 2 stage,
+            # Tekken 3's newcomers on the user's list (issue #11, 2026-11-14)
+            self.assertEqual(lot, stage if kind == self.T2 else self.RANDOM_T2.get(k, -1), k)
         self.assertEqual(got['paul'][2], 3)
-        self.assertEqual(got['panda'][2], -1)
+        self.assertEqual(got['panda'][2], 1)
+        self.assertEqual(got['roger'][2], 17)
+        # every stock fighter and guest has a lot (the user's lists, 2026-11-14)
+        for k, (kind, stage, lot) in got.items(): self.assertGreaterEqual(lot, 0, k)
+        # the school outfit: T3 or TTT only
+        school = self.option_stages(['xiaoyu', 'jin', 'paul', 'panda'], 1)
+        self.assertEqual((school['xiaoyu'][2], school['jin'][2]), (-1, -1))
+        self.assertEqual((school['paul'][2], school['panda'][2]), (3, 1))
         # the T2 tournament's stages are the option's
         for k, v in self.stages(1, STOCK + GUESTS).items():
             if v[0] == self.T2: self.assertEqual(got[k][:2], v, k)
