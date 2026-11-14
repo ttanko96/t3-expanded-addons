@@ -40,8 +40,10 @@ const char *tmst_t2_stage_music(int stage, int arcade);
  * Xiaoyu or Jin in the school outfit, Tekken 3's arena 7. */
 int tmst_option_t2_stage(const char *key, int school, int *stage);
 /* STAGES = RANDOM's Tekken 2 lot: 1 and the fighter's Tekken 2 stage when it
- * was in Tekken 2 (its pool then T3, TTT and T2, one chance in three each). */
-int tmst_random_t2_stage(const char *key, int *stage);
+ * was in Tekken 2, or a Tekken 3 newcomer's of the user's list (issue #11);
+ * its pool then T3, TTT and T2, one chance in three each. None for Xiaoyu and
+ * Jin in the school outfit (`school`). */
+int tmst_random_t2_stage(const char *key, int school, int *stage);
 
 #ifdef __cplusplus
 }

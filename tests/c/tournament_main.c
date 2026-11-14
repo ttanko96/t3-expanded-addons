@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     if (argc >= 4 && !strcmp(argv[1], "option-stage")) {
         for (int i = 3; i < argc; i++) {
             int stage, t2, kind = tmst_option_t2_stage(argv[i], atoi(argv[2]), &stage);
-            int lot = tmst_random_t2_stage(argv[i], &t2) ? t2 : -1;
+            int lot = tmst_random_t2_stage(argv[i], atoi(argv[2]), &t2) ? t2 : -1;
             printf("%s %d %d %d\n", argv[i], kind, stage, lot);
         }
         return 0;

@@ -823,7 +823,9 @@ int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stag
  * Team Battle) gets its stage of the user's list (tmst_option_t2_stage): a
  * Tekken 2 fighter its Tekken 2 stage, the others their Tekken 3 arena or
  * TTT stage. RANDOM: a Tekken 2 fighter's pool is T3, TTT and its Tekken 2
- * stage, one chance in three each; the Expanded draws the two others. The
+ * stage, one chance in three each; the Expanded draws the two others. Tekken
+ * 3's newcomers have a Tekken 2 lot too (the user's list), not in the school
+ * outfit (tmst_random_t2_stage). The
  * STAGE line of VS and Practice and the tournaments decide first. A Continue
  * keeps the stage. A Tekken 2 stage plays its own music, as from the STAGE
  * line (tmst_tekken2_fight_music). */
@@ -928,7 +930,7 @@ void __wrap_tekken3_stage_source_decide(unsigned mode, int player, const char *g
     opt_continuing = 0;
     if (again) { kind = opt_kind; stage = opt_stage; }
     else if (t2) kind = tmst_option_t2_stage(key, !guest && arena == SCHOOL_ARENA, &stage);
-    else if (tmst_random_t2_stage(key, &stage) && pick(3) == 0) kind = TMST_TSTAGE_T2;
+    else if (tmst_random_t2_stage(key, !guest && arena == SCHOOL_ARENA, &stage) && pick(3) == 0) kind = TMST_TSTAGE_T2;
     else stage = -1;
     opt_last_mode = (int)mode; opt_kind = kind; opt_stage = stage;
     tmst_log("tekken2: mode %u, P%d's %s decides, STAGES %s -> %s %d%s", mode, player + 1, key ? key : "-",

@@ -126,7 +126,19 @@ int tmst_option_t2_stage(const char *key, int school, int *stage) {
     if ((s = home(option_ttt, key)) >= 0) { *stage = s; return TMST_TSTAGE_TTT; }
     return TMST_TSTAGE_NONE;
 }
-int tmst_random_t2_stage(const char *key, int *stage) {
-    *stage = key ? home(tekken2, key) : -1;
+/* RANDOM's Tekken 2 lot for Tekken 3's newcomers (issue #11, the user's list,
+ * 2026-11-14): their T3 and TTT stages are the same place, so without a lot
+ * RANDOM gave them their default only. Not for the TEKKEN 2 value. */
+static const Home random_t2[] = {
+    {"xiaoyu", 1}, {"panda", 1}, {"jin", 2}, {"bryan", 3}, {"mokujin", 7}, {"tetsujin", 7}, {"gunjack", 8},
+    {"drb", 8}, {"gon", 17}, {"eddy", 17}, {"tiger", 17}, {"julia", 19}, {"hwoarang", 20}, {"ogre", 22},
+    {"trueogre", 22}, {"unknown", 22}, {NULL, -1}};
+
+int tmst_random_t2_stage(const char *key, int school, int *stage) {
+    *stage = -1;
+    if (!key) return 0;
+    /* the school outfit: T3 or TTT only (the user, 2026-11-14) */
+    if (school && (!strcmp(key, "xiaoyu") || !strcmp(key, "jin"))) return 0;
+    if ((*stage = home(tekken2, key)) < 0) *stage = home(random_t2, key);
     return *stage >= 0;
 }
