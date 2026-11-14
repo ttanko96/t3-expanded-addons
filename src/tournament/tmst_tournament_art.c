@@ -259,7 +259,10 @@ int art_text(const char *s, int x, int y, int align, int scale, uint32_t colour)
 
 /* ---- faces ---- */
 enum { FACES = 72, KEY = 24 };
-static struct { char key[KEY]; ArtImage icon, portrait; int cache_tried, guest_tried; } faces[FACES];
+/* icon / portrait: the grid's, the loading screen's (or a guest's .jui and
+ * HD files); hd_icon / hd_portrait: a stock fighter's HD faces of the
+ * Expanded 1.5.1 (art_load_stock_hd), drawn in their place. */
+static struct { char key[KEY]; ArtImage icon, portrait, hd_icon, hd_portrait; int cache_tried, guest_tried, stock_tried; } faces[FACES];
 static int face_count;
 static int face_slot(const char *key, int make) {
     for (int i = 0; i < face_count; i++) if (!strcmp(faces[i].key, key)) return i;
@@ -274,12 +277,20 @@ static void cache_path(const char *key, char *out, size_t size) {
 enum { KEY_COLOUR = 0xff00ff };                            /* see-through in the cache's RGB files */
 const ArtImage *art_icon(const char *key) {
     int i = key ? face_slot(key, 0) : -1;
+    if (i >= 0 && faces[i].hd_icon.px) return &faces[i].hd_icon;
     if (i >= 0 && faces[i].icon.px) return &faces[i].icon;
     /* True Ogre has no cell on the grid: Ogre's icon stands in (his own VS
      * portrait, once a loading screen has shown it, comes first anyway). */
     return key && !strcmp(key, "trueogre") ? art_icon("ogre") : NULL;
 }
 const ArtImage *art_portrait(const char *key) {
+    int i = key ? face_slot(key, 0) : -1;
+    if (i >= 0 && faces[i].hd_portrait.px) return &faces[i].hd_portrait;
+    return art_portrait_cached(key);
+}
+/* The loading screen's portrait as kept (the cache), never the HD one: what
+ * the loading screen's own read is checked against. */
+const ArtImage *art_portrait_cached(const char *key) {
     int i = key ? face_slot(key, 1) : -1;
     if (i < 0) return NULL;
     if (!faces[i].portrait.px && !faces[i].cache_tried) {
@@ -370,9 +381,35 @@ static int jui_path(const char *key, char *path, size_t size) { return guest_pat
  * one of the .jui is it squeezed, in 64 colours a band); raw 15-bit texels,
  * 0 see-through. 0 when missing or not of that size (the .jui's stays). */
 enum { HD_TILE_W = 64, HD_TILE_H = 116, HD_PORTRAIT_W = 168, HD_PORTRAIT_H = 252 };
+static int raw_image(const char *path, int w, int h, ArtImage *out);
 static int hd_image(const char *key, const char *suffix, int w, int h, ArtImage *out) {
     char path[4400];
-    if (!guest_path(key, suffix, path, sizeof path)) return 0;
+    return guest_path(key, suffix, path, sizeof path) && raw_image(path, w, h, out);
+}
+/* The Expanded 1.5.1's stock faces (B186, src/tekken3_ttt1_roster.c
+ * t3_faces_load): face-NN-tile-hd.bin (64 x 116) and face-NN-portrait-hd.bin
+ * (168 x 252), NN the fighter's ID, beside the Tekken 3 arcade stage packs
+ * (tekken3_arcade_stages_dir, weak: absent before 1.5.1, then none used).
+ * Made by its setup from tekken3.zip; none for Gon, Anna, Dr. B (the
+ * grid's and the loading screen's pictures stay theirs). */
+extern const char *tekken3_arcade_stages_dir(void) __attribute__((weak));
+void art_load_stock_hd(const char *key, unsigned id) {
+    int i = face_slot(key, 1);
+    const char *dir = tekken3_arcade_stages_dir ? tekken3_arcade_stages_dir() : NULL;
+    if (i < 0 || faces[i].stock_tried || !dir) return;
+    faces[i].stock_tried = 1;
+    char path[4400];
+    snprintf(path, sizeof path, "%s/face-%02u-tile-hd.bin", dir, id);
+    int tile = raw_image(path, HD_TILE_W, HD_TILE_H, &faces[i].hd_icon);
+    snprintf(path, sizeof path, "%s/face-%02u-portrait-hd.bin", dir, id);
+    int portrait = raw_image(path, HD_PORTRAIT_W, HD_PORTRAIT_H, &faces[i].hd_portrait);
+    if (tile || portrait)
+        tmst_log("tournament: %s's stock HD %s%s%s", key, tile ? "tile" : "", tile && portrait ? " and " : "",
+                 portrait ? "portrait" : "");
+}
+/* A raw file of w x h 15-bit texels (0 see-through); 0 when missing (quietly)
+ * or not of that size. */
+static int raw_image(const char *path, int w, int h, ArtImage *out) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     size_t n = (size_t)w * (size_t)h;

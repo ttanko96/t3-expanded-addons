@@ -61,8 +61,14 @@ int art_text_width(const char *s, int scale);
 /* The icon (32 x 58 units) and the VS portrait of a roster key, or NULL. */
 const ArtImage *art_icon(const char *key);
 const ArtImage *art_portrait(const char *key);
+/* The loading screen's kept portrait (never the stock HD one), or NULL. */
+const ArtImage *art_portrait_cached(const char *key);
 /* A guest's from its .jui (the name of the file's key, as tekken3_guest_key). */
 void art_load_guest(const char *key);
+/* A stock fighter's (ID 0..20) HD tile and portrait of the Expanded 1.5.1,
+ * where its setup made them: drawn in place of the grid's and the loading
+ * screen's. Nothing before 1.5.1. */
+void art_load_stock_hd(const char *key, unsigned id);
 /* Texels of the lower VRAM as a picture: the texture page word (E1's bits
  * 0..8), the palette word, u, v, w x h; colour 0 is see-through. */
 int art_read_texture(uint32_t tpage, uint32_t clut, int u, int v, int w, int h, ArtImage *out);

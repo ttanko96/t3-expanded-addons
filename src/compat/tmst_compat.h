@@ -37,8 +37,11 @@ int tmst_compat_roster_hd_area(int x, int y, int w, int h);
 int tmst_compat_roster_hd_write(int x, int y, int w, int h);
 /* Nonzero when the roster draws HD faces at all: the runtime has the
  * substitutes and mods/ttt1 holds at least one <Key>-T3-tile-hd.bin (looked
- * for once). */
+ * for once), or the Expanded 1.5.1 on (the stock fighters' always). */
 int tmst_compat_roster_hd_present(void);
+/* Nonzero on the Expanded 1.5.1 on, whose roster draws the stock fighters'
+ * HD tiles too (the whole second row and a row at y 768 from x 384). */
+int tmst_compat_stock_hd(void);
 /* The upper half's pixels of a rectangle (y 512..1023) into `out` (w x h);
  * 0 when this runtime cannot read them back (gpu_high_vram_pixels). */
 int tmst_compat_high_vram_read(int x, int y, int w, int h, uint16_t *out);
