@@ -197,7 +197,7 @@ head, looking the way the body faces.
 The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
 experimental). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), the
 add-on's ZIP for your platform from the [latest release](https://github.com/ttanko96/t3-expanded-addons/releases/latest)
-(`tmst-<version>-windows.zip`, `-macos.zip` or `-linux.zip`; or `git clone` this repository) and about 1 GB of free
+(`TMST-<version>-Windows.zip`, `-macOS.zip` or `-Linux.zip`; or `git clone` this repository) and about 1 GB of free
 space: the Jukebox's music takes it in `addons/tmst/workspace/`
 (Tekken 1 and 2 about 320 MB, TTT about 280 MB, Tekken 5 DR about 210 MB; Tekken 1, 2, TTT console and Tekken 5 DR
 keep the games' own ADPCM, which the Jukebox decodes as it plays).
@@ -228,7 +228,7 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
 
 1. **Close the game.** A running game cannot be rebuilt.
 2. **Put the add-on in place**, exactly at `C:\<your_folder>\tekken3-expanded\addons\tmst\`: extract
-   `tmst-<version>-windows.zip` into `C:\<your_folder>\tekken3-expanded\addons\` (it holds the `tmst` folder;
+   `TMST-<version>-Windows.zip` into `C:\<your_folder>\tekken3-expanded\addons\` (it holds the `tmst` folder;
    `addons\tmst\addon.cmake` must exist). Or with git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git "C:\<your_folder>\tekken3-expanded\addons\tmst"
@@ -261,7 +261,7 @@ setup window, `brew install python-tk@3.13`). Below, `~/<your_folder>/tekken3-ex
 
 1. **Close the game.**
 2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`: extract
-   `tmst-<version>-macos.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
+   `TMST-<version>-macOS.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
    git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
@@ -282,7 +282,7 @@ needed). Below, `~/<your_folder>/tekken3-expanded` is the Expanded's folder.
 
 1. **Close the game.**
 2. **Put the add-on in place**, exactly at `~/<your_folder>/tekken3-expanded/addons/tmst/`: extract
-   `tmst-<version>-linux.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
+   `TMST-<version>-Linux.zip` into `~/<your_folder>/tekken3-expanded/addons/` (it holds the `tmst` folder). Or with
    git:
    ```bash
    git clone https://github.com/ttanko96/t3-expanded-addons.git ~/<your_folder>/tekken3-expanded/addons/tmst
