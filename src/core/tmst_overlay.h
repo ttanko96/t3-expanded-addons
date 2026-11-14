@@ -50,10 +50,13 @@ enum {
      * faces (1.5.0 on, the faces installed: tmst_compat_roster_hd_present),
      * the picture leaves their places in the upper half free: it is
      * narrowed to TMST_OVERLAY_ROOM_W texels (its height kept) and put in
-     * two bands around them. Without them, as any other picture. */
+     * two bands around them. Without them, as any other picture. On the
+     * Expanded 1.5.1 (the stock fighters' HD tiles too: fewer free places)
+     * narrowed to TMST_OVERLAY_ROOM_W_151, for the Team Battle grid (no big
+     * portraits: the Jukebox's and Tournament Mode's). */
     TMST_OVERLAY_ROOM_FOR_HD = 8
 };
-enum { TMST_OVERLAY_ROOM_W = 576 };
+enum { TMST_OVERLAY_ROOM_W = 576, TMST_OVERLAY_ROOM_W_151 = 384 };
 
 /* Shows `argb` (w x h texels, copied) from the next frame on, until hidden,
  * on the screen rectangle (x, y, dw, dh); dw x dh = w x h draws it 1:1.
