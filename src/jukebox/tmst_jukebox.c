@@ -1242,6 +1242,10 @@ static void mix(int16_t *out, int frames, int audible, int gain) {
     int cur = (int16_t)psx_mod_read_half(M_CUR), state = psx_mod_read_half(M_STATE);
     if (cur != fight_id || (state != 2 && state != 3)) {
         if (!fight_seen) return;                          /* not started yet */
+        /* Ours starting again (state 1), from the resume point a stop kept:
+         * Mokujin's style loading between rounds (issue #15). Ours waits;
+         * stopping here unmuted the stand-in (the select screen's music). */
+        if (cur == fight_id && state == 1) return;
         /* Stopped keeping a resume point (0x8006B54C(1)): ours waits with it. */
         int kept = cur < 0 && (int32_t)psx_mod_read_word(M_RESUME) == fight_id && (int32_t)psx_mod_read_word(M_RESUME_AT) > 0;
         if (kept) { if (!fight_paused) { fight_paused = 1; tmst_log("jukebox: %s paused with the game's music", fight.what); } return; }
@@ -1255,7 +1259,10 @@ static void mix(int16_t *out, int frames, int audible, int gain) {
         fight_waiting = 1;
         tmst_log("jukebox: %s plays %s", fight_choice.key, fight.what);
     }
-    if (fight_paused) fight_waiting = 1;                  /* resumed: audible again with the game's */
+    if (fight_paused) {                                   /* resumed: audible again with the game's */
+        fight_waiting = 1;
+        tmst_log("jukebox: %s goes on with the game's music", fight.what);
+    }
     fight_seen = 1; fight_paused = 0;
     if (fight_waiting) {
         if ((int16_t)psx_mod_read_half(M_AUDIBLE) != 1) return;   /* the game's not audible yet */
