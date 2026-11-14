@@ -43,6 +43,7 @@ class SetupTest(unittest.TestCase):
         names = [s.__name__ for s in tmst_setup.STEPS]
         self.assertEqual(names[:2], ['python_packages', 'tekken2_disc'])
         self.assertLess(names.index('tekken2_music'), names.index('jukebox_titles'))
+        self.assertLess(names.index('tekken5dr_music'), names.index('jukebox_titles'))
         self.assertIn('tekken2_stages', names)
         self.assertLess(names.index('tekken2_stages'), names.index('tekken2_remake_pictures'))
         self.assertLess(names.index('tekken2_remake_pictures'), names.index('tekken2_remake_stages'))
