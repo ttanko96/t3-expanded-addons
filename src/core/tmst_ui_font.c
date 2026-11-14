@@ -4,7 +4,7 @@
 
 /* The next character of UTF-8 text (0 at its end); a broken sequence is one
  * byte that reads as 0xFFFD. */
-static unsigned next_code(const char **p) {
+unsigned tmst_ui_next_code(const char **p) {
     const unsigned char *s = (const unsigned char *)*p;
     unsigned c = s[0];
     if (!c) return 0;
@@ -28,10 +28,18 @@ static const TmstUiGlyph *find(const TmstUiFace *f, unsigned code) {
     }
     return NULL;
 }
-static const TmstUiGlyph *glyph(const TmstUiFace *f, unsigned code) {
+const TmstUiGlyph *tmst_ui_glyph(const TmstUiFace *f, unsigned code) {
     if (code == 0xA0) code = ' ';
     const TmstUiGlyph *g = find(f, code);
-    return g ? g : find(f, '?');
+    if (g) return g;
+    unsigned plain = 0;
+    if (code >= 0xA0 && code < 0xA0 + sizeof tmst_ui_fold_latin) plain = (unsigned char)tmst_ui_fold_latin[code - 0xA0];
+    else if (code == 0x2013 || code == 0x2014) plain = '-';
+    else if (code == 0x2018 || code == 0x2019) plain = '\'';
+    else if (code == 0x201C || code == 0x201D) plain = '"';
+    else if (code == 0x2022) plain = '*';
+    if (plain && (g = find(f, plain)) != NULL) return g;
+    return find(f, '?');
 }
 
 void tmst_fill_argb(uint32_t *dst, int w, int h, int x, int y, int rw, int rh, uint32_t argb) {
@@ -42,7 +50,7 @@ void tmst_fill_argb(uint32_t *dst, int w, int h, int x, int y, int rw, int rh, u
 int tmst_ui_width(const TmstUiFace *f, const char *text) {
     int pen = 0;
     unsigned c;
-    if (text) while ((c = next_code(&text)) != 0) pen += glyph(f, c)->advance;
+    if (text) while ((c = tmst_ui_next_code(&text)) != 0) pen += tmst_ui_glyph(f, c)->advance;
     return (pen + 32) >> 6;
 }
 
@@ -60,8 +68,8 @@ int tmst_ui_text_argb(uint32_t *dst, int w, int h, int x, int y, const TmstUiFac
     int pen = 0, base = y + f->cap;
     unsigned c;
     if (!text) return 0;
-    while ((c = next_code(&text)) != 0) {
-        const TmstUiGlyph *g = glyph(f, c);
+    while ((c = tmst_ui_next_code(&text)) != 0) {
+        const TmstUiGlyph *g = tmst_ui_glyph(f, c);
         int gx = x + ((pen + 32) >> 6) + g->left, gy = base + g->top, stride = (g->w + 1) / 2;
         for (int r = 0; r < g->h; r++) {
             int py = gy + r;
@@ -86,8 +94,8 @@ int tmst_ui_text_scaled(uint32_t *dst, int w, int h, double x, double y, double 
     int pen = 0;
     unsigned c;
     if (!text || sx <= 0 || sy <= 0) return 0;
-    while ((c = next_code(&text)) != 0) {
-        const TmstUiGlyph *g = glyph(f, c);
+    while ((c = tmst_ui_next_code(&text)) != 0) {
+        const TmstUiGlyph *g = tmst_ui_glyph(f, c);
         double gx = x + (pen / 64.0 + g->left) * sx, gy = y + (f->cap + g->top) * sy;
         int x0 = (int)gx, x1 = (int)(gx + g->w * sx) + 1, y0 = (int)gy, y1 = (int)(gy + g->h * sy) + 1, stride = (g->w + 1) / 2;
         for (int py = y0 < 0 ? 0 : y0; py < y1 && py < h; py++)
@@ -122,8 +130,8 @@ void tmst_ui_fit(const TmstUiFace *f, const char *text, int max_w, char *out, si
     int room = max_w - tmst_ui_width(f, dots), pen = 0;
     const char *p = out, *cut = out;
     unsigned c;
-    while ((c = next_code(&p)) != 0) {
-        pen += glyph(f, c)->advance;
+    while ((c = tmst_ui_next_code(&p)) != 0) {
+        pen += tmst_ui_glyph(f, c)->advance;
         if ((pen + 32) >> 6 > room) break;
         cut = p;
     }
@@ -139,7 +147,7 @@ void tmst_ui_copy(const char *in, char *out, size_t size) {
     const char *p = in ? in : "";
     while (*p) {
         const char *at = p;
-        unsigned c = next_code(&p);
+        unsigned c = tmst_ui_next_code(&p);
         size_t n = (size_t)(p - at);
         if (c < 32 || c == 0x7F || c == 0xFFFD) { at = " "; n = 1; }
         if (o + n + 1 > size) break;
