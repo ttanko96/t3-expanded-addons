@@ -5,13 +5,13 @@
 # this folder.
 
 set(TMST_ID "tmst")
-set(TMST_VERSION "0.3.0")
+set(TMST_VERSION "1.0.0")
 # The Expanded's setup rebuilds when this file changes: bump the version at
 # every update.
 # Expanded releases this add-on was tested with (docs/COMPAT.md). Another
 # release still builds and runs: the add-on detects features, not versions,
 # and only notes the release as untested in the log.
-set(TMST_TESTED_WITH "v1.4.1")
+set(TMST_TESTED_WITH "v1.4.1 v1.5.0")
 
 # C sources linked into the game (psx-runtime).
 set(TMST_SOURCES
