@@ -34,6 +34,7 @@ STEP_TEXT = {
     'tekken2_remake_stages': ('Building the Tekken 2 Remake stages', 'From your Tekken 2 disc and tekken3.zip: the remade stages. A few minutes.'),
     'ttt_ps2_music': ('Making the Jukebox’s TTT console music', 'From the TTT PS2 music the Expanded’s setup imported. The first time takes a minute.'),
     'ttt_arcade_music': ('Making the Jukebox’s TTT arcade music', 'Rendered from tektagt.zip’s music with the Expanded’s compiler.'),
+    'tekken5dr_music': ('Making the Jukebox’s Tekken 5 DR music', 'From the Dark Resurrection ISO the Expanded’s setup was given.'),
     'jukebox_titles': ('Updating the Jukebox’s title lists', ''),
     'tekken3_portraits': ('Taking the Tekken 3 portraits', 'Tournament Mode’s pictures of the Tekken 3 fighters, from your Tekken 3 disc.'),
 }

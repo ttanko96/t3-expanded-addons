@@ -26,6 +26,13 @@
  *                      mods/ttt-ps2-music (tools/ttt_ps2_music.py); Arcade
  *                      the 14 arcade stage pieces it renders from
  *                      mods/ttt-music's C352 writes (tools/ttt_arcade_music.py)
+ *   TEKKEN 5 DR        addons/tmst/workspace/t5dr-music/*.bgm, the music of
+ *                      the Dark Resurrection PSP ISO the Expanded's setup was
+ *                      given, taken out by the add-on's setup (tools/tekken5dr_music.py)
+ *
+ * A .bgm is the frames themselves ('T3BGM001'), the game's own PS-ADPCM
+ * ('T3ADP001': TTT CONSOLE, TEKKEN 5 DR) or a disc's XA audio ('T3XA0001',
+ * 37 800 Hz: TEKKEN 1 and 2), both decoded as they play (src/jukebox/tmst_adpcm.c).
  *
  * Titles: addons/tmst/workspace/jukebox/<category>.txt ("file = title"; the setup
  * writes the defaults, the player may edit them; "--disable" in a title
@@ -55,6 +62,7 @@
 #include "tmst_music.h"
 #include "tmst_spu.h"
 #include "tmst_files.h"
+#include "tmst_adpcm.h"
 #include "mod_plugins.h"
 #include "memcard.h"
 #include "psx_sdl.h"
@@ -94,7 +102,7 @@ enum { SCREEN = 0x800ae204, PHASE = 0x800ae224, MODE = 0x800afa88, TEAM_BATTLE =
        /* The disc's XA decodes to RMS 5 900..10 800 (xa 2, 9, 21, 29, 35,
         * measured 2026-10-19); the game plays its music at RMS 3 912. */
        DISC_LEVEL = 5000 };
-#define CATS 8
+#define CATS 9
 enum { B_SELECT = TMST_PAD_SELECT, B_START = TMST_PAD_START, B_UP = TMST_PAD_UP, B_RIGHT = TMST_PAD_RIGHT,
        B_DOWN = TMST_PAD_DOWN, B_LEFT = TMST_PAD_LEFT, B_L2 = TMST_PAD_L2, B_R2 = TMST_PAD_R2,
        B_TRIANGLE = TMST_PAD_TRIANGLE, B_CIRCLE = TMST_PAD_CIRCLE, B_CROSS = TMST_PAD_CROSS, B_SQUARE = TMST_PAD_SQUARE };
@@ -164,6 +172,7 @@ typedef struct {
 #define T2_ARCADE "addons/tmst/workspace/t2-music/arcade"
 #define TTT_CONSOLE "addons/tmst/workspace/ttt-music/console"
 #define TTT_ARCADE "addons/tmst/workspace/ttt-music/arcade"
+#define T5DR "addons/tmst/workspace/t5dr-music"
 static Category cats[CATS] = {
     {"t1-console", "TEKKEN 1 CONSOLE", "tekken1-console.txt", {T2_CONSOLE, NULL}, -1, 1},
     {"t1-arcade", "TEKKEN 1 ARCADE", "tekken1-arcade.txt", {T2_ARCADE, NULL}, -1, 1},
@@ -173,6 +182,7 @@ static Category cats[CATS] = {
     {"t3-arcade", "TEKKEN 3 ARCADE", "tekken3-arcade.txt", {NULL, NULL}, 1, 0},
     {"ttt-console", "TEKKEN TAG TOURNAMENT CONSOLE", "ttt-console.txt", {TTT_CONSOLE, NULL}, -1, 0},
     {"ttt-arcade", "TEKKEN TAG TOURNAMENT ARCADE", "ttt-arcade.txt", {TTT_ARCADE, NULL}, -1, 0},
+    {"t5dr", "TEKKEN 5 DR", "tekken5-dr.txt", {T5DR, NULL}, -1, 0},
 };
 /* TEKKEN 1 and 2 are Tekken 2 Content's Music (tmst.tekken2): only while it is on. */
 static int category_on(const Category *c) {
@@ -470,6 +480,7 @@ typedef struct {
     int kind;                                 /* 0 none, else the SRC_ + 1 */
     char what[NAME + 16];
     FILE *f; uint32_t frames, loop, pos;      /* a .bgm pack */
+    int adpcm; TmstAdpcm adp; TmstXaPack xap; /* ... of ADPCM, 1, or XA, 2 (tmst_adpcm.h) */
     int16_t buf[2048 * 2]; unsigned buf_n, buf_at;
     XaEntry xa; uint32_t sector; int stereo, rate; int32_t hist[2][2];   /* XA */
     int16_t cur[2016 * 2]; int cur_n; int16_t prev[2]; uint32_t step, frac; int at;
@@ -480,7 +491,7 @@ static Stream preview, fight;
 
 static void stream_close(Stream *s) {
     if (s->f) fclose(s->f);
-    s->f = NULL; s->kind = 0; s->what[0] = 0;
+    s->f = NULL; s->kind = 0; s->what[0] = 0; s->adpcm = 0;
 }
 static int file_path_of(const Category *c, const Track *t, char *out, size_t size) {
     char dir[4200];
@@ -488,13 +499,17 @@ static int file_path_of(const Category *c, const Track *t, char *out, size_t siz
 }
 static int open_file(Stream *s, const char *path) {
     FILE *f = fopen(path, "rb");
-    uint8_t head[20];
+    uint8_t head[TMST_ADPCM_HEAD];
     if (!f) return 0;
-    if (fread(head, 1, 20, f) != 20 || memcmp(head, "T3BGM001", 8) || le32(head + 8) != 44100 || !le32(head + 12) ||
-        le32(head + 16) >= le32(head + 12)) {
-        fclose(f); tmst_log("jukebox: %s is not a music pack", path); return 0;
-    }
+    int ok = fread(head, 1, 20, f) == 20;
+    int adpcm = !ok ? 0 : !memcmp(head, TMST_ADPCM_MAGIC, 8) ? 1 : !memcmp(head, TMST_XA_MAGIC, 8) ? 2 : 0;
+    if (adpcm) ok = fread(head + 20, 1, TMST_ADPCM_HEAD - 20, f) == TMST_ADPCM_HEAD - 20 &&
+                    (adpcm == 1 ? tmst_adpcm_open(&s->adp, f, head) : tmst_xa_open(&s->xap, f, head));
+    else ok = ok && !memcmp(head, "T3BGM001", 8) && le32(head + 8) == 44100 && le32(head + 12) &&
+              le32(head + 16) < le32(head + 12);
+    if (!ok) { fclose(f); tmst_log("jukebox: %s is not a music pack", path); return 0; }
     s->f = f; s->frames = le32(head + 12); s->loop = le32(head + 16); s->pos = 0; s->buf_n = s->buf_at = 0;
+    s->adpcm = adpcm;
     s->level = FILE_LEVEL; s->kind = SRC_FILE + 1;
     return 1;
 }
@@ -570,7 +585,11 @@ static int stream_frame(Stream *s, int16_t out[2]) {
     if (s->kind == SRC_FILE + 1 || s->kind == SRC_CDDA + 1) {
         if (s->buf_at >= s->buf_n) {
             s->buf_at = 0; s->buf_n = 0;
-            if (s->kind == SRC_FILE + 1) {
+            if (s->kind == SRC_FILE + 1 && s->adpcm == 2) {
+                s->buf_n = tmst_xa_fill(&s->xap, s->buf, 2048);
+            } else if (s->kind == SRC_FILE + 1 && s->adpcm) {
+                s->buf_n = tmst_adpcm_fill(&s->adp, s->buf, 2048, &s->buf_at);
+            } else if (s->kind == SRC_FILE + 1) {
                 if (s->pos >= s->frames) { s->pos = s->loop; fseek(s->f, 20 + (long)s->loop * 4, SEEK_SET); }
                 uint32_t want = s->frames - s->pos; if (want > 2048) want = 2048;
                 s->buf_n = (unsigned)fread(s->buf, 4, want, s->f); s->pos += s->buf_n;

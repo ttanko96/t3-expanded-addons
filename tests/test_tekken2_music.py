@@ -51,15 +51,16 @@ class Tekken2MusicTest(unittest.TestCase):
         self.assertEqual((music[5, 0], music[5, 1]), ((0, 70, 3), (1, 120, 0)))
 
     def test_groups_of_the_channel(self):
-        def sector(channel, fill, audio=True):
+        def sector(channel, fill, audio=True, coding=1):
             raw = bytearray(2352)
-            raw[17], raw[18] = channel, 0x64 if audio else 0x08
+            raw[17], raw[18], raw[19] = channel, 0x64 if audio else 0x08, coding
             raw[24:24 + 2304] = bytes([fill]) * 2304
             return bytes(raw)
         disc = FakeDisc(b'', {100 + 2: sector(2, 1), 100 + 10: sector(2, 2), 100 + 18: sector(5, 3),
                               100 + 26: sector(2, 4, audio=False)})
-        data = tekken2_music.groups(disc, 100, (2, 26, 2))
-        self.assertEqual(data, bytes([1]) * 2304 + bytes([2]) * 2304)
+        self.assertEqual(tekken2_music.groups(disc, 100, (2, 26, 2)), (bytes([1]) * 2304 + bytes([2]) * 2304, True))
+        disc.sectors[100 + 10] = sector(2, 2, coding=5)                     # 18 900 Hz: not kept as it is
+        self.assertFalse(tekken2_music.groups(disc, 100, (2, 26, 2))[1])
 
     def test_decode_and_write(self):
         group = bytearray(128)

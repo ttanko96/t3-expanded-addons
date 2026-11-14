@@ -27,11 +27,13 @@ Choose the music of every fighter.
     · ○ back.
 - **Categories** (console and arcade each): Tekken 1 and Tekken 2 (with **Tekken 2 Content**'s Music on, from your Tekken 2
   disc: it plays ten Tekken 1 stage themes again), Tekken 3 (the game's disc), Tekken Tag Tournament (the TTT music
-  the Expanded imported).
+  the Expanded imported), and **Tekken 5 DR** (one category: the music of the Dark Resurrection PSP ISO the
+  Expanded's setup was given).
 - In a fight the opponent's (P2's) chosen music plays, whatever stage is picked; without a choice, the game's own.
   It starts, fades and stops with the game's music (the match's end, the pause, the BGM SELECT's silence).
 - The choices are saved beside the memory card (`saves\jukebox.txt`). The track titles are plain text lists in
-  `addons\tmst\workspace\jukebox\` (`file = title` per line; `--disable` in a title leaves the track out).
+  `addons\tmst\workspace\jukebox\` (`file = title` per line; `--disable` in a title leaves the track out; the add-on's own `--disable` tracks are not even made, unless
+  the Tournament plays them).
 
 ### Photo Mode
 Free camera view during any paused match, as well as the ability to take your own custom screenshots
@@ -194,8 +196,9 @@ head, looking the way the body faces.
 
 The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
 experimental). You need a Tekken 3 Expanded that has been set up once with its own setup (the game starts), access to
-this repository and about 2.1 GB of free space: the Jukebox's decoded music takes it in `addons/tmst/workspace/`
-(Tekken 1 and 2 about 1.3 GB, TTT about 470 MB).
+this repository and about 1 GB of free space: the Jukebox's music takes it in `addons/tmst/workspace/`
+(Tekken 1 and 2 about 320 MB, TTT about 280 MB, Tekken 5 DR about 210 MB; Tekken 1, 2, TTT console and Tekken 5 DR
+keep the games' own ADPCM, which the Jukebox decodes as it plays).
 
 ### Tekken 3 Expanded 1.5.0 and later
 
@@ -236,7 +239,8 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
      - from the Tekken 2 disc: the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages (the Remake's stages take a
        few minutes the first time);
      - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
-       setup imported) and its title lists;
+       setup imported), its Tekken 5 DR music (from the Dark Resurrection ISO the Expanded's setup was given) and its
+       title lists;
      - from the Tekken 3 disc the Expanded runs: Tournament Mode's portraits of the Tekken 3 fighters;
    - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, VS Mode+, Tekken 2 Content), as the
      Expanded's setup builds it: your mod settings and game data stay.
@@ -309,14 +313,14 @@ downloads Google's Android tools, about 1 GB, into `.setup/android`).
    "C:\<your_folder>\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
    ```
 
-- **The Jukebox's music:** the Tekken 1, 2 and TTT music is left out by default (about 1.8 GB, and the phone keeps
+- **The Jukebox's music:** the Tekken 1, 2, TTT and Tekken 5 DR music is left out by default (about 800 MB, and the phone keeps
   a second copy after the install): the Jukebox then shows only the Tekken 3 disc's music. Add `--music` to put it in.
 - **Photo Mode** works, but its pictures stay in the game's private storage on the phone: they cannot be copied off
   it yet (a screenshot of the phone is the way for now).
 - The Expanded's own Build Android APK keeps building the add-on in afterwards (as Update & play does on PC; from
   Expanded 1.5.0 on it builds add-ons in by itself); `--without` builds the APK without it. Its APK has every mod
   with its pictures, stories and Jukebox lists (the build copies them under the game's `mods/tmst-data`), but never
-  the Jukebox's Tekken 1, 2 and TTT music: for that, use `Build Android APK (TMST)` with `--music`.
+  the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music: for that, use `Build Android APK (TMST)` with `--music`.
 
 ## Settings
 

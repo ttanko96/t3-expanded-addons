@@ -30,6 +30,7 @@ set(TMST_SOURCES
     src/core/tmst_files.c
     src/compat/tmst_compat.c
     src/jukebox/tmst_jukebox.c
+    src/jukebox/tmst_adpcm.c
     src/photo/tmst_photo.c
     src/photo/tmst_photo_fx.c
     src/tournament/tmst_tournament_pools.c

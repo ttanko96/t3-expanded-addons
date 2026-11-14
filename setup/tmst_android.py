@@ -3,7 +3,7 @@ APK (TMST).cmd / .command): the Expanded's own APK build
 (tools/android/make_apk.py), with the add-on built in as on PC.
 
     tmst_android.py               the APK (Tekken3Expanded.apk beside the Expanded's files)
-    tmst_android.py --music       with the Jukebox's Tekken 1, 2 and TTT music (about 1.8 GB more)
+    tmst_android.py --music       with the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music (about 800 MB more)
     tmst_android.py --install     then installs it on the phone connected by USB (adb)
     tmst_android.py --without     the APK without the add-on (the plain Expanded's)
 
@@ -43,6 +43,7 @@ DATA = (
 MUSIC = (
     'workspace/t2-music',              # TEKKEN 1 and 2 (Tekken 2 Content's Music)
     'workspace/ttt-music',             # TEKKEN TAG TOURNAMENT
+    'workspace/t5dr-music',            # TEKKEN 5 DR
 )
 
 
@@ -70,7 +71,7 @@ def addon_setup() -> None:
 
 def main() -> int:
     a = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    a.add_argument('--music', action='store_true', help="the Jukebox's Tekken 1, 2 and TTT music too (about 1.8 GB)")
+    a.add_argument('--music', action='store_true', help="the Jukebox's Tekken 1, 2, TTT and Tekken 5 DR music too (about 800 MB)")
     a.add_argument('--install', action='store_true', help='install it on the phone connected by USB (adb)')
     a.add_argument('--without', action='store_true', help='the APK without the add-on')
     a.add_argument('--out', type=Path, help='the APK file (default: the Expanded\'s Tekken3Expanded.apk)')

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Jukebox's TEKKEN TAG TOURNAMENT CONSOLE music: the 14 PS2 stage pieces
 of the Expanded's mods/ttt-ps2-music/ps2-music.ttp (made by its setup from the
-player's TTT PS2 disc, tools/ttt_stages/ps2_music_install.py), decoded into
+player's TTT PS2 disc, tools/ttt_stages/ps2_music_install.py), taken into
 addons/tmst/workspace/ttt-music/console/ps2-<stage>.bgm (run by the add-on's
 setup, setup/tmst_setup.py).
 
@@ -12,9 +12,9 @@ number, offset of its first sector, sectors, loop sector, volume (0x3FFF =
 full); each 2 048-byte sector is PS-ADPCM, 1 024 bytes left then 1 024 right,
 44 100 Hz (the Expanded's src/tekken3_ttt_music.c plays it the same way).
 
-.bgm (src/jukebox/tmst_jukebox.c): 'T3BGM001', u32 44 100, u32 frames, u32 loop
-frame, then the frames, s16 left and right. The driver's volume is applied
-here, so the pieces keep the game's levels between them.
+.bgm: an ADPCM pack (tools/adpcm_pack.py, src/jukebox/tmst_adpcm.c), the
+game's PS-ADPCM as it is, decoded by the Jukebox as it plays; the driver's
+volume is its gain, so the pieces keep the game's levels between them.
 
 The PS2 game's other music (its BGM table, SLUS_200.01 0x50CC00: 10 bytes per
 number, u16 volume at +2, u16 TEKKEN.BIN file at +6, s16 loop sector at +8,
@@ -23,8 +23,7 @@ Expanded's setup was given (.setup/last-inputs.json's ttt_disc), each read at
 its sectors and checked by sha256 (EXTRAS): ps2-embu, ps2-ending and four
 pieces ps2-bgm-NN by number. The 2 to 4 s jingles (0x17..0x1B) are left out.
 
-No pack and no disc: nothing is made (and nothing removed). Decoding is pure Python, one
-process per piece: a few seconds.
+No pack and no disc: nothing is made (and nothing removed). A few seconds.
 """
 from __future__ import annotations
 
@@ -33,19 +32,21 @@ import hashlib
 import json
 import struct
 import sys
-from array import array
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
 EXPANDED = ADDON.parents[1]                 # <expanded>/addons/tmst
+sys.path.insert(0, str(ADDON / 'tools'))
+import adpcm_pack  # noqa: E402
+import jukebox_titles  # noqa: E402
 
 # Where the Expanded keeps the pack: beside the game (its build), then its setup's own copy.
 PACKS = ['build-release/mods/ttt-ps2-music/ps2-music.ttp', 'mods/ttt-ps2-music/ps2-music.ttp',
          'workspace/ttt-stages/ps2-music-pack/ps2-music.ttp']
 OUT = 'addons/tmst/workspace/ttt-music/console'
 # Increase whenever the .bgm files this writes change: the setup makes them again.
-VERSION = 2
+VERSION = 3
 
 # PS2 BGM number -> stage (tools/ttt_stages/ps2_music_install.py's PIECES).
 STAGES = {0x09: 'paul', 0x0A: 'law', 0x0B: 'yoshimitsu', 0x0C: 'xiaoyu', 0x0D: 'hwoarang',
@@ -54,12 +55,11 @@ STAGES = {0x09: 'paul', 0x0A: 'law', 0x0B: 'yoshimitsu', 0x0C: 'xiaoyu', 0x0D: '
 SECTOR, HALF = 2048, 1024
 SECTOR_FRAMES = HALF // 16 * 28              # 1 792
 FULL = 0x3FFF
-F0, F1 = (0, 60, 115, 98, 122), (0, 0, -52, -55, -60)
 
 # The rest of the BGM table: number, name, first LBA, sectors, loop sector, volume, sha256 of the sectors.
 # 0x01 plays before a fight (the Embu, as the Expanded's tools/ps2/ttt_disc_fingerprint.py names its
 # sectors); 0x05 the name entry; 0x06 (and 0x07, the same file) the endings (tools/ps2/ttt_to_cine.py: piece 7);
-# 0x04 = 0x03. 0x02, 0x03 and 0x08 are made too, their titles --disable in data/jukebox/ttt-console.txt.
+# 0x04 = 0x03. 0x02, 0x03 and 0x08: --disable in data/jukebox/ttt-console.txt, so not made (skipped()).
 EXTRAS = [
     (0x01, 'embu', 111953, 922, 0, 13107, '41e8f65f2162f17f09d42efa0a140f957f4483f3a9f2bf7715cab94a69e4f578'),
     (0x02, 'bgm-02', 104579, 2290, 0, 10649, 'be8c0c371506fa241dfeab36ea81dcb7f4da1cc3b118fe9c5f542f7e241c05cd'),
@@ -121,31 +121,6 @@ def pieces(pack: Path) -> list[tuple[int, int, int, int, int]]:
     return out
 
 
-def decode(data: bytes, volume: int) -> array:
-    """One channel's PS-ADPCM blocks (16 bytes, 28 samples) as s16, at volume."""
-    out = array('h')
-    append = out.append
-    h0 = h1 = 0
-    # The 16 nibbles at each shift, the volume applied at the end.
-    nibbles = [[(((n << 12) ^ 0x8000) - 0x8000) >> s for n in range(16)] for s in range(13)]
-    for at in range(0, len(data), 16):
-        b = data[at]
-        shift, filt = b & 15, b >> 4
-        nib = nibbles[shift if shift <= 12 else 9]
-        f0, f1 = F0[filt if filt <= 4 else 4], F1[filt if filt <= 4 else 4]
-        for byte in data[at + 2:at + 16]:
-            for n in (byte & 15, byte >> 4):
-                v = nib[n] + ((h0 * f0 + h1 * f1 + 32) >> 6)
-                if v > 32767:
-                    v = 32767
-                elif v < -32768:
-                    v = -32768
-                h1 = h0
-                h0 = v
-                append(v * volume // FULL)
-    return out
-
-
 def convert_piece(pack: str, piece: tuple, out: str) -> str:
     number, offset, sectors, loop, volume = piece
     with open(pack, 'rb') as f:
@@ -169,35 +144,37 @@ def extra_piece(disc: str, extra: tuple, out: str) -> str | None:
 
 
 def write_piece(data: bytes, sectors: int, loop: int, volume: int, out: str) -> str:
-    left = decode(b''.join(data[s:s + HALF] for s in range(0, len(data), SECTOR)), volume)
-    right = decode(b''.join(data[s + HALF:s + SECTOR] for s in range(0, len(data), SECTOR)), volume)
-    frames = array('h', bytes(4 * len(left)))
-    frames[0::2] = left
-    frames[1::2] = right
-    if sys.byteorder != 'little':
-        frames.byteswap()
-    path = Path(out)
-    temp = path.with_name(path.name + '.new')
-    with temp.open('wb') as f:
-        f.write(b'T3BGM001' + struct.pack('<III', 44100, sectors * SECTOR_FRAMES, loop * SECTOR_FRAMES))
-        frames.tofile(f)
-    temp.replace(path)
-    return path.name
+    """The sectors as an ADPCM pack (the game's bytes; the driver's volume as its gain)."""
+    left = b''.join(data[s:s + HALF] for s in range(0, len(data), SECTOR))
+    right = b''.join(data[s + HALF:s + SECTOR] for s in range(0, len(data), SECTOR))
+    adpcm_pack.write(out, left, right, loop * SECTOR_FRAMES, volume / FULL)
+    return Path(out).name
+
+
+def skipped() -> list[str]:
+    """The pieces not made: --disable in the title list and played nowhere
+    else (tools/jukebox_titles.py's skipped())."""
+    return jukebox_titles.skipped('ttt-music/console')
 
 
 def name_of(number: int) -> str:
     return f'ps2-{STAGES.get(number, f"{number:02x}")}.bgm'
 
 
-def convert(pack: Path | None, out: Path, disc: Path | None = None, say=print) -> list[str]:
+def convert(pack: Path | None, out: Path, disc: Path | None = None, say=print, skip=None) -> list[str]:
     """Every piece of pack as out/ps2-<stage>.bgm, and EXTRAS from disc as
-    out/ps2-<name>.bgm; the names written."""
+    out/ps2-<name>.bgm, but those of skip (default skipped(), their files
+    removed); the names written."""
     out.mkdir(parents=True, exist_ok=True)
-    jobs = pieces(pack) if pack else []
+    skip = set(skipped() if skip is None else skip)
+    for name in skip:
+        (out / name).unlink(missing_ok=True)
+    jobs = [p for p in pieces(pack) if name_of(p[0]) not in skip] if pack else []
+    extras = [e for e in EXTRAS if f'ps2-{e[1]}.bgm' not in skip]
     with ProcessPoolExecutor() as pool:
         names = pool.map(convert_piece, [str(pack)] * len(jobs), jobs, [str(out / name_of(p[0])) for p in jobs])
-        extras = pool.map(extra_piece, [str(disc)] * len(EXTRAS), EXTRAS,
-                          [str(out / f'ps2-{e[1]}.bgm') for e in EXTRAS]) if disc else []
+        extras = pool.map(extra_piece, [str(disc)] * len(extras), extras,
+                          [str(out / f'ps2-{e[1]}.bgm') for e in extras]) if disc else []
         names, extras = list(names), list(extras)
     if disc and not all(extras):
         say(f'TTT PS2 music: {disc.name} is not the TTT USA disc (SLUS-20001, 1.00) expected, its other music left out')

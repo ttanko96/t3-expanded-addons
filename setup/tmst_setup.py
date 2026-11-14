@@ -70,6 +70,8 @@ def music_pack_step(music, name: str, label: str, source: str, convert) -> None:
         log(f'{label}: no pack (the Expanded setup makes it from {source}), skipped')
         return
     want = {'version': music.VERSION}
+    if hasattr(music, 'skipped'):                  # the pieces the title lists leave out
+        want['skip'] = music.skipped()
     for key, path in (('pack', pack), ('disc', disc)):
         if path:
             st = path.stat()
@@ -272,7 +274,7 @@ def tekken2_music() -> None:
     if not disc:
         log('Tekken 2 music: no Tekken 2 disc, skipped')
         return
-    want = {'version': music.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}}
+    want = {'version': music.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}, 'skip': music.skipped()}
     have = stamp('tekken2-music')
     out = ROOT / music.OUT
     if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
@@ -441,6 +443,30 @@ def ttt_arcade_music() -> None:
     music_pack_step(music, 'ttt-arcade-music', 'TTT arcade music', 'tektagt.zip', convert)
 
 
+def tekken5dr_music() -> None:
+    """The Jukebox's TEKKEN 5 DR music (tools/tekken5dr_music.py), from the
+    Dark Resurrection ISO the Expanded's setup was given: again when the ISO or
+    the tool's VERSION changed or a file is gone; nothing without the ISO."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import tekken5dr_music as music
+    iso = music.find_iso(ROOT)
+    if not iso:
+        log('Tekken 5 DR music: no Dark Resurrection ISO (the Expanded setup asks for it), skipped')
+        return
+    want = {'version': music.VERSION, 'iso': {'path': str(iso), **file_stamp(iso)}, 'skip': music.skipped()}
+    have = stamp('tekken5dr-music')
+    out = ROOT / music.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 5 DR music: taking it from the ISO')
+    try:
+        names = music.convert(iso, out, say=log)
+    except (music.IsoError, OSError) as error:
+        log(f'Tekken 5 DR music: {error}; left out')
+        return
+    save_stamp('tekken5dr-music', {'stamp': want, 'files': names})
+
+
 def tekken3_portraits() -> None:
     """Tournament Mode's portraits of the stock fighters (tools/t3_portraits.py),
     from the Tekken 3 disc the Expanded runs (game.toml), written over the
@@ -470,14 +496,16 @@ def tekken3_portraits() -> None:
 
 def jukebox_titles() -> None:
     """The Jukebox's title lists (tools/jukebox_titles.py): every run, since
-    it only adds lines for music that came since."""
+    it adds lines for music that came since, and makes a list it wrote and
+    nobody changed again when the add-on's (data/jukebox) changed."""
     sys.path.insert(0, str(ADDON / 'tools'))
     import jukebox_titles as titles
     titles.update(ROOT)
 
 
 STEPS: list = [python_packages, tekken2_disc, tekken2_music, tekken2_stages, tekken2_remake_pictures,
-               tekken2_remake_stages, ttt_ps2_music, ttt_arcade_music, jukebox_titles,   # the music first: the titles list it
+               tekken2_remake_stages, ttt_ps2_music, ttt_arcade_music, tekken5dr_music,
+               jukebox_titles,   # the music first: the titles list it
                tekken3_portraits]
 
 

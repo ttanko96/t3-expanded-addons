@@ -25,11 +25,14 @@ Which file is which (PIECES): the file names of the add-on's title lists
 (data/jukebox/tekken1|2-console|arcade.txt), each a music id of a mode, a
 fighter's (its record's music id) or one no fighter has (t2-music-NN).
 
-.bgm (src/jukebox/tmst_jukebox.c): 'T3BGM001', u32 44 100, u32 frames, u32
-loop frame (0: a piece plays whole and starts again, as the game's do), then
-the frames, s16 left and right. Decoded here, brought to 44 100 Hz (a
-Hann-windowed sinc) and to Tekken 3's music loudness (the RMS of the Jukebox's
-other packs); a CD track's silence either side is cut.
+.bgm: an XA pack (tools/adpcm_pack.py's write_xa, src/jukebox/tmst_adpcm.c),
+the track's sound groups as they are, which the Jukebox decodes and brings to
+44 100 Hz (a Hann-windowed sinc, resample()'s) as it plays, looping whole; its
+gain to Tekken 3's music loudness (the RMS of the Jukebox's other packs),
+measured here on the frames the Jukebox will play. A CD audio track (and XA
+that is not stereo 37 800 Hz) is the frames themselves ('T3BGM001', u32
+44 100, u32 frames, u32 loop frame 0, s16 left and right), a CD track's
+silence either side cut.
 
 No disc: nothing is made (and nothing removed). Pure Python with numpy (the
 Expanded's setup has it), one process per piece: a minute or two.
@@ -53,10 +56,12 @@ EXPANDED = ADDON.parents[1]                 # <expanded>/addons/tmst
 sys.path.insert(0, str(ADDON / 'tools'))
 from disc_image import DiscError, open_disc  # noqa: E402
 from tekken2_disc import REGIONS  # noqa: E402
+import adpcm_pack  # noqa: E402
+import jukebox_titles  # noqa: E402
 
 OUT = 'addons/tmst/workspace/t2-music'
 # Increase whenever the .bgm files this writes change: the setup makes them again.
-VERSION = 1
+VERSION = 2
 
 XA_FILE = 'TEKKEN2/TEKKEN2.XAS'
 XA_TABLE, XA_TRACKS = 0x1C90, 56            # the music's tracks (from 56 the films' sound)
@@ -94,6 +99,13 @@ def pieces() -> list[tuple[str, str, tuple]]:
     return out
 
 
+def skipped() -> list[str]:
+    """The pieces not made ('<folder>/<file>'): --disable in the title lists
+    and played nowhere else (tools/jukebox_titles.py's skipped())."""
+    return [f'{folder}/{name}' for folder in ('console', 'arcade')
+            for name in jukebox_titles.skipped(f't2-music/{folder}')]
+
+
 def find_disc(state: Path) -> Path | None:
     """The Tekken 2 disc the add-on's setup remembered (workspace/tekken2-disc.json), if it is still there."""
     import json
@@ -121,15 +133,18 @@ def tables(disc) -> tuple[list, dict]:
     return tracks, entries
 
 
-def groups(disc, xas: int, track: tuple) -> bytes:
-    """An XA track's sound groups: every eighth sector from its first, those of its channel."""
+def groups(disc, xas: int, track: tuple) -> tuple[bytes, bool]:
+    """An XA track's sound groups: every eighth sector from its first, those of
+    its channel; and whether they are all stereo 4-bit 37 800 Hz (coding byte 1)."""
     first, last, channel = track
     out = bytearray()
+    plain = True
     for n in range(first, last + 1, 8):
         raw = disc.raw(xas + n)
         if raw[17] == channel and raw[18] & 4:
             out += raw[24:24 + 18 * 128]
-    return bytes(out)
+            plain = plain and raw[19] & 0x3F == 1
+    return bytes(out), plain
 
 
 def decode_groups(data: bytes) -> np.ndarray:
@@ -180,10 +195,14 @@ def resample(x: np.ndarray) -> np.ndarray:
     return y
 
 
+def gain_of(pcm: np.ndarray) -> float:
+    """The gain to Tekken 3's music loudness (no frame clipped)."""
+    return min(RMS / max(1.0, float(np.sqrt((pcm ** 2).mean()))), 32767 / max(1.0, float(np.abs(pcm).max())))
+
+
 def write(path: Path, pcm: np.ndarray) -> None:
-    """A .bgm at Tekken 3's music loudness, looping whole."""
-    gain = min(RMS / max(1.0, float(np.sqrt((pcm ** 2).mean()))), 32767 / max(1.0, float(np.abs(pcm).max())))
-    frames = np.clip(np.round(pcm * gain), -32768, 32767).astype('<i2')
+    """A .bgm of the frames themselves, at Tekken 3's music loudness, looping whole."""
+    frames = np.clip(np.round(pcm * gain_of(pcm)), -32768, 32767).astype('<i2')
     temp = path.with_name(path.name + '.new')
     temp.write_bytes(b'T3BGM001' + struct.pack('<3I', RATE, len(frames), 0) + frames.tobytes())
     temp.replace(path)
@@ -202,14 +221,20 @@ def make(disc_path: str, source: tuple, out: str) -> str:
         else:
             tracks, _ = tables(disc)
             xas = disc.locate(XA_FILE)[0]
-            pcm = resample(decode_groups(groups(disc, xas, tracks[source[1]])))
+            data, plain = groups(disc, xas, tracks[source[1]])
+            pcm = resample(decode_groups(data))
+            if plain:                               # the XA as it is, its gain measured as the Jukebox plays it
+                adpcm_pack.write_xa(out, data, gain_of(pcm))
+                return Path(out).name
     write(Path(out), pcm)
     return Path(out).name
 
 
-def convert(disc: Path, out: Path, say=print, jobs: int = JOBS) -> list[str]:
-    """Every piece of PIECES as out/<folder>/<file>; the files written
-    ('<folder>/<file>'). DiscError when the disc's music is not the one known."""
+def convert(disc: Path, out: Path, say=print, jobs: int = JOBS, skip=None) -> list[str]:
+    """Every piece of PIECES as out/<folder>/<file> but those of skip (default
+    skipped(), their files removed); the files written ('<folder>/<file>').
+    DiscError when the disc's music is not the one known."""
+    skip = set(skipped() if skip is None else skip)
     with open_disc(disc) as d:
         if not d.locate(XA_FILE):
             raise DiscError(f'{disc.name} has no {XA_FILE}')
@@ -217,6 +242,9 @@ def convert(disc: Path, out: Path, say=print, jobs: int = JOBS) -> list[str]:
     # The same XA track (or CD track) is made once, then copied.
     todo: dict[tuple, list[Path]] = {}
     for folder, name, source in pieces():
+        if f'{folder}/{name}' in skip:
+            (out / folder / name).unlink(missing_ok=True)
+            continue
         if source[0] == 'xa':
             flag, _, track = music[source[1], source[2]]
             if flag or not 0 <= track < len(tracks):
