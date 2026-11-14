@@ -980,6 +980,29 @@ static void set_t2(int line, int on, unsigned player) {
     save();
 }
 
+/* The Practice's STAGE line follows the pad that picks the dummy, as the
+ * Expanded's (src/tekken3_stage_select.c practice_dummy / quick_dummy):
+ * player 1's, or player 2's when player 2 started the Practice (1.5.1, B170,
+ * GH#218: the dummy in player 1's block). 0 when no dummy waits (1.5.0:
+ * always player 1's). */
+static unsigned practice_pad(void) {
+    enum { SEL_SCREEN = 0x800ae204, SEL_PHASE = 0x800ae224, SEL_MODE = 0x800afa88, ARCADE_GRID = 9, VS_GRID = 10,
+           GRID_BLOCKS = 0x8011864c, GRID_STRIDE = 0x7c, GRID_CHOOSING = 1, GRID_CHOOSING_CPU = 3,
+           VS_BLOCKS = 0x800b8d70, VS_STRIDE = 172, QUICK_CPU = 7, QUICK_DONE = 11 };
+    unsigned screen = psx_mod_read_word(SEL_SCREEN);
+    if (psx_mod_read_word(SEL_MODE) != PRACTICE) return 0;
+    for (unsigned d = 0; d < 2; d++) {
+        if (screen == ARCADE_GRID && psx_mod_read_word(0x8010ff4c) == 0x27bdffd0 && psx_mod_read_half(SEL_PHASE) <= 1 &&
+            psx_mod_read_word(GRID_BLOCKS + d * GRID_STRIDE) == GRID_CHOOSING_CPU &&
+            psx_mod_read_word(GRID_BLOCKS + (d ^ 1) * GRID_STRIDE) != GRID_CHOOSING)
+            return d ^ 1;
+        if (screen == VS_GRID && psx_mod_read_word(VS_BLOCKS + d * VS_STRIDE) == QUICK_CPU &&
+            psx_mod_read_word(VS_BLOCKS + (d ^ 1) * VS_STRIDE) == QUICK_DONE)
+            return d ^ 1;
+    }
+    return 0;
+}
+
 uint16_t __wrap_tekken3_stage_select_input(int player, uint16_t buttons) {
     if (player < 0 || player > 1 || !psx_mod_game_started() || !ready())
         return __real_tekken3_stage_select_input(player, buttons);
@@ -991,7 +1014,8 @@ uint16_t __wrap_tekken3_stage_select_input(int player, uint16_t buttons) {
     int kind = __real_tekken3_stage_select_line(&label, &name, &arrows), line = kind - 1;
     if (!kind) on_stage[LINE_VS] = on_stage[LINE_PRACTICE] = 0;
     else their_random[line] = !strcmp(label, "GAME") && !strcmp(name, "RANDOM");
-    if (!kind || (line == LINE_PRACTICE && p)) return __real_tekken3_stage_select_input(player, buttons | kept[p]);
+    if (!kind || (line == LINE_PRACTICE && p != practice_pad()))
+        return __real_tekken3_stage_select_input(player, buttons | kept[p]);
     int game_step = !strcmp(label, "GAME"), at_default = game_step && !strcmp(name, "DEFAULT");
     if (t2[line] && !at_default) { t2[line] = on_stage[line] = 0; save(); }   /* theirs moved on */
     armed[line] = 0;

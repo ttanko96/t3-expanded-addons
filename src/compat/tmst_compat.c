@@ -51,19 +51,33 @@ unsigned tmst_compat_high_vram_generation(void) {
  * older release has neither). Fixed places, no query for them upstream:
  * slot s (18 guests, then Panda and Tiger) a 64 x 116 tile at
  * (64 * (s % 16), 512 + 116 * (s / 16)); player p's 168 x 252 portrait at
- * (192 * p, 768). */
+ * (192 * p, 768).
+ * Expanded 1.5.1 adds the stock fighters' (B186, GH#239: t3_place,
+ * t3_tiles_put): IDs 0..20 after the guests' 20 slots, the rest of the
+ * second row (12, x 256..1023), then a row of 9 at y 768 from x 384, right of
+ * the portraits. Told by tekken3_arcade_stages_dir (weak, new in 1.5.1: the
+ * folder of their files); the doubled PS1 tiles come without any file, so
+ * they are always there. */
 extern int psx_mod_gpu_sprite_hd_set(unsigned slot, unsigned page, uint32_t uv, unsigned w, unsigned h,
                                      unsigned hx, unsigned hy, unsigned hw, unsigned hh) __attribute__((weak));
+extern const char *tekken3_arcade_stages_dir(void) __attribute__((weak));
 enum { HD_TILE_W = 64, HD_TILE_H = 116, HD_COLS = 16, HD_SLOTS = 20, HD_PORTRAIT_W = 168, HD_PORTRAIT_H = 252,
-       HD_PORTRAIT_STEP = 192, HD_PORTRAIT_Y = 768 };
+       HD_PORTRAIT_STEP = 192, HD_PORTRAIT_Y = 768,
+       T3_TILES = 21, T3_ROW_X = 384, T3_ROW_Y = 768 };
+static int stock_hd(void) { return psx_mod_gpu_sprite_hd_set && tekken3_arcade_stages_dir; }
+int tmst_compat_stock_hd(void) { return stock_hd(); }
+/* Slots in the two rows from y 512: the guests' 20, with 1.5.1 the whole second row. */
+static int grid_slots(void) { return stock_hd() ? 2 * HD_COLS : HD_SLOTS; }
+static int t3_row_tiles(void) { return stock_hd() ? HD_SLOTS + T3_TILES - 2 * HD_COLS : 0; }   /* 9 */
 static int overlaps(int x, int y, int w, int h, int ax, int ay, int aw, int ah) {
     return x < ax + aw && ax < x + w && y < ay + ah && ay < y + h;
 }
 int tmst_compat_roster_hd_area(int x, int y, int w, int h) {
     if (!psx_mod_gpu_sprite_hd_set) return 0;
     return overlaps(x, y, w, h, 0, 512, HD_COLS * HD_TILE_W, HD_TILE_H) ||
-           overlaps(x, y, w, h, 0, 512 + HD_TILE_H, (HD_SLOTS - HD_COLS) * HD_TILE_W, HD_TILE_H) ||
-           overlaps(x, y, w, h, 0, HD_PORTRAIT_Y, HD_PORTRAIT_STEP + HD_PORTRAIT_W, HD_PORTRAIT_H);
+           overlaps(x, y, w, h, 0, 512 + HD_TILE_H, (grid_slots() - HD_COLS) * HD_TILE_W, HD_TILE_H) ||
+           overlaps(x, y, w, h, 0, HD_PORTRAIT_Y, HD_PORTRAIT_STEP + HD_PORTRAIT_W, HD_PORTRAIT_H) ||
+           overlaps(x, y, w, h, T3_ROW_X, T3_ROW_Y, t3_row_tiles() * HD_TILE_W, HD_TILE_H);
 }
 extern const char *tekken3_guest_key(unsigned id) __attribute__((weak));
 /* Looked for by listing mods/ttt1, else (a folder that cannot be listed:
@@ -73,7 +87,7 @@ int tmst_compat_roster_hd_present(void) {
     static int present = -1;
     if (!psx_mod_gpu_sprite_hd_set) return 0;
     if (present >= 0) return present;
-    present = 0;
+    present = stock_hd();               /* 1.5.1: the stock fighters' always */
     const char *base = SDL_GetBasePath();
     char dir[4200]; snprintf(dir, sizeof dir, "%smods/ttt1", base ? base : "./");
 #if !defined(PSX_SDL3)
@@ -103,8 +117,10 @@ int tmst_compat_roster_hd_present(void) {
 }
 int tmst_compat_roster_hd_write(int x, int y, int w, int h) {
     if (!psx_mod_gpu_sprite_hd_set) return 0;
+    if (w == HD_TILE_W && h == HD_TILE_H && y == T3_ROW_Y && x >= T3_ROW_X && (x - T3_ROW_X) % HD_TILE_W == 0)
+        return (x - T3_ROW_X) / HD_TILE_W < t3_row_tiles();
     if (w == HD_TILE_W && h == HD_TILE_H && x >= 0 && x % HD_TILE_W == 0 && y >= 512 && (y - 512) % HD_TILE_H == 0)
-        return (x / HD_TILE_W) + HD_COLS * ((y - 512) / HD_TILE_H) < HD_SLOTS;
+        return (x / HD_TILE_W) + HD_COLS * ((y - 512) / HD_TILE_H) < grid_slots();
     return w == HD_PORTRAIT_W && h == HD_PORTRAIT_H && y == HD_PORTRAIT_Y && (x == 0 || x == HD_PORTRAIT_STEP);
 }
 

@@ -159,7 +159,10 @@ static void add_fighter(const char *key, const char *name, unsigned id, unsigned
  * roster is made at the game's start). */
 static void build_roster(void) {
     if (roster_n) return;
-    for (unsigned id = 0; id < STOCK; id++) add_fighter(stock_keys[id], stock_names[id], id, 0);
+    for (unsigned id = 0; id < STOCK; id++) {
+        add_fighter(stock_keys[id], stock_names[id], id, 0);
+        art_load_stock_hd(stock_keys[id], id);       /* Expanded 1.5.1's, where made */
+    }
     add_fighter("panda", "PANDA", KUMA, 1);
     add_fighter("tiger", full_name("tiger"), EDDY, 2);
     for (unsigned id = GUEST_FIRST; tekken3_guest_key && id < GUEST_FIRST + GUEST_MAX; id++) {
@@ -383,7 +386,9 @@ static void end_tournament(const char *why) {
     mt.flow = FLOW_NONE; mt.cover = 0; mt.stalled = 0; mt.hold = 0; mt.match = mt.opponent = -1;
     tmst_overlay_backdrop(0, 0);
 }
+static void intro_new_match(void);
 static void arm_match(void) {
+    intro_new_match();
     mt.match = tmst_bracket_player_match(&bracket);
     mt.opponent = tmst_bracket_opponent(&bracket);
     if (mt.match < 0 || mt.opponent < 0) { end_tournament("no match left"); return; }
@@ -591,6 +596,11 @@ static struct {
     uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
     unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
 } intro = {.played_match = -2, .native_swap = -1};
+/* A match armed: its intro not played yet. The Grand Final is match 16 of
+ * every tournament, so a mark kept from an earlier one left the next Grand
+ * Finals of the same run without their intro (1.5.1 test: Heihachi's, then
+ * neither Devil's nor True Ogre's). */
+static void intro_new_match(void) { intro.played_match = -2; }
 static int intro_phase(int alone) {
     const char *e = getenv("TMST_BOSS_INTRO_PHASE");
     return e && *e ? atoi(e) : alone ? ALONE_PHASE : INTRO_PHASE;
@@ -1568,7 +1578,7 @@ static int vs_portraits_good(void) {
         if (!vs_read(p, &im)) { good = 0; continue; }
         /* Another costume's (or an outfit mod's) portrait is not the cached
          * one: held still, it is good too, but not cached. */
-        const ArtImage *cached = art_portrait(stock_keys[id]);
+        const ArtImage *cached = art_portrait_cached(stock_keys[id]);
         int same = cached && vs_differ(&im, cached) <= VS_SLACK;
         uint32_t sum = 2166136261u;
         for (int i = 0; i < VS_W * VS_H; i++) sum = (sum ^ im.px[i]) * 16777619u;

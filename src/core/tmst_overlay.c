@@ -57,8 +57,11 @@ static int yielded;                     /* TMST_OVERLAY_YIELD: the stage engine 
 static unsigned vram_generation;        /* the stage engine's, at our upload */
 static uint16_t kept[TMST_OVERLAY_MAX_W * TMST_OVERLAY_MAX_H];
 /* Where our picture's pixels are now (uploaded there, its place this
- * frame), held_w 0 when none: see __wrap_psx_mod_gpu_high_vram_upload. */
-static int held_x, held_y, held_w, held_h;
+ * frame): one rectangle per band (a split picture's two), held_n 0 when
+ * none; held_vx.. the place they were uploaded for. See
+ * __wrap_psx_mod_gpu_high_vram_upload. */
+static struct { int x, y, w, h; } held_r[2];
+static int held_n, held_vx, held_vy, held_pw, held_ph;
 static int own_upload;
 /* Every upload of ours into the upper half; TMST_OVERLAY_VRAM_LOG=1 logs
  * each with the game's screen and the stage engine's generation. */
@@ -81,15 +84,20 @@ static void vram_up(const char *what, int x, int y, int w, int h, const uint16_t
  * holds a place, such an upload is refused: the roster then finds its tile
  * missing and draws the cell from its own 32 x 58 tile
  * (psx_mod_gpu_sprite_hd_clear), the portrait from the 126 x 252 one, until
- * the picture is gone and it writes them again. Others' uploads pass. */
+ * the picture is gone and it writes them again. Others' uploads pass.
+ * A split picture's bands are held too (TMST_OVERLAY_ROOM_FOR_HD): on
+ * 1.5.1 they lie clear of every tile (split_151 below) but in the big
+ * portraits' copies, which the roster may write again from an earlier
+ * screen (the Team Battle grid draws no big portrait: none lost). */
 int __real_psx_mod_gpu_high_vram_upload(int x, int y, int w, int h, const uint16_t *pixels);
 int __wrap_psx_mod_gpu_high_vram_upload(int x, int y, int w, int h, const uint16_t *pixels) {
-    if (!own_upload && held_w && tmst_compat_roster_hd_write(x, y, w, h) &&
-        x < held_x + held_w && held_x < x + w && y < held_y + held_h && held_y < y + h) {
-        static int said;
-        if (!said) { said = 1; tmst_log("overlay: the TTT1 roster's HD faces stay out of the picture's place (%d,%d %dx%d)", x, y, w, h); }
-        return 0;
-    }
+    if (!own_upload && held_n && tmst_compat_roster_hd_write(x, y, w, h))
+        for (int i = 0; i < held_n; i++)
+            if (x < held_r[i].x + held_r[i].w && held_r[i].x < x + w && y < held_r[i].y + held_r[i].h && held_r[i].y < y + h) {
+                static int said;
+                if (!said) { said = 1; tmst_log("overlay: the TTT1 roster's HD faces stay out of the picture's place (%d,%d %dx%d)", x, y, w, h); }
+                return 0;
+            }
     return __real_psx_mod_gpu_high_vram_upload(x, y, w, h, pixels);
 }
 /* What the area held before our picture: one rectangle per band (bands
@@ -188,13 +196,23 @@ static void give_back_due_now(void) {
  * of texels at SPLIT0 (x 384..959, y 768..1023: right of the big portraits,
  * x 0..359), the rest at SPLIT1 (x 256..831 from y 628: under the HD tiles'
  * first row, right of their second, within one page row: at most 140 rows),
- * x 832..1023 there left to the font's sheet. */
-enum { SPLIT0_X = 384, SPLIT0_Y = 768, SPLIT1_X = 256, SPLIT1_Y = 628, SPLIT1_ROWS = 140 };
+ * x 832..1023 there left to the font's sheet.
+ * The Expanded 1.5.1 puts the stock fighters' HD tiles there (the whole
+ * second row, and x 384..959 at y 768..883): the picture is narrowed to 384
+ * and goes to x 0..383 at y 768..1023 (the big portraits' copies, which the
+ * Team Battle grid, the Jukebox's and Tournament Mode's, never shows) and
+ * x 384..767 from y 884 (under the stock tiles' row); x 768..1023 there left
+ * to the font's sheet. Each band within one page row. */
+typedef struct { int room_w, x0, y0, x1, y1, rows1; } SplitLayout;
+static const SplitLayout split_150 = {TMST_OVERLAY_ROOM_W, 384, 768, 256, 628, 140},
+                         split_151 = {TMST_OVERLAY_ROOM_W_151, 0, 768, 384, 884, 140};
+enum { SPLIT_ROWS_MAX = 140 };
+static const SplitLayout *lay = &split_150;
 static int split;
 static int bands(int b[2][4]) {                 /* {x, y, row0, rows} each; returns how many */
     if (!split) { b[0][0] = vx; b[0][1] = vy; b[0][2] = 0; b[0][3] = ph; return 1; }
-    b[0][0] = SPLIT0_X; b[0][1] = SPLIT0_Y; b[0][2] = 0; b[0][3] = ph < TILE ? ph : TILE;
-    b[1][0] = SPLIT1_X; b[1][1] = SPLIT1_Y; b[1][2] = TILE; b[1][3] = ph - TILE;
+    b[0][0] = lay->x0; b[0][1] = lay->y0; b[0][2] = 0; b[0][3] = ph < TILE ? ph : TILE;
+    b[1][0] = lay->x1; b[1][1] = lay->y1; b[1][2] = TILE; b[1][3] = ph - TILE;
     return ph > TILE ? 2 : 1;
 }
 /* Whether a split picture's bands meet the rectangle (0 for any other). */
@@ -243,12 +261,14 @@ int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, i
         return 0;
     /* Room for the roster's HD faces: narrowed (each texel the average of
      * the source's under it, colours weighted by their alpha) and split. */
-    int want_split = (flags & TMST_OVERLAY_ROOM_FOR_HD) && h > TILE && h <= TILE + SPLIT1_ROWS &&
+    const SplitLayout *want_lay = tmst_compat_stock_hd() ? &split_151 : &split_150;
+    int want_split = (flags & TMST_OVERLAY_ROOM_FOR_HD) && h > TILE && h <= TILE + want_lay->rows1 &&
                      tmst_compat_roster_hd_present();
-    if (want_split && w > TMST_OVERLAY_ROOM_W) {
-        static uint32_t narrow[TMST_OVERLAY_ROOM_W * (TILE + SPLIT1_ROWS)];
-        for (int col = 0; col < TMST_OVERLAY_ROOM_W; col++) {
-            int a0 = col * w * 256 / TMST_OVERLAY_ROOM_W, a1 = (col + 1) * w * 256 / TMST_OVERLAY_ROOM_W;  /* 1/256 texels */
+    int rw = want_lay->room_w;
+    if (want_split && w > rw) {
+        static uint32_t narrow[TMST_OVERLAY_ROOM_W * (TILE + SPLIT_ROWS_MAX)];
+        for (int col = 0; col < rw; col++) {
+            int a0 = col * w * 256 / rw, a1 = (col + 1) * w * 256 / rw;  /* 1/256 texels */
             for (int row = 0; row < h; row++) {
                 const uint32_t *src = argb + (size_t)row * (size_t)w;
                 uint32_t sa = 0, sc[3] = {0, 0, 0};
@@ -263,16 +283,17 @@ int tmst_overlay_show_scaled(const uint32_t *argb, int w, int h, int x, int y, i
                     out = (sa / span) << 24;
                     for (int k = 0; k < 3; k++) out |= (sc[k] / sa) << (16 - 8 * k);
                 }
-                narrow[row * TMST_OVERLAY_ROOM_W + col] = out;
+                narrow[row * rw + col] = out;
             }
         }
-        argb = narrow; w = TMST_OVERLAY_ROOM_W;
+        argb = narrow; w = rw;
     }
-    int changed = w != pw || h != ph || want_split != split;
+    int changed = w != pw || h != ph || want_split != split || (want_split && want_lay != lay);
     if (changed && kept_w) give_back_later();  /* a new size: a new area, at its first place */
     split = want_split;
     if (split) {
-        vx = SPLIT0_X; vy = SPLIT0_Y;
+        lay = want_lay;
+        vx = lay->x0; vy = lay->y0;
     } else if (flags & TMST_OVERLAY_BORROW) {
         int bx, by;
         borrow_place(w, h, &bx, &by);
@@ -690,7 +711,7 @@ static int find_place(void) {
  * stage engine leaves it no place (unless borrowed). */
 static void write_chain(uint32_t e1_before) {
     TmstPrims k; prims_begin(&k);
-    if (!shown) held_w = 0;
+    if (!shown) held_n = 0;
     if (drawing()) {
         /* The font's sheet only while text is drawn: asked for in the last
          * frame (the rank builder's, the builders') or this one's rank
@@ -705,7 +726,7 @@ static void write_chain(uint32_t e1_before) {
             tmst_log("overlay: the stage engine took the borrowed area, the picture yields");
         }
         int placed = shown && !yielded && (borrow || split || !tmst_compat_high_vram_taken(vx, vy, pw, ph) || find_place());
-        if (!placed) held_w = 0;
+        if (!placed) held_n = 0;
         int under = (show_flags & TMST_OVERLAY_UNDER) != 0;
         if (placed) {
             unsigned gen = tmst_compat_high_vram_generation();
@@ -722,10 +743,15 @@ static void write_chain(uint32_t e1_before) {
                 if (!kept_w || (gen != vram_generation && !borrow)) keep();
                 upload_picture();
                 dirty = 0; vram_generation = gen; uploaded_frame = frame;
-                held_x = vx; held_y = vy; held_w = pw; held_h = ph;
+                int b[2][4];
+                held_n = bands(b);
+                for (int i = 0; i < held_n; i++) {
+                    held_r[i].x = b[i][0]; held_r[i].y = b[i][1]; held_r[i].w = pw; held_r[i].h = b[i][3];
+                }
+                held_vx = vx; held_vy = vy; held_pw = pw; held_ph = ph;
             }
-            /* (a split picture is clear of the roster's places: nothing to hold) */
-            if (split || held_x != vx || held_y != vy || held_w != pw || held_h != ph) held_w = 0;
+            /* (held while uploaded for this place and size) */
+            if (held_vx != vx || held_vy != vy || held_pw != pw || held_ph != ph) held_n = 0;
             if (under) picture_prims(&k);
         }
         for (int i = 0; i < builder_count; i++) builders[i](&k);
