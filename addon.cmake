@@ -52,6 +52,7 @@ set(TMST_SOURCES
     src/tekken2/tmst_tekken2_trace.c
     src/tekken2/tmst_tekken2_anchor.c
     src/tekken2/tmst_tekken2_wireframe.c
+    src/tekken2/tmst_tekken2_bighead.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -67,6 +68,7 @@ set(TMST_WRAPS
     "gpu_ws_prepass_linked_list|src/core/tmst_overlay.c"
     "psx_mod_gpu_high_vram_upload|src/core/tmst_overlay.c"
     "psx_sdl_audio_open|src/core/tmst_audio.c"
+    "spu_write|src/tekken2/tmst_tekken2_bighead.c"
     "tekken3_ttt1_wolf_after_actor|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_ttt1_wolf_high_vram_used|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_stage_source|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
@@ -91,6 +93,7 @@ set(TMST_WRAPS
 # it (-include)". The other wraps need nothing more there.
 set(TMST_APPLE_CALLERS
     "fopen|src/tekken3_arcade_stages.c|src/compat/tmst_redirect_fopen.h"
+    "fopen|src/tekken3_ttt1_voices.c|src/compat/tmst_redirect_fopen.h"
 )
 
 # Symbols the Expanded may wrap itself (guest routines and runtime
@@ -120,6 +123,8 @@ set(TMST_CHAINS
     "func_80049848|src/tekken2/tmst_tekken2_stages.c"
     "func_80036CAC|src/tekken2/tmst_tekken2_mirror.c"
     "func_80064E10|src/tekken2/tmst_tekken2_wireframe.c"
+    "func_8003B71C|src/tekken2/tmst_tekken2_bighead.c"
+    "func_800885D8|src/tekken2/tmst_tekken2_bighead.c"
 )
 
 # Packages staged into the game's mods/packages (mods/<id>/<version>/manifest.toml).

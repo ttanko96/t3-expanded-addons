@@ -19,7 +19,10 @@
  *   Wireframe Mode src/tekken2/tmst_tekken2_wireframe.c: Tekken 2's hidden
  *          mode, the player's fighter in green lines and the camera behind
  *          its head, GAME OPTION's TEKKEN 2 WIREFRAME MODE row (asks
- *          tmst_tekken2_on too). */
+ *          tmst_tekken2_on too).
+ *   Big Head Mode src/tekken2/tmst_tekken2_bighead.c: Tekken 2's hidden
+ *          mode, big heads and hands, GAME OPTION's TEKKEN 2 BIG HEAD MODE
+ *          row, OFF / BIG / BIGGER (asks tmst_tekken2_on too). */
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "mod_plugins.h"
