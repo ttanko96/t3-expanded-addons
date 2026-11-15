@@ -191,6 +191,23 @@ head, looking the way the body faces.
 - **Left and right:** the d-pad's right always walks forward, left always back, whichever side you stand on (the
   game would judge the side from the camera, which behind the head swings); up and down as the game gives them.
 - Your fighter's shadow stays.
+- With **Big Head Mode** on too, the camera stands back as far as the head has grown.
+
+#### Big Head Mode
+Tekken 2's hidden Big Head Mode: the fighters' heads and hands grow and their arms and legs get thicker, part by part
+as Tekken 2's own table has them, and their voices sound higher. Only the look and the voices change: the hits, the
+reach and the camera stay as they are.
+- **Switching it on:** not Select held at the selector as in Tekken 2, but GAME OPTION's **TEKKEN 2 BIG HEAD MODE**
+  row (right under the Wireframe Mode's): **OFF**, **BIG** or **BIGGER**, Tekken 2's two sizes (the head 1.5 and
+  2.25 times), kept beside the memory card, in `t2-bighead.txt`. Switch the part on in the Mods tab first: without it
+  the row is not there.
+- **Who and where:** all fighters, the CPU too, TTT1 guests included, in Arcade, VS, Team Battle, Tournament, Time
+  Attack, Survival, Practice, Tekken Ball and Tekken Force (the enemies there too).
+- **The whole fight:** the entrance, the rounds, the KO, the winner's pose and the continue.
+- **Voices:** the fighters' cries sound 3 semitones higher, as Tekken 2 has them (both sizes). TTT1 guests too:
+  their voice bank is handed to the game raised, as `t2-bighead-voices.juv` beside the memory card; a change of the
+  row reaches a guest's voice from the next pick at the selector on.
+- The shadows keep their size (in Tekken 2 they grew too).
 
 ## Installation
 

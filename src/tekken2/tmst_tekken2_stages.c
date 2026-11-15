@@ -452,7 +452,15 @@ static int t3_pack(const char *path) {
 static int our_fight(void);
 static int held_wanted(void);
 
+/* Big Head Mode (src/tekken2/tmst_tekken2_bighead.c): a guest's voice bank,
+ * its samples 3 semitones up; NULL: as it is. */
+FILE *tmst_t2bh_fopen(const char *path, const char *mode) __attribute__((weak));
+
 FILE *__wrap_fopen(const char *path, const char *mode) {
+    if (tmst_t2bh_fopen) {
+        FILE *raised = tmst_t2bh_fopen(path, mode);
+        if (raised) return raised;
+    }
     int n = path && mode && mode[0] == 'r' ? t3_pack(path) : -1;
     if (n < 0) return __tmst_chain_fopen(path, mode);
     char ours[1100];

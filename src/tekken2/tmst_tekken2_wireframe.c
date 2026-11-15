@@ -93,6 +93,7 @@ static double yaw_follow, place_follow, dead_degrees;
 static unsigned frame;
 
 int tmst_tekken2_on(void);                   /* src/tekken2/tmst_tekken2.c: the package's switch */
+double tmst_t2bh_head_scale(void) __attribute__((weak));   /* src/tekken2/tmst_tekken2_bighead.c */
 
 static int bench_on(void) {
     if (bench < 0) {
@@ -148,9 +149,13 @@ static void load(void) {
 }
 
 /* GAME OPTION's row, added at the first visit of the Options screen. */
+static int row = -2;
+/* Nonzero once the row is in (or will never be: the part off), for the
+ * Big Head Mode's row to come under it (src/tekken2/tmst_tekken2_bighead.c). */
+int tmst_t2wf_row_done(void) { return !part || !tmst_tekken2_on() || row != -2; }
 static void menu(void) {
 #ifdef TMST_HAS_GAME_OPTIONS
-    static int row = -2, shown;
+    static int shown;
     if (row == -2) {
         row = tekken3_game_options_add(ROW_NAME, labels, VALUES, (unsigned)wanted, OFF, ROW_MODES);
         shown = wanted;
@@ -252,9 +257,11 @@ static void head_camera(int p, TmstCamera *c, int fresh) {
         at_z += (hz - at_z) * place_follow;
     }
     double fx = sin(at_yaw), fz = cos(at_yaw);
-    c->x = (int32_t)lround(at_x - fx * back);
-    c->y = (int32_t)lround(at_y - up);
-    c->z = (int32_t)lround(at_z - fz * back);
+    /* a grown head (Big Head Mode) keeps the camera as far, scaled with it */
+    double grown = tmst_t2bh_head_scale ? tmst_t2bh_head_scale() : 1.0;
+    c->x = (int32_t)lround(at_x - fx * back * grown);
+    c->y = (int32_t)lround(at_y - up * grown);
+    c->z = (int32_t)lround(at_z - fz * back * grown);
     double y = atan2(-fx, fz);                       /* the camera's: forward = (-sin yaw, cos yaw) */
     c->yaw = (int32_t)lround(y * TMST_TURN / TAU) & (TMST_TURN - 1);
     c->pitch = pitch_down;
