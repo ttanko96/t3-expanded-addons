@@ -2,7 +2,7 @@
 rem The TMST add-on for Tekken 3 Expanded: opens its setup window
 rem (setup\tmst_gui.py), which runs the add-on's setup and builds the game again
 rem with it. Run after the Expanded's own setup (Setup Tekken 3.cmd). Drop a
-rem Tekken 2 disc (.cue, .bin or .chd) on this file to give it. It uses the
+rem Tekken 2 or Tekken 1 disc (.cue, .bin or .chd) on this file to give it. It uses the
 rem Expanded's .setup\venv and toolchain; none of the Expanded's own files change.
 setlocal
 cd /d "%~dp0"

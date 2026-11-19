@@ -91,9 +91,27 @@
  * arena held until the fight by the tournament's VBlank
  * (tmst_stage_forced_arena; ours runs only with this part on).
  *
+ * Tekken 1 Content's Stages (tmst.tekken1.stages, the user's, 2026-11-19):
+ * Tekken 1's 11 stages through the same machinery, their packs
+ * (tools/tekken1_stages.py, numbers 50 + Tekken's stage) in
+ * mods/t1-stages/classic, our stages 23..33 here (T1_FIRST + Tekken's
+ * stage): the fight in arena 9, the pack handed over as loaded.ast, the
+ * engine's cache followed alike. Their sky, layers and effects are
+ * src/tekken1/tmst_tekken1_stages.c's (the fight's pack handed to it,
+ * tmst_tekken1_layers_load). On the STAGE line TEKKEN 1 follows TEKKEN 2
+ * (either alone when only its part is on): RIGHT from their last game
+ * TEKKEN 2, TEKKEN 1, then their DEFAULT. GAME OPTION's TEKKEN 1 STAGES
+ * row (CLASSIC, REMAKE) under TEKKEN 2 STAGES, hidden until
+ * mods/t1-stages/remake has packs (the user's, 2026-11-19). Kept in t2-stages.txt too ("vs-game tekken1",
+ * "vs-t1 4", "t1version classic"). No music of their own yet (the
+ * fighter's). GAME OPTION's STAGES row has TEKKEN 1 (before TEKKEN 2, after
+ * theirs) and RANDOM a Tekken 1 lot (2026-11-19); not in their GAME RANDOM's
+ * lots yet, nor in the tournaments.
+ *
  * Benches: TMST_T2_STAGE=N gives every fight Tekken 2's stage N (0..22)
  * (with TMST_T2_LINE as the STAGE line's: its music ours, issue #9.2),
- * TMST_T2_STAGES_DIR the folder holding classic/ and remake/. */
+ * TMST_T1_STAGE=N Tekken 1's stage N (0..10), TMST_T2_STAGES_DIR and
+ * TMST_T1_STAGES_DIR the folders holding classic/ and remake/. */
 #include "tmst_core.h"
 #include "tmst_compat.h"
 #include "tmst_tournament_stages.h"
@@ -115,13 +133,28 @@
 #include "tekken3_game_options.h"
 #endif
 
-enum { STAGES = 23, NUMBER0 = 20 };
-static const char *const names[STAGES] = {
+/* Our stages: Tekken 2's 0..22, then Tekken 1's (T1_FIRST + its stage). */
+enum { STAGES = 23, NUMBER0 = 20, T1_STAGES = 11, T1_FIRST = STAGES, ALL_STAGES = STAGES + T1_STAGES };
+static const char *const names[ALL_STAGES] = {
     "GRAND CANYON", "SZECHWAN FIELDS", "MORNING FIELDS", "NEW YORK CITY", "CHURCH SANCTUARY",
     "HONG KONG ROOFTOP", "PAGODA TEMPLE", "SERENE FOREST", "AKIHABARA", "THE GREAT WALL",
     "CAMBODIAN WETLANDS", "ATHENS", "NOWHERE DESERT", "LAUNCH PAD", "HILLS", "KYOTO AT SUNSET",
     "TAJ MAHAL", "BEACH", "LONDON RUINS", "ARIZONA DESERT", "KOREAN TEMPLE", "ETERNAL DARKNESS",
-    "MIRROR DARKNESS" };
+    "MIRROR DARKNESS",
+    "WINDERMERE", "KYOTO", "ACROPOLIS", "STADIUM", "MONUMENT VALLEY", "KING GEORGE ISLAND", "FIJI",
+    "VENEZIA", "ANGKOR WAT", "SZECHWAN", "CHICAGO" };
+/* The games of ours on the STAGE line. */
+enum { G_T2, G_T1, GAMES };
+static const char *const game_labels[GAMES] = { "TEKKEN 2", "TEKKEN 1" };
+static const char *const game_words[GAMES] = { "tekken2", "tekken1" };
+static int game_of(int stage) { return stage >= T1_FIRST ? G_T1 : G_T2; }
+static const int game_count[GAMES] = { STAGES, T1_STAGES }, game_first[GAMES] = { 0, T1_FIRST };
+/* src/tekken1/tmst_tekken1_stages.c: the fight's pack's sky and layers */
+void tmst_tekken1_layers_load(const uint8_t *pack, long size);
+void tmst_tekken1_layers_clear(void);
+void tmst_tekken1_layers_tick(void);
+int tmst_tekken1_dusk(int channel);              /* the fighters' light with the sunset, out of 128 */
+int tmst_tekken1_own_floor(void);
 
 enum { SCREEN = 0x800ae204, MENU = 4, OPTIONS = 5, FIGHT = 8, MODE = 0x800afa88, ARENA = 0x800adc84,
        ARENA_COPY = 0x800afaa2, NO_STAGE = 0x800adca4, LAST_ARENA = 12, T2_ARENA = 9,
@@ -131,7 +164,10 @@ enum { SCREEN = 0x800ae204, MENU = 4, OPTIONS = 5, FIGHT = 8, MODE = 0x800afa88,
        VS = 1, PRACTICE = 5,
        /* TEKKEN 2 STAGES' lamps: Arcade to Practice, where the STAGES row
         * (TEKKEN 2, RANDOM) brings Tekken 2's stages too (issue #11) */
-       ROW_MODES = 0x3f };
+       ROW_MODES = 0x3f,
+       /* TEKKEN 1 STAGES' lamps: Arcade to Practice too, where the STAGES row
+        * (TEKKEN 1, RANDOM) brings Tekken 1's stages (2026-11-19) */
+       ROW1_MODES = 0x3f };
 /* Pad bits, active low. */
 enum { PAD_SELECT = 0x0001, PAD_START = 0x0008, PAD_UP = 0x0010, PAD_RIGHT = 0x0020, PAD_DOWN = 0x0040,
        PAD_LEFT = 0x0080, PAD_CIRCLE = 0x2000, PAD_CROSS = 0x4000 };
@@ -166,17 +202,20 @@ FILE *__real_fopen(const char *path, const char *mode);
 FILE *__tmst_chain_fopen(const char *path, const char *mode) { return __real_fopen(path, mode); }
 #endif
 
-static int stages;                       /* the feature, at activation */
-static int t2[LINES];                    /* TEKKEN 2 on the line (theirs on DEFAULT) */
-static int chosen[LINES] = { -1, -1 };   /* its stage, -1 RANDOM */
+static int stages, stages1;              /* the features (Tekken 2's, Tekken 1's), at activation */
+static int t2[LINES];                    /* a game of ours on the line (theirs on DEFAULT) */
+static int game[LINES];                  /* which: G_T2, G_T1 */
+static int chosen[LINES] = { -1, -1 };   /* Tekken 2's stage, -1 RANDOM */
+static int chosen1[LINES] = { -1, -1 };  /* Tekken 1's (0..10), -1 RANDOM */
+static int *chosen_of(int line) { return game[line] == G_T1 ? &chosen1[line] : &chosen[line]; }
 static int on_stage[LINES];              /* its STAGE step */
 static int armed[LINES];                 /* taken on TEKKEN 2: the next fight of that mode */
 static int their_random[LINES];          /* their GAME RANDOM, when the line last showed */
 /* Their stages, for RANDOM's lots: Tekken 3's 24, TTT's 15 with its packs
  * (src/tekken3_stage_select.c's catalogue). */
 enum { THEIR_T3 = 24, THEIR_TTT = 15 };
-static int version = CLASSIC;
-static int fight = -1, fight_mode = -1, moving;   /* the fight's stage, its mode; arena 9 written */
+static int version = CLASSIC, version1 = CLASSIC;  /* TEKKEN 2 STAGES, TEKKEN 1 STAGES */
+static int fight = -1, fight_mode = -1, moving;   /* the fight's stage (ours, 0..33), its mode; arena 9 written */
 static int line_fight;                             /* the fight's stage the STAGE line's (its music ours) */
 static uint64_t draw = 0x9e3779b97f4a7c15u;
 /* the engine's pack: the arena it holds one for, what it is (of Tekken 2's,
@@ -288,28 +327,45 @@ static void our_path(const char *name, char *out, size_t size) {
     if (e && *e) snprintf(out, size, "%s/%s", e, name);
     else snprintf(out, size, "%smods/t2-stages/%s", base_dir(), name);
 }
+/* Tekken 1's (classic/, remake/). */
+static void our1_path(const char *name, char *out, size_t size) {
+    const char *e = getenv("TMST_T1_STAGES_DIR");
+    if (e && *e) snprintf(out, size, "%s/%s", e, name);
+    else snprintf(out, size, "%smods/t1-stages/%s", base_dir(), name);
+}
+/* Our stage's pack (Tekken 1's in its own folder, by its own number). */
 static void pack_path(int version_dir, int stage, char *out, size_t size) {
     char name[64];
-    snprintf(name, sizeof name, "%s/stage%02d.ast", version_words[version_dir], stage);
-    our_path(name, out, size);
+    int t1 = game_of(stage) == G_T1;
+    snprintf(name, sizeof name, "%s/stage%02d.ast", version_words[version_dir], t1 ? stage - T1_FIRST : stage);
+    if (t1) our1_path(name, out, size);
+    else our_path(name, out, size);
 }
 static int there(const char *path) {
     FILE *f = __tmst_chain_fopen(path, "rb");
     if (f) fclose(f);
     return f != NULL;
 }
-/* Any pack of that version (cached). */
-static int version_made(int v) {
-    static signed char made[VERSIONS];
-    if (!made[v]) {
+/* Any pack of that game's version (cached). */
+static int version_made_of(int g, int v) {
+    static signed char made[GAMES][VERSIONS];
+    if (!made[g][v]) {
         char path[1100];
-        made[v] = -1;
-        for (int s = 0; s < STAGES && made[v] < 0; s++) { pack_path(v, s, path, sizeof path); if (there(path)) made[v] = 1; }
+        made[g][v] = -1;
+        for (int s = 0; s < game_count[g] && made[g][v] < 0; s++) {
+            pack_path(v, game_first[g] + s, path, sizeof path);
+            if (there(path)) made[g][v] = 1;
+        }
     }
-    return made[v] > 0;
+    return made[g][v] > 0;
 }
-/* The version drawn: REMAKE's packs only once they exist. */
-static int drawn_version(void) { return version == REMAKE && version_made(REMAKE) ? REMAKE : CLASSIC; }
+static int version_made(int v) { return version_made_of(G_T2, v); }
+/* The version drawn for the fight's game: REMAKE's packs only once they exist. */
+static int drawn_version_of(int g) {
+    int v = g == G_T1 ? version1 : version;
+    return v == REMAKE && version_made_of(g, REMAKE) ? REMAKE : CLASSIC;
+}
+static int drawn_version(void) { return drawn_version_of(fight >= 0 ? game_of(fight) : G_T2); }
 /* Tekken 3's own packs (tekken3.zip), any of the 13 (cached). */
 static int t3_real(void) {
     static signed char real;
@@ -354,7 +410,7 @@ static const uint8_t *section(const uint8_t *b, long size, const char *id, uint3
  * when she is one of the fight's fighters and the stage has one: 1, its path
  * into out (out may be NULL). The whole one otherwise. */
 static int wolf_pack(int stage, char *out, size_t size) {
-    if (stage < 0 || !tmst_compat_unknown_fights()) return 0;
+    if (stage < 0 || stage >= STAGES || !tmst_compat_unknown_fights()) return 0;
     char name[64], path[1100];
     snprintf(name, sizeof name, "%s/stage%02dw.ast", version_words[REMAKE], stage);
     our_path(name, path, sizeof path);
@@ -381,6 +437,15 @@ static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     uint32_t len = 0;
     uint8_t *flor = held_as == NIGHT ? (uint8_t *)section(b, size, "FLOR", &len) : NULL;
     if (flor && len >= 8) { int16_t kind = NIGHT_KIND; memcpy(flor, &kind, 2); }
+    /* Tekken 1's: its floor ours (src/tekken1/tmst_tekken1_stages.c), the
+     * engine's cells without quads (FLOR's counts, after its tiles, their
+     * quarters, their order and its corners: 0) */
+    if (held_as != NIGHT && game_of(stage) == G_T1 && tmst_tekken1_own_floor()
+        && (flor = (uint8_t *)section(b, size, "FLOR", &len)) != NULL && len >= 8 + 4000 + 100 + 2) {
+        uint16_t nv; memcpy(&nv, flor + 8 + 4000 + 100, 2);
+        uint32_t at = 8 + 4000 + 100 + ((2u + 4u * nv + 3u) & ~3u);
+        if (at + 100 <= len) memset(flor + at, 0, 100);
+    }
     our_path("loaded.ast", to, sizeof to);
     FILE *f = __tmst_chain_fopen(to, "wb");
     int ok = f && fwrite(b, 1, (size_t)size, f) == (size_t)size;
@@ -468,7 +533,7 @@ FILE *__wrap_fopen(const char *path, const char *mode) {
         /* Arcade Stages' activation looking for its packs: one of ours, when it has none */
         FILE *f = __tmst_chain_fopen(path, mode);
         if (f || n > LAST_ARENA || t3_real()) return f;
-        for (int s = 0; s < STAGES && !f; s++) { pack_path(CLASSIC, s, ours, sizeof ours); f = __tmst_chain_fopen(ours, mode); }
+        for (int s = 0; s < ALL_STAGES && !f; s++) { pack_path(CLASSIC, s, ours, sizeof ours); f = __tmst_chain_fopen(ours, mode); }
         if (f) tmst_log("tekken2: no Tekken 3 arcade stage packs, ours bring up the stage engine");
         return f;
     }
@@ -501,21 +566,29 @@ static void file_path(const char *file, char *out, size_t size) {
     snprintf(out, size, "%.*s/%s", n, slash ? card : ".", file);
 }
 static void setting_path(char *out, size_t size) { file_path("t2-stages.txt", out, size); }
-/* GAME OPTION's STAGES = TEKKEN 2 (issue #11): ours, or theirs (the Expanded's
- * value, kept in its ttt-stages.txt) */
-enum { OPT_THEIRS, OPT_TEKKEN2 };
-static const char *const option_words[2] = { "theirs", "tekken2" };
+/* GAME OPTION's STAGES = TEKKEN 2 (issue #11) or TEKKEN 1 (2026-11-19): ours,
+ * or theirs (the Expanded's value, kept in its ttt-stages.txt) */
+enum { OPT_THEIRS, OPT_TEKKEN2, OPT_TEKKEN1, OPTS };
+static const char *const option_words[OPTS] = { "theirs", "tekken2", "tekken1" };
 static int option = OPT_THEIRS, option_forced;     /* option_forced: TMST_STAGES */
+static int option_of(const char *word) {
+    for (int o = 0; o < OPTS; o++) if (!strcmp(word, option_words[o])) return o;
+    return OPT_THEIRS;
+}
 static void save(void) {
     char path[4096]; setting_path(path, sizeof path);
     FILE *f = path[0] ? fopen(path, "wb") : NULL;
     if (!f) return;
     for (int i = 0; i < LINES; i++) {
-        char stage[8] = "random";
+        char stage[8] = "random", stage1[8] = "random";
         if (chosen[i] >= 0) snprintf(stage, sizeof stage, "%d", chosen[i]);
+        if (chosen1[i] >= 0) snprintf(stage1, sizeof stage1, "%d", chosen1[i]);
         fprintf(f, "%s %s %s\n", line_words[i], t2[i] ? "on" : "off", stage);
+        fprintf(f, "%s-game %s\n", line_words[i], game_words[game[i]]);
+        fprintf(f, "%s-t1 %s\n", line_words[i], stage1);
     }
     fprintf(f, "version %s\n", version_words[version]);
+    fprintf(f, "t1version %s\n", version_words[version1]);
     fprintf(f, "stages %s\n", option_words[option]);
     fclose(f);
 }
@@ -525,7 +598,7 @@ static void load(void) {
     done = 1;
     draw ^= (uint64_t)time(NULL) * 1000003u + (uint64_t)clock();
     const char *e = getenv("TMST_STAGES");
-    if (e && *e) { option = !strcmp(e, "tekken2") ? OPT_TEKKEN2 : OPT_THEIRS; option_forced = 1; }
+    if (e && *e) { option = option_of(e); option_forced = 1; }
     char path[4096]; setting_path(path, sizeof path);
     FILE *f = path[0] ? fopen(path, "rb") : NULL;
     if (!f) return;
@@ -533,7 +606,15 @@ static void load(void) {
     while (fgets(line, sizeof line, f)) {
         int n = sscanf(line, "%15s %15s %15s", key, a, b);
         if (n == 2 && !strcmp(key, "version")) version = !strcmp(a, "remake") ? REMAKE : CLASSIC;
-        if (n == 2 && !strcmp(key, "stages") && !option_forced) option = !strcmp(a, "tekken2") ? OPT_TEKKEN2 : OPT_THEIRS;
+        if (n == 2 && !strcmp(key, "t1version")) version1 = !strcmp(a, "remake") ? REMAKE : CLASSIC;
+        for (int i = 0; n == 2 && i < LINES; i++) {
+            char k1[24], k2[24];
+            snprintf(k1, sizeof k1, "%s-game", line_words[i]);
+            snprintf(k2, sizeof k2, "%s-t1", line_words[i]);
+            if (!strcmp(key, k1)) game[i] = !strcmp(a, "tekken1") ? G_T1 : G_T2;
+            if (!strcmp(key, k2)) { int s = atoi(a); chosen1[i] = !strcmp(a, "random") || s < 0 || s >= T1_STAGES ? -1 : s; }
+        }
+        if (n == 2 && !strcmp(key, "stages") && !option_forced) option = option_of(a);
         for (int i = 0; n == 3 && i < LINES; i++) {
             if (strcmp(key, line_words[i])) continue;
             t2[i] = !strcmp(a, "on");
@@ -544,19 +625,27 @@ static void load(void) {
     fclose(f);
 }
 
-/* This part can draw: on, its packs there, the engine's Tekken 3 path up. */
-static int ready(void) {
-    if (!stages || !tmst_tekken2_on() || !tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_T3)) return 0;
-    if (!version_made(CLASSIC)) return 0;
+/* A game of ours can be drawn: its part on (and its package), its packs
+ * there, the engine's Tekken 3 path up. */
+static int game_ready(int g) {
+    if (!tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_T3)) return 0;
+    if (g == G_T2 ? !stages || !tmst_tekken2_on() : !stages1 || !tmst_tekken1_on()) return 0;
+    if (!version_made_of(g, CLASSIC)) return 0;
     load();
     return 1;
 }
+/* Either. */
+static int ready(void) { return game_ready(G_T2) || game_ready(G_T1); }
 
 static int pick(int count) {
     draw ^= draw << 13; draw ^= draw >> 7; draw ^= draw << 17;
     return (int)(draw % (uint64_t)count);
 }
-static const char *stage_name(int s) { return s < 0 ? "RANDOM" : names[s]; }
+/* A line's stage (of its game; -1 RANDOM) by name. */
+static const char *line_stage_name(int line) {
+    int s = *chosen_of(line);
+    return s < 0 ? "RANDOM" : names[game_first[game[line]] + s];
+}
 
 /* The fight's pack's own sections: the fighters' light, the running lights. */
 static void fight_extras(void) {
@@ -578,6 +667,7 @@ static void fight_extras(void) {
     anim_data = NULL;
     anims = 0;
     tmst_tekken2_extras_clear();
+    tmst_tekken1_layers_clear();
     pack_path(drawn_version(), fight, path, sizeof path);
     /* the pack the engine gets (hand_over()): its animations' places are its own */
     extras_wolf = drawn_version() == REMAKE && wolf_pack(fight, path, sizeof path);
@@ -607,6 +697,7 @@ static void fight_extras(void) {
         if (a <= 17 && a != T2_ARENA) light_from = a;
     }
     tmst_tekken2_extras_load(b, size);
+    if (game_of(fight) == G_T1) tmst_tekken1_layers_load(b, size);      /* its sky, layers, effects */
     o = section(b, size, "T2MR", &len);
     if (o && len >= sizeof mirror_at) memcpy(mirror_at, o, sizeof mirror_at);
     /* MIRR (the old fork's, the Remake's): its style after the place, 20 bytes */
@@ -705,6 +796,8 @@ int tmst_tekken2_mirror_style(uint8_t style[20]) {
 int tmst_tekken2_extras_wanted(void) { return tmst_tekken2_extras_on() && drawn(); }
 /* ... whether our pack is drawn now (src/tekken2/tmst_tekken2_trace.c). */
 int tmst_tekken2_drawn(void) { return drawn(); }
+/* ... a Tekken 1 pack, drawn now (src/tekken1/tmst_tekken1_stages.c). */
+int tmst_tekken1_drawn(void) { return fight >= 0 && game_of(fight) == G_T1 && drawn(); }
 /* ... a Remake pack, drawn now (src/tekken2/tmst_tekken2_anchor.c). */
 int tmst_tekken2_remake_drawn(void) { return drawn() && held_version == REMAKE; }
 int32_t tmst_tekken2_fixed_period(void) { return fixed_period; }
@@ -754,16 +847,21 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     fight = fight_mode = -1; moving = 0; line_fight = 0; forced_mode = -1; forced_held = 0; option_mode = -1;
     int tournament_stage, tournament = tmst_tournament_fight_stage(mode, &tournament_stage);
     if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage, "tournament"); return; }
-    if (!ready()) {
+    if (!ready() || (tournament == TMST_TSTAGE_T2 && !game_ready(G_T2))) {
         if (tournament == TMST_TSTAGE_T2) tmst_log("tekken2: tournament fight, Tekken 2's stages off: the system's stage");
         return;
     }
     int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1, theirs = 0;
-    const char *e = getenv("TMST_T2_STAGE");
-    if (e && *e) { stage = atoi(e) % STAGES; line_fight = getenv("TMST_T2_LINE") != NULL; }
+    const char *e = getenv("TMST_T2_STAGE"), *e1 = getenv("TMST_T1_STAGE");
+    if (e1 && *e1 && game_ready(G_T1)) { stage = T1_FIRST + atoi(e1) % T1_STAGES; e = e1; }
+    else if (e && *e && game_ready(G_T2)) { stage = atoi(e) % STAGES; line_fight = getenv("TMST_T2_LINE") != NULL; }
     else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
-    else if (line >= 0 && armed[line]) { stage = chosen[line] >= 0 ? chosen[line] : pick(STAGES); line_fight = 1; }
-    else if (line >= 0 && their_random[line]) {      /* their GAME RANDOM: ours among the lots */
+    else if (line >= 0 && armed[line] && game_ready(game[line])) {
+        int g = game[line], s = *chosen_of(line);
+        stage = game_first[g] + (s >= 0 ? s : pick(game_count[g]));
+        line_fight = 1;
+    }
+    else if (line >= 0 && their_random[line] && game_ready(G_T2)) {      /* their GAME RANDOM: ours among the lots */
         int source, ttt, arena;
         if (__real_tekken3_stage_select_choice(mode, &source, &ttt, &arena)) {
             const char *t = getenv("TEKKEN3_STAGES_TTT");
@@ -776,9 +874,10 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     if (stage < 0) return;
     fight = stage; fight_mode = (int)mode; moving = 1;
     fight_extras();
-    tmst_log("tekken2: mode %u fight on Tekken 2's %s (stage %d, %s, arena %d)%s%s", mode, names[stage], stage,
+    tmst_log("tekken2: mode %u fight on %s's %s (stage %d, %s, arena %d)%s%s", mode,
+             game_of(stage) == G_T1 ? "Tekken 1" : "Tekken 2", names[stage], stage - game_first[game_of(stage)],
              version_words[drawn_version()], T2_ARENA,
-             theirs ? ", their GAME RANDOM" : line >= 0 && chosen[line] < 0 && !(e && *e) ? ", RANDOM" : "",
+             theirs ? ", their GAME RANDOM" : line >= 0 && *chosen_of(line) < 0 && !(e && *e) ? ", RANDOM" : "",
              tournament == TMST_TSTAGE_T2 ? ", the tournament's" : "");
 }
 /* The same arena for the guests' correction (src/tekken3_ttt1_roster.c) and
@@ -818,46 +917,62 @@ int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stag
     return 1;
 }
 
-/* ---- GAME OPTION's STAGES row: TEKKEN 2, and RANDOM's Tekken 2 lot (issue #11) ----
+/* ---- GAME OPTION's STAGES row: TEKKEN 1, TEKKEN 2, and RANDOM's lots (issue #11) ----
  *
  * The row is the Expanded's (src/tekken3_stage_source.c): it is added with
- * TEKKEN 2 after TEKKEN TAG TOURNAMENT (the user's order, 2026-11-13), and
- * the Expanded reads its own values only: on TEKKEN 2 the one it had, so it
- * keeps (and saves) that. Ours is kept in t2-stages.txt ("stages tekken2").
- * Offered with this part on and the row there (it is, with TTT's packs).
+ * ours after theirs, TEKKEN 1 then TEKKEN 2, each with its part on (the
+ * user's order, 2026-11-19: TEKKEN 3, TEKKEN TAG TOURNAMENT, AUTO, RANDOM,
+ * TEKKEN 1, TEKKEN 2), and the Expanded reads its own values only: on ours
+ * the one it had, so it keeps (and saves) that. Ours is kept in
+ * t2-stages.txt ("stages tekken1" / "stages tekken2"). Offered with the row
+ * there (it is, with TTT's packs).
  *
- * TEKKEN 2: the fighter who decides the fight's stage (the Expanded's: the
- * CPU in Arcade, the player who chose last in VS, the member on the field in
- * Team Battle) gets its stage of the user's list (tmst_option_t2_stage): a
- * Tekken 2 fighter its Tekken 2 stage, the others their Tekken 3 arena or
- * TTT stage. RANDOM: a Tekken 2 fighter's pool is T3, TTT and its Tekken 2
- * stage, one chance in three each; the Expanded draws the two others. Tekken
- * 3's newcomers have a Tekken 2 lot too (the user's list), not in the school
- * outfit (tmst_random_t2_stage). The
+ * The fighter who decides the fight's stage (the Expanded's: the CPU in
+ * Arcade, the player who chose last in VS, the member on the field in Team
+ * Battle) gets, on TEKKEN 2, its Tekken 2 stage (tmst_option_t2_stage: a
+ * Tekken 2 fighter its own, a Tekken 3 newcomer its of the user's list), on
+ * TEKKEN 1 its Tekken 1 stage (tmst_option_t1_stage, the user's list,
+ * 2026-11-19); Xiaoyu and Jin in the school outfit Tekken 3's school on
+ * both. RANDOM: the fighter's pool is T3, TTT and its lots, Tekken 2's and
+ * Tekken 1's (each with its part on; none in the school outfit), one chance
+ * in four each (in three with one lot); the Expanded draws T3 or TTT. The
  * STAGE line of VS and Practice and the tournaments decide first. A Continue
  * keeps the stage. A Tekken 2 stage plays its own music, as from the STAGE
- * line (tmst_tekken2_fight_music). */
+ * line (tmst_tekken2_fight_music); a Tekken 1 stage the fighter's (none of
+ * its own yet). */
 #ifdef TMST_HAS_STAGE_OPTION
-int __real_tekken3_game_options_add(const char *name, const char *const *labels, unsigned count,
-                                    unsigned value, unsigned default_value, unsigned modes);
-int __real_tekken3_game_options_value(int row);
+/* src/compat/tmst_game_options.c: GAME OPTION's rows (the Expanded's taken over,
+ * room for more); it calls the two hooks below for every row. */
+int tmst_game_options_add(const char *name, const char *const *labels, unsigned count,
+                          unsigned value, unsigned default_value, unsigned modes);
 void __real_tekken3_stage_source_decide(unsigned mode, int player, const char *guest, int arena);
 int __real_tekken3_stage_source_load_arena(void);
 
 enum { DEMO_MODE = 6, LOADING_SCREEN = 11, FIGHTERS = 0x800add5c, COSTUMES = 0x800add98, HUMANS = 0x800ae1f8,
-       KUMA_ID = 11, EDDY_ID = 8, TIGER_ID = 22, STOCK_IDS = 21, SCHOOL_ARENA = 7, THEIR_MAX = 8 };
+       KUMA_ID = 11, EDDY_ID = 8, TIGER_ID = 22, STOCK_IDS = 21, SCHOOL_ARENA = 7, THEIR_MAX = 8, OURS_MAX = 2 };
 static const char *const stock_keys[STOCK_IDS] = {"paul","law","lei","king","yoshimitsu","nina","hwoarang","xiaoyu",
     "eddy","jin","julia","kuma","bryan","heihachi","ogre","mokujin","gunjack","gon","anna","drb","trueogre"};
-static int stages_row = -1, t2_at = -1, their_count, their_last = -1;
+static int stages_row = -1, their_count, their_last = -1;
 static const char *their_labels[THEIR_MAX];
+static int ours[OURS_MAX], ours_count;          /* our values on the row, after theirs */
 static int opt_last_mode = -1, opt_kind, opt_stage, opt_continuing;
 static uint16_t opt_was_human[2];
+/* Our values and their games, in the row's order. */
+static const int row_options[OURS_MAX] = { OPT_TEKKEN1, OPT_TEKKEN2 };
+static const int row_games[OURS_MAX] = { G_T1, G_T2 };
+static const char *const row_labels[OURS_MAX] = { "TEKKEN 1", "TEKKEN 2" };
+static const char *option_label(int o) { return o == OPT_TEKKEN1 ? "TEKKEN 1" : o == OPT_TEKKEN2 ? "TEKKEN 2" : "theirs"; }
 
 static int ttt_ready(void) {
     const char *t = getenv("TEKKEN3_STAGES_TTT");
     return tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_TTT) || (t && *t == '1');
 }
-static int option_on(void) { return ready() && ttt_ready() && option == OPT_TEKKEN2; }
+/* Our value chosen and drawable: its game (G_T2, G_T1), else -1. */
+static int option_game(void) {
+    if (option == OPT_THEIRS || !ttt_ready()) return -1;
+    int g = option == OPT_TEKKEN2 ? G_T2 : G_T1;
+    return game_ready(g) ? g : -1;
+}
 /* Theirs on RANDOM: the row's label once it is there, their file before. */
 static int their_on_random(void) {
     static int read = -1;
@@ -879,39 +994,41 @@ static int their_on_random(void) {
 static void set_option(int o) {
     option = o;
     if (!option_forced) save();
-    tmst_log("tekken2: STAGES set to %s", o == OPT_TEKKEN2 ? "TEKKEN 2" : "theirs");
+    tmst_log("tekken2: STAGES set to %s", option_label(o));
 }
 
-int __wrap_tekken3_game_options_add(const char *name, const char *const *labels, unsigned count,
-                                    unsigned value, unsigned default_value, unsigned modes) {
-    if (strcmp(name, "STAGES") || stages_row >= 0 || count + 1 > THEIR_MAX || value >= count || !ready())
-        return __real_tekken3_game_options_add(name, labels, count, value, default_value, modes);
+/* A row being added: the STAGES row with ours after theirs; -2 for any other
+ * (added as it is). */
+int tmst_tekken2_options_add(const char *name, const char *const *labels, unsigned count,
+                             unsigned value, unsigned default_value, unsigned modes) {
+    if (strcmp(name, "STAGES") || stages_row >= 0 || count + OURS_MAX > THEIR_MAX || value >= count || !ready())
+        return -2;
     const char *list[THEIR_MAX];
-    int at = -1;
-    for (unsigned i = 0; i < count; i++) {
-        their_labels[i] = labels[i];
-        if (!strcmp(labels[i], "TEKKEN TAG TOURNAMENT")) at = (int)i + 1;
+    for (unsigned i = 0; i < count; i++) list[i] = their_labels[i] = labels[i];
+    int n = 0, shown = (int)value;
+    for (int i = 0; i < OURS_MAX; i++) {
+        if (!game_ready(row_games[i])) continue;
+        if (option == row_options[i]) shown = (int)count + n;
+        list[count + (unsigned)n] = row_labels[i];
+        ours[n++] = row_options[i];
     }
-    for (unsigned i = 0; at < 0 && i < count; i++) if (!strcmp(labels[i], "TEKKEN 3")) at = (int)i + 1;
-    if (at < 0) at = (int)count;
-    for (int i = 0, j = 0; i <= (int)count; i++) list[i] = i == at ? "TEKKEN 2" : labels[j++];
-    unsigned shown = option == OPT_TEKKEN2 ? (unsigned)at : value + (value >= (unsigned)at);
-    unsigned fallback = default_value + (default_value >= (unsigned)at);
-    int row = __real_tekken3_game_options_add(name, list, count + 1, shown, fallback, modes);
+    int row = tmst_game_options_add(name, list, count + (unsigned)n, (unsigned)shown, default_value, modes);
     if (row < 0) return row;
-    stages_row = row; t2_at = at; their_count = (int)count; their_last = (int)value;
-    tmst_log("tekken2: TEKKEN 2 on the STAGES row (value %d of %u), shows %s", at, count + 1, list[shown]);
+    stages_row = row; their_count = (int)count; their_last = (int)value; ours_count = n;
+    tmst_log("tekken2: %s%s%s on the STAGES row (after their %u), shows %s", n > 0 ? list[count] : "",
+             n > 1 ? ", " : "", n > 1 ? list[count + 1] : "", count, list[shown]);
     return row;
 }
-int __wrap_tekken3_game_options_value(int row) {
-    int v = __real_tekken3_game_options_value(row);
+/* A row's value read (v, the row's own): the STAGES row's as theirs. */
+int tmst_tekken2_options_value(int row, int v) {
     if (row < 0 || row != stages_row || v < 0) return v;
-    if (v == t2_at) {
-        if (option != OPT_TEKKEN2) set_option(OPT_TEKKEN2);
+    if (v >= their_count && v < their_count + ours_count) {
+        int o = ours[v - their_count];
+        if (option != o) set_option(o);
         return their_last;                           /* theirs unchanged: nothing saved there */
     }
     if (option != OPT_THEIRS) set_option(OPT_THEIRS);
-    return their_last = v > t2_at ? v - 1 : v;
+    return their_last = v;
 }
 
 static const char *native_key(int p) {
@@ -921,30 +1038,48 @@ static const char *native_key(int p) {
     if (id == TIGER_ID) return "tiger";
     return id < STOCK_IDS ? stock_keys[id] : NULL;
 }
-static const char *const kind_words[] = { "theirs", "Tekken 2's stage", "Tekken 3's arena", "TTT's stage" };
+static const char *const kind_words[] = { "theirs", "Tekken 2's stage", "Tekken 3's arena", "TTT's stage",
+                                          "Tekken 1's stage" };
+
+/* RANDOM's lot: Tekken 2's and Tekken 1's (each with its part on), one
+ * chance in (lots + 2) each; NONE: the Expanded's draw, T3 or TTT. */
+static int random_lot(const char *key, int school, int *stage) {
+    int kinds[2], stages_of[2], n = 0, s;
+    if (game_ready(G_T2) && tmst_random_t2_stage(key, school, &s)) { kinds[n] = TMST_TSTAGE_T2; stages_of[n++] = s; }
+    if (game_ready(G_T1) && tmst_random_t1_stage(key, school, &s)) { kinds[n] = TMST_TSTAGE_T1; stages_of[n++] = s; }
+    int r = n ? pick(n + 2) : 0;
+    *stage = -1;
+    if (r >= n) return TMST_TSTAGE_NONE;
+    *stage = stages_of[r];
+    return kinds[r];
+}
 
 void __wrap_tekken3_stage_source_decide(unsigned mode, int player, const char *guest, int arena) {
     /* decided again (Team Battle's member swapped in): ours undone first */
     if (option_mode >= 0) { fight = fight_mode = -1; moving = line_fight = 0; forced_mode = -1; forced_held = 0; option_mode = -1; }
-    int t2 = option_on(), lot = !t2 && their_on_random(), s, t, a;
-    if ((!t2 && !lot) || !(mode <= PRACTICE || mode == DEMO_MODE) || player < 0 || player > 1 ||
+    int g = option_game(), lot = g < 0 && their_on_random(), s, t, a;
+    if ((g < 0 && !lot) || !(mode <= PRACTICE || mode == DEMO_MODE) || player < 0 || player > 1 ||
         __wrap_tekken3_stage_select_choice(mode, &s, &t, &a)) {
         opt_continuing = 0;
         __real_tekken3_stage_source_decide(mode, player, guest, arena);
         return;
     }
     const char *key = guest ? guest : native_key(player);
+    int school = !guest && arena == SCHOOL_ARENA;
     int kind = TMST_TSTAGE_NONE, stage = -1, again = opt_continuing && opt_last_mode == (int)mode;
     opt_continuing = 0;
     if (again) { kind = opt_kind; stage = opt_stage; }
-    else if (t2) kind = tmst_option_t2_stage(key, !guest && arena == SCHOOL_ARENA, &stage);
-    else if (tmst_random_t2_stage(key, !guest && arena == SCHOOL_ARENA, &stage) && pick(3) == 0) kind = TMST_TSTAGE_T2;
-    else stage = -1;
+    else if (g == G_T2) kind = tmst_option_t2_stage(key, school, &stage);
+    else if (g == G_T1) kind = tmst_option_t1_stage(key, school, &stage);
+    else kind = random_lot(key, school, &stage);
     opt_last_mode = (int)mode; opt_kind = kind; opt_stage = stage;
     tmst_log("tekken2: mode %u, P%d's %s decides, STAGES %s -> %s %d%s", mode, player + 1, key ? key : "-",
-             t2 ? "TEKKEN 2" : "RANDOM", kind_words[kind], stage, again ? " (Continue: the same)" : "");
-    if (kind == TMST_TSTAGE_T2) {
-        fight = stage; fight_mode = (int)mode; moving = 1; line_fight = 1; option_mode = (int)mode;
+             g == G_T2 ? "TEKKEN 2" : g == G_T1 ? "TEKKEN 1" : "RANDOM", kind_words[kind], stage,
+             again ? " (Continue: the same)" : "");
+    if (kind == TMST_TSTAGE_T2 || kind == TMST_TSTAGE_T1) {
+        /* a Tekken 2 stage its own music (line_fight); a Tekken 1 stage none yet */
+        fight = kind == TMST_TSTAGE_T1 ? T1_FIRST + stage : stage;
+        fight_mode = (int)mode; moving = 1; line_fight = kind == TMST_TSTAGE_T2; option_mode = (int)mode;
         fight_extras();
     } else if (kind == TMST_TSTAGE_T3 || kind == TMST_TSTAGE_TTT) {
         force(mode, kind, stage, "STAGES row"); option_mode = (int)mode;
@@ -984,9 +1119,17 @@ static void option_tick(unsigned screen) { (void)screen; }
 
 static uint16_t previous[2] = { 0xffff, 0xffff }, kept[2];
 
-static void set_t2(int line, int on, unsigned player) {
+/* Our games on the line, in order (Tekken 2's, then Tekken 1's: those whose part is on). */
+static int games_on(int out[GAMES]) {
+    int n = 0;
+    for (int g = 0; g < GAMES; g++) if (game_ready(g)) out[n++] = g;
+    return n;
+}
+/* Ours on the line (g: G_T2 or G_T1), or theirs (on 0). */
+static void set_t2(int line, int on, int g, unsigned player) {
     t2[line] = on; on_stage[line] = 0;
-    tmst_log("tekken2: P%u sets the %s game to %s", player + 1, line ? "Practice" : "VS", on ? "TEKKEN 2" : "theirs");
+    if (on) game[line] = g;
+    tmst_log("tekken2: P%u sets the %s game to %s", player + 1, line ? "Practice" : "VS", on ? game_labels[g] : "theirs");
     save();
 }
 
@@ -1026,67 +1169,96 @@ uint16_t __wrap_tekken3_stage_select_input(int player, uint16_t buttons) {
     else their_random[line] = !strcmp(label, "GAME") && !strcmp(name, "RANDOM");
     if (!kind || (line == LINE_PRACTICE && p != practice_pad()))
         return __real_tekken3_stage_select_input(player, buttons | kept[p]);
+    int on[GAMES], n = games_on(on), at = -1;
+    for (int i = 0; i < n; i++) if (on[i] == game[line]) at = i;
+    if (t2[line] && at < 0) { t2[line] = on_stage[line] = 0; save(); }     /* that game's part off since */
     int game_step = !strcmp(label, "GAME"), at_default = game_step && !strcmp(name, "DEFAULT");
     if (t2[line] && !at_default) { t2[line] = on_stage[line] = 0; save(); }   /* theirs moved on */
     armed[line] = 0;
-    if (t2[line] && !on_stage[line]) {               /* GAME: TEKKEN 2 */
-        if (edges & PAD_RIGHT) { set_t2(line, 0, p); keep = PAD_RIGHT; }        /* to their DEFAULT */
-        else if (edges & PAD_LEFT) set_t2(line, 0, p);                          /* passed: their last game */
-        else if ((edges & PAD_DOWN) || (line == LINE_PRACTICE && (edges & (PAD_CROSS | PAD_START)))) {
+    if (t2[line] && !on_stage[line]) {               /* GAME: TEKKEN 2 or TEKKEN 1 */
+        if (edges & PAD_RIGHT) {                     /* the next of ours, else their DEFAULT */
+            if (at + 1 < n) set_t2(line, 1, on[at + 1], p);
+            else set_t2(line, 0, 0, p);
+            keep = PAD_RIGHT;
+        } else if (edges & PAD_LEFT) {               /* the one before, else passed: their last game */
+            if (at > 0) { set_t2(line, 1, on[at - 1], p); keep = PAD_LEFT; }
+            else set_t2(line, 0, 0, p);
+        } else if ((edges & PAD_DOWN) || (line == LINE_PRACTICE && (edges & (PAD_CROSS | PAD_START)))) {
             on_stage[line] = 1; keep = edges & (PAD_DOWN | PAD_CROSS | PAD_START);
         } else if (edges & (PAD_CROSS | PAD_START)) armed[line] = 1;           /* VS: their take */
-    } else if (t2[line]) {                           /* STAGE: RANDOM, then the 23 */
+    } else if (t2[line]) {                           /* STAGE: RANDOM, then the game's stages */
+        int count = game_count[game[line]], *c = chosen_of(line);
         if (edges & (PAD_LEFT | PAD_RIGHT)) {
-            int s = chosen[line] + 1 + (edges & PAD_LEFT ? -1 : 1);
-            chosen[line] = (s + STAGES + 1) % (STAGES + 1) - 1;
+            int s = *c + 1 + (edges & PAD_LEFT ? -1 : 1);
+            *c = (s + count + 1) % (count + 1) - 1;
             keep = edges & (PAD_LEFT | PAD_RIGHT);
-            tmst_log("tekken2: P%u sets the %s stage to %s", p + 1, line ? "Practice" : "VS", stage_name(chosen[line]));
+            tmst_log("tekken2: P%u sets the %s stage to %s", p + 1, line ? "Practice" : "VS", line_stage_name(line));
             save();
         } else if (edges & (PAD_UP | PAD_CIRCLE | PAD_SELECT)) {
             on_stage[line] = 0; keep = edges & (PAD_UP | PAD_CIRCLE | PAD_SELECT);
         } else if (edges & (PAD_CROSS | PAD_START)) armed[line] = 1;           /* their take, on DEFAULT */
         else keep = edges & PAD_DOWN;
-    } else if (at_default && (edges & PAD_LEFT)) {   /* their DEFAULT back to TEKKEN 2 */
-        set_t2(line, 1, p); keep = PAD_LEFT;
+    } else if (at_default && (edges & PAD_LEFT) && n) {   /* their DEFAULT back to the last of ours */
+        set_t2(line, 1, on[n - 1], p); keep = PAD_LEFT;
     }
     kept[p] |= keep;
     uint16_t out = __real_tekken3_stage_select_input(player, buttons | kept[p]);
-    /* RIGHT from their last game: their DEFAULT, TEKKEN 2 shows between */
-    if (!t2[line] && game_step && !at_default && (edges & PAD_RIGHT) &&
+    /* RIGHT from their last game: their DEFAULT, the first of ours shows between */
+    if (!t2[line] && n && game_step && !at_default && (edges & PAD_RIGHT) &&
         __real_tekken3_stage_select_line(&label, &name, &arrows) == kind && !strcmp(label, "GAME") &&
         !strcmp(name, "DEFAULT"))
-        set_t2(line, 1, p);
-    if (armed[line]) tmst_log("tekken2: P%u takes Tekken 2's %s for %s", p + 1, stage_name(chosen[line]),
-                              line ? "Practice" : "VS");
+        set_t2(line, 1, on[0], p);
+    if (armed[line]) tmst_log("tekken2: P%u takes %s's %s for %s", p + 1, game[line] == G_T1 ? "Tekken 1" : "Tekken 2",
+                              line_stage_name(line), line ? "Practice" : "VS");
     return out;
 }
 
 int __wrap_tekken3_stage_select_line(const char **label, const char **name, int *arrows) {
     int kind = __real_tekken3_stage_select_line(label, name, arrows), line = kind - 1;
-    if (!kind || !ready() || !t2[line] || strcmp(*label, "GAME") || strcmp(*name, "DEFAULT")) return kind;
-    if (!on_stage[line]) *name = "TEKKEN 2";
-    else { *label = "TEKKEN 2"; *name = stage_name(chosen[line]); }
+    if (!kind || !ready() || !t2[line] || !game_ready(game[line]) || strcmp(*label, "GAME") || strcmp(*name, "DEFAULT"))
+        return kind;
+    if (!on_stage[line]) *name = game_labels[game[line]];
+    else { *label = game_labels[game[line]]; *name = line_stage_name(line); }
     return kind;
 }
 
 /* ---- every VBlank ---- */
 
-/* GAME OPTION's row, added at the first visit of the Options screen. */
+/* GAME OPTION's rows (TEKKEN 2 STAGES, TEKKEN 1 STAGES under it: each with
+ * its part on), added at the first visit of the Options screen. */
 static void menu(void) {
 #ifdef TMST_HAS_GAME_OPTIONS
-    static int row = -2, shown;
+    static int row = -2, shown, row1 = -2, shown1;
     if (row == -2) {
-        row = tekken3_game_options_add("TEKKEN 2 STAGES", version_labels, VERSIONS, (unsigned)version, CLASSIC,
-                                       ROW_MODES);
+        row = game_ready(G_T2) ? tekken3_game_options_add("TEKKEN 2 STAGES", version_labels, VERSIONS, (unsigned)version,
+                                                          CLASSIC, ROW_MODES) : -1;
         shown = version;
     }
-    if (row < 0) return;
-    int v = tekken3_game_options_value(row);
+    /* (GAME OPTION's rows: src/compat/tmst_game_options.c, room for 16; the
+     * Expanded's own 8 were full with this one: Big Head Mode's row was lost,
+     * the user's report, 2026-11-19) */
+    /* TEKKEN 1 STAGES: hidden until Tekken 1's Remake packs are there (the
+     * user's, 2026-11-19: nothing to choose before; its code stays) */
+    if (row1 == -2) {
+        row1 = game_ready(G_T1) && version_made_of(G_T1, REMAKE)
+             ? tekken3_game_options_add("TEKKEN 1 STAGES", version_labels, VERSIONS, (unsigned)version1, CLASSIC,
+                                        ROW1_MODES) : -1;
+        if (row1 < 0 && game_ready(G_T1)) tmst_log("tekken2: TEKKEN 1 STAGES row hidden (no Remake packs yet)");
+        shown1 = version1;
+    }
+    int v = row >= 0 ? tekken3_game_options_value(row) : -1;
     if (v >= 0 && v < VERSIONS && v != shown) {
         shown = version = v;
         save();
         tmst_log("tekken2: TEKKEN 2 STAGES set to %s%s", version_labels[v],
                  v == REMAKE && !version_made(REMAKE) ? " (no Remake packs yet: Classic drawn)" : "");
+    }
+    v = row1 >= 0 ? tekken3_game_options_value(row1) : -1;
+    if (v >= 0 && v < VERSIONS && v != shown1) {
+        shown1 = version1 = v;
+        save();
+        tmst_log("tekken2: TEKKEN 1 STAGES set to %s%s", version_labels[v],
+                 v == REMAKE && !version_made_of(G_T1, REMAKE) ? " (no Remake packs yet: Classic drawn)" : "");
     }
 #endif
 }
@@ -1157,6 +1329,7 @@ void tmst_tekken2_stage_entry(void) {
         }
     /* the extras' palettes and rounds (not in the pause: theirs) */
     if (tmst_tekken2_extras_on() && drawn()) tmst_tekken2_extras_tick();
+    tmst_tekken1_layers_tick();                      /* Tekken 1's effects: a frame of the stage */
     switch_now();
 }
 
@@ -1231,6 +1404,18 @@ static void tick(void) {
     if (blend.count && drawn()) blend_tick();
 }
 
+/* Tekken 1's part (tmst.tekken1.stages): the same machinery, its VBlank this
+ * one's when Tekken 2's part is off (else Tekken 2's runs it). */
+static void tick1(void) { if (!stages) tick(); }
+static void activate1(void) {
+    stages1 = tmst_guard("tmst.tekken1.stages", TMST_NEED_ACTIVATION | TMST_NEED_VBLANK | TMST_NEED_HIGH_VRAM);
+    if (!stages1) return;
+    if (!version_made_of(G_T1, CLASSIC)) tmst_log("tekken1: no Tekken 1 stage packs (Setup TMST.cmd with the disc), stages off");
+    else if (!tekken3_arcade_stages_source_ready(TEKKEN3_STAGE_T3))
+        tmst_log("tekken1: the stage engine is off (Arcade Stages off, or no upper VRAM), stages off");
+    else tmst_log("tekken1: Tekken 1 stages on (TEKKEN 1 on the STAGE line), %s Tekken 3's packs", t3_real() ? "with" : "without");
+}
+
 static void activate(void) {
     stages = tmst_guard("tmst.tekken2.stages", TMST_NEED_ACTIVATION | TMST_NEED_VBLANK | TMST_NEED_HIGH_VRAM);
     if (!stages) return;
@@ -1246,6 +1431,8 @@ static void activate(void) {
 PSX_MOD_CONSTRUCTOR(tmst_register_tekken2_stages) {
     (void)psx_mod_register_activation_plugin("tmst.tekken2.stages", activate);
     (void)psx_mod_register_vblank_plugin("tmst.tekken2.stages", tick);
+    (void)psx_mod_register_activation_plugin("tmst.tekken1.stages", activate1);
+    (void)psx_mod_register_vblank_plugin("tmst.tekken1.stages", tick1);
 }
 
 #else   /* an Expanded without the stage engine: the part says so */
@@ -1255,6 +1442,7 @@ int tmst_tekken2_mirror_style(uint8_t style[20]) { (void)style; return 0; }
 int tmst_tekken2_extras_wanted(void) { return 0; }
 int tmst_tekken2_ground(uint8_t rgb[3]) { (void)rgb; return 0; }
 int tmst_tekken2_drawn(void) { return 0; }
+int tmst_tekken1_drawn(void) { return 0; }
 int tmst_tekken2_remake_drawn(void) { return 0; }
 int32_t tmst_tekken2_fixed_period(void) { return 0; }
 const int16_t *tmst_tekken2_walls(int *n, int *radius) { *n = *radius = 0; return NULL; }
@@ -1268,9 +1456,14 @@ static void activate(void) {
     if (tmst_guard("tmst.tekken2.stages", TMST_NEED_ACTIVATION))
         tmst_log("tekken2: this Expanded has no stage engine to draw them, Tekken 2 stages off");
 }
+static void activate1(void) {
+    if (tmst_guard("tmst.tekken1.stages", TMST_NEED_ACTIVATION))
+        tmst_log("tekken1: this Expanded has no stage engine to draw them, Tekken 1 stages off");
+}
 
 PSX_MOD_CONSTRUCTOR(tmst_register_tekken2_stages) {
     (void)psx_mod_register_activation_plugin("tmst.tekken2.stages", activate);
+    (void)psx_mod_register_activation_plugin("tmst.tekken1.stages", activate1);
 }
 #endif
 
@@ -1287,6 +1480,10 @@ void __wrap_func_800826E8(CPUState *cpu) {
     if (dim != NO_DIM && (cpu->pc == 0 || cpu->pc == 0x800826e8u) && cpu->gpr[31] >= 0x80039c00u &&
         cpu->gpr[31] < 0x8003a400u && drawn())
         for (int k = 0; k < 3; k++) cpu->gpr[4 + k] = (uint32_t)((int)cpu->gpr[4 + k] * (int)dim / NO_DIM);
+    /* Monument Valley's sunset darkens it (src/tekken1/tmst_tekken1_stages.c) */
+    if ((cpu->pc == 0 || cpu->pc == 0x800826e8u) && cpu->gpr[31] >= 0x80039c00u && cpu->gpr[31] < 0x8003a400u &&
+        drawn())
+        for (int k = 0; k < 3; k++) cpu->gpr[4 + k] = (uint32_t)((int)cpu->gpr[4 + k] * tmst_tekken1_dusk(k) / 128);
     /* FDIM's candlelight: tinted, its level wavering (three slow waves of
      * the vsync count), as the old fork's */
     if (tint[0] && (cpu->pc == 0 || cpu->pc == 0x800826e8u) && cpu->gpr[31] >= 0x80039c00u &&
@@ -1328,7 +1525,7 @@ void __tmst_chain_func_80049848(CPUState *cpu) { __real_func_80049848(cpu); }
 void __wrap_func_80049848(CPUState *cpu) {
 #ifdef TMST_HAS_STAGE_ENGINE
     uint8_t was = 0;
-    if ((cpu->pc == 0 || cpu->pc == 0x80049848u) && stages && (was = psx_mod_read_byte(DARK_ARENA)) != 0 &&
+    if ((cpu->pc == 0 || cpu->pc == 0x80049848u) && (stages || stages1) && (was = psx_mod_read_byte(DARK_ARENA)) != 0 &&
         our_fight() && ready()) {
         switch_now();
         dark_call = 1;

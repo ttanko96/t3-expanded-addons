@@ -5,7 +5,8 @@
  *                                       Prints "slots ...", "step <mask> <winners...>" per step, "out|champion ..."
  *   progress <path> load|win:<t>        prints "won <mask> open <t...> [opens <t>]"
  *   stage <t> <school> <key...>         prints "<key> <kind> <stage> <cat>/<music>" per key
- *   option-stage <school> <key...>     STAGES = TEKKEN 2: "<key> <kind> <stage> <random-t2>" per key
+ *   option-stage <school> <key...>     STAGES = TEKKEN 2 and TEKKEN 1, per key:
+ *                                       "<key> <kind> <stage> <random-t2> <kind1> <stage1> <random-t1>"
  *   cine <key|-> <own.jmv> [<stem>=<file>...]
  *                                       "entry <key|->", then the boss intro's .cine (player 7/1, boss 33/0)
  *   sounds <key|-> <own.jmv> [<stem>=<file>...]
@@ -117,9 +118,12 @@ int main(int argc, char **argv) {
     }
     if (argc >= 4 && !strcmp(argv[1], "option-stage")) {
         for (int i = 3; i < argc; i++) {
-            int stage, t2, kind = tmst_option_t2_stage(argv[i], atoi(argv[2]), &stage);
-            int lot = tmst_random_t2_stage(argv[i], atoi(argv[2]), &t2) ? t2 : -1;
-            printf("%s %d %d %d\n", argv[i], kind, stage, lot);
+            int school = atoi(argv[2]), stage, t2, stage1, t1;
+            int kind = tmst_option_t2_stage(argv[i], school, &stage);
+            int lot = tmst_random_t2_stage(argv[i], school, &t2) ? t2 : -1;
+            int kind1 = tmst_option_t1_stage(argv[i], school, &stage1);
+            int lot1 = tmst_random_t1_stage(argv[i], school, &t1) ? t1 : -1;
+            printf("%s %d %d %d %d %d %d\n", argv[i], kind, stage, lot, kind1, stage1, lot1);
         }
         return 0;
     }

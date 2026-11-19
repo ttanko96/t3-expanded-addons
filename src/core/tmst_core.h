@@ -26,6 +26,8 @@ int tmst_guard(const char *mod, unsigned needs);
 int tmst_tekken2_music_active(void);
 /* Its switch (tmst.tekken2), for its parts: nonzero when on. */
 int tmst_tekken2_on(void);
+/* Tekken 1 Content's switch (tmst.tekken1, src/tekken1/tmst_tekken1.c), for its parts. */
+int tmst_tekken1_on(void);
 
 /* Tournament Mode (src/tournament/tmst_tournament.c): the stage of the fight
  * in `mode` being loaded, when it is a tournament's match whose stage is the

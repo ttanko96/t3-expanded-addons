@@ -2,7 +2,7 @@
 the add-on's setup (setup/tmst_setup.py) and the game built again with it
 (dev/build.py), with their progress; then the game.
 
-    pythonw setup/tmst_gui.py [<Tekken 2 disc>]
+    pythonw setup/tmst_gui.py [<Tekken 2 or Tekken 1 disc>]
 
 The look is the Expanded's setup window's (launcher/easy_launcher.py). Both
 steps run as processes of their own; their output goes to
@@ -22,12 +22,14 @@ sys.path.insert(0, str(ADDON / 'tools'))
 sys.path.insert(0, str(ROOT / 'launcher'))
 
 FONT = 'Segoe UI' if os.name == 'nt' else 'Helvetica Neue' if sys.platform == 'darwin' else 'DejaVu Sans'
-MODS = 'Jukebox · Photo Mode · Tournament Mode · VS Mode+ · Tekken 2 Content'
+MODS = 'Jukebox · Photo Mode · Tournament Mode · VS Mode+ · Tekken 2 Content · Tekken 1 Content'
 # Where each part of the work sits on the progress bar.
 SETUP_SHARE, CONFIGURE_SHARE = 0.30, 0.08
 STEP_TEXT = {
     'python_packages': ('Checking the Python modules', 'numpy, from the Expanded’s Python (installed here when it has none).'),
     'tekken2_disc': ('Checking your Tekken 2 disc', ''),
+    'tekken1_disc': ('Checking your Tekken 1 disc', ''),
+    'tekken1_stages': ('Making the Tekken 1 stages', 'From your Tekken 1 disc: its backgrounds and floors. Under a minute.'),
     'tekken2_music': ('Making the Jukebox’s Tekken 1 and 2 music', 'From your Tekken 2 disc. The first time takes a minute or two.'),
     'tekken2_stages': ('Making the Tekken 2 stages', 'From your Tekken 2 disc: its backgrounds and floors. A few seconds.'),
     'tekken2_remake_pictures': ('Opening the Tekken 2 Remake backgrounds', 'With your Tekken 2 disc. A few seconds.'),
@@ -64,10 +66,11 @@ def game_running() -> bool:
     return platform.game_running(EXE)
 
 
-def known_t2_disc() -> str:
-    """The Tekken 2 disc the add-on's setup kept, else one found beside the Expanded's files."""
+def known_disc(module: str, state_name: str) -> str:
+    """The disc the add-on's setup kept (workspace/<state_name>.json, tools/<module>.py),
+    else one found beside the Expanded's files."""
     try:
-        state = json.loads((ADDON / 'workspace/tekken2-disc.json').read_text(encoding='utf-8'))
+        state = json.loads((ADDON / f'workspace/{state_name}.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         state = {}
     if state.get('disc') and Path(state['disc']['path']).is_file():
@@ -75,13 +78,27 @@ def known_t2_disc() -> str:
     if state.get('declined'):
         return ''
     try:
-        import tekken2_disc
+        import importlib
+        tool = importlib.import_module(module)
         sys.path.insert(0, str(ADDON / 'setup'))
         import tmst_setup
-        found = tekken2_disc.search(tmst_setup.expanded_source_folders())
+        found = tool.search(tmst_setup.expanded_source_folders())
     except Exception:   # noqa: BLE001 - nothing found is the same as nothing there
         return ''
     return str(found[0]) if found else ''
+
+
+def dropped(path: str | None) -> tuple:
+    """(Tekken 2 disc, Tekken 1 disc) of a file dropped on Setup TMST: the
+    Tekken 1 field when it is a Tekken 1 disc, else the Tekken 2 field."""
+    if not path:
+        return None, None
+    try:
+        import tekken1_disc
+        tekken1_disc.identify(path)
+        return None, path
+    except Exception:   # noqa: BLE001 - not a Tekken 1 disc: the Tekken 2 field says why
+        return path, None
 
 
 class Job:
@@ -111,7 +128,8 @@ class Job:
             self.job = None
 
 
-def gui(t2_arg: str | None, test_hook=None):
+def gui(arg: str | None, test_hook=None):
+    t2_arg, t1_arg = dropped(arg)
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
     backend = expanded_backend()
@@ -146,16 +164,12 @@ def gui(t2_arg: str | None, test_hook=None):
             ttk.Label(root, text='New features for Tekken 3 Expanded.',
                       style='Muted.TLabel').pack(anchor='w', pady=(4, 22))
             ttk.Label(root, text='Installs: ' + MODS).pack(anchor='w', pady=(0, 14))
-            frame = ttk.Frame(root)
-            frame.pack(fill='x', pady=(0, 9))
-            ttk.Label(frame, text='Tekken 2 · USA or Europe PlayStation disc').pack(anchor='w', pady=(0, 5))
-            row = ttk.Frame(frame)
-            row.pack(fill='x')
-            self.t2 = tk.StringVar(value=t2_arg or known_t2_disc())
-            self.entry = ttk.Entry(row, textvariable=self.t2, width=58)
-            self.entry.pack(side='left', fill='x', expand=True)
-            self.browse_button = ttk.Button(row, text='Browse', command=self.browse)
-            self.browse_button.pack(side='right', padx=(9, 0))
+            self.t2, self.entry, self.browse_button = self.disc_row(
+                root, 'Tekken 2 · USA or Europe PlayStation disc', t2_arg or known_disc('tekken2_disc', 'tekken2-disc'),
+                'Choose your Tekken 2 disc')
+            self.t1, self.entry1, self.browse_button1 = self.disc_row(
+                root, 'Tekken 1 · Europe PlayStation disc (optional)', t1_arg or known_disc('tekken1_disc', 'tekken1-disc'),
+                'Choose your Tekken 1 disc')
             ttk.Label(root, text='Use your own game files. Nothing is uploaded.\n'
                       'Uses the Expanded’s own Python and compilers; the first build takes a few minutes.\n'
                       'Switch the mods on in the game’s Mods tab, TMST group.',
@@ -175,7 +189,7 @@ def gui(t2_arg: str | None, test_hook=None):
             self.cancel_button.pack(side='right', padx=(0, 9))
             ttk.Button(actions, text='Open setup log', command=self.open_log).pack(side='left')
             if self.problem:
-                for w in (self.primary, self.entry, self.browse_button):
+                for w in (self.primary, self.entry, self.browse_button, self.entry1, self.browse_button1):
                     w.configure(state='disabled')
             self.window.protocol('WM_DELETE_WINDOW', self.close)
             self.window.after(100, self.poll)
@@ -185,15 +199,29 @@ def gui(t2_arg: str | None, test_hook=None):
             y = max(0, (self.window.winfo_screenheight() - height) // 2)
             self.window.geometry(f'+{x}+{y}')
 
-        def browse(self):
-            chosen = filedialog.askopenfilename(parent=self.window, title='Choose your Tekken 2 disc',
-                                                filetypes=[('Disc image', '*.cue *.bin *.chd'), ('All files', '*.*')])
-            if chosen:
-                self.t2.set(chosen)
+        def disc_row(self, root, text, value, title):
+            """A disc's label, field and Browse button: (its variable, field, button)."""
+            frame = ttk.Frame(root)
+            frame.pack(fill='x', pady=(0, 9))
+            ttk.Label(frame, text=text).pack(anchor='w', pady=(0, 5))
+            row = ttk.Frame(frame)
+            row.pack(fill='x')
+            var = tk.StringVar(value=value)
+            entry = ttk.Entry(row, textvariable=var, width=58)
+            entry.pack(side='left', fill='x', expand=True)
+
+            def browse():
+                chosen = filedialog.askopenfilename(parent=self.window, title=title,
+                                                    filetypes=[('Disc image', '*.cue *.bin *.chd'), ('All files', '*.*')])
+                if chosen:
+                    var.set(chosen)
+            button = ttk.Button(row, text='Browse', command=browse)
+            button.pack(side='right', padx=(9, 0))
+            return var, entry, button
 
         def set_busy(self, value):
             self.busy = value
-            for w in (self.entry, self.browse_button, self.primary):
+            for w in (self.entry, self.browse_button, self.entry1, self.browse_button1, self.primary):
                 w.configure(state='disabled' if value else 'normal')
             self.cancel_button.configure(state='normal' if value else 'disabled')
 
@@ -222,6 +250,24 @@ def gui(t2_arg: str | None, test_hook=None):
             self.detail.set(f'Tekken 2 disc: {info["region"]} ({info["serial"]})')
             return ['--t2-disc', path]
 
+        def t1_args(self) -> list[str] | None:
+            """The setup's Tekken 1 arguments, as t2_args."""
+            path = self.t1.get().strip().strip('"')
+            if not path:
+                return ['--no-t1-disc']
+            try:
+                import tekken1_disc
+                tekken1_disc.identify(path)
+            except Exception as error:   # noqa: BLE001 - DiscError, OSError: the reason is the message
+                if messagebox.askyesno('Tekken 1 disc not usable',
+                                       f'{error}\n\nContinue without the Tekken 1 disc?',
+                                       icon='warning', default='no', parent=self.window):
+                    return ['--no-t1-disc']
+                self.status.set('Choose another Tekken 1 disc')
+                self.detail.set('Click Browse, or clear the field to install without it.')
+                return None
+            return ['--t1-disc', path]
+
         def start(self):
             if game_running():
                 self.status.set('Close the game first')
@@ -230,6 +276,10 @@ def gui(t2_arg: str | None, test_hook=None):
             args = self.t2_args()
             if args is None:
                 return
+            args1 = self.t1_args()
+            if args1 is None:
+                return
+            args += args1
             self.epoch += 1
             self.set_busy(True)
             self.set_progress(0, back=True)

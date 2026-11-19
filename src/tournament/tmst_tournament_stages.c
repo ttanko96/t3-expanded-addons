@@ -89,6 +89,10 @@ static int home(const Home *list, const char *key) {
     for (const Home *h = list; h->key; h++) if (!strcmp(h->key, key)) return h->stage;
     return -1;
 }
+/* Xiaoyu or Jin in the school outfit. */
+static int school_outfit(const char *key, int school) {
+    return school && (!strcmp(key, "xiaoyu") || !strcmp(key, "jin"));
+}
 
 int tmst_tourney_stage(int t, const char *key, int school, int *stage) {
     int kind = TMST_TSTAGE_NONE, s = -1;
@@ -99,46 +103,70 @@ int tmst_tourney_stage(int t, const char *key, int school, int *stage) {
     case TMST_TOURNEY_TTT: kind = TMST_TSTAGE_TTT; s = home(tag, key); break;
     default: break;
     }
-    if (s >= 0 && school && (kind == TMST_TSTAGE_T3 || kind == TMST_TSTAGE_TTT) &&
-        (!strcmp(key, "xiaoyu") || !strcmp(key, "jin")))
+    if (s >= 0 && (kind == TMST_TSTAGE_T3 || kind == TMST_TSTAGE_TTT) && school_outfit(key, school))
         s = SCHOOL;
     if (s < 0) kind = TMST_TSTAGE_NONE;
     *stage = s;
     return kind;
 }
 
-/* GAME OPTION's STAGES = TEKKEN 2 (issue #11, the user's list, 2026-11-13):
- * Tekken 2's fighters their Tekken 2 stage (the T2 tournament's), the others
- * their Tekken 3 arena or, for TTT1's, their TTT stage. */
-static const Home option_t3[] = {
-    {"bryan", 0}, {"mokujin", 2}, {"xiaoyu", 3}, {"hwoarang", 4}, {"ogre", 6}, {"trueogre", 6}, {"jin", 8},
-    {"gunjack", 9}, {"eddy", 10}, {"julia", 12}, {"gon", 13}, {"drb", 14}, {NULL, -1}};
-static const Home option_ttt[] = {
-    {"panda", 1}, {"tetsujin", 2}, {"tiger", 13}, {"unknown", 14}, {NULL, -1}};
-
-int tmst_option_t2_stage(const char *key, int school, int *stage) {
-    int s;
-    *stage = -1;
-    if (!key) return TMST_TSTAGE_NONE;
-    if (school && (!strcmp(key, "xiaoyu") || !strcmp(key, "jin"))) { *stage = SCHOOL; return TMST_TSTAGE_T3; }
-    if ((s = home(tekken2, key)) >= 0) { *stage = s; return TMST_TSTAGE_T2; }
-    if ((s = home(option_t3, key)) >= 0) { *stage = s; return TMST_TSTAGE_T3; }
-    if ((s = home(option_ttt, key)) >= 0) { *stage = s; return TMST_TSTAGE_TTT; }
-    return TMST_TSTAGE_NONE;
-}
-/* RANDOM's Tekken 2 lot for Tekken 3's newcomers (issue #11, the user's list,
- * 2026-11-14): their T3 and TTT stages are the same place, so without a lot
- * RANDOM gave them their default only. Not for the TEKKEN 2 value. */
+/* Tekken 2 stages for Tekken 3's newcomers (issue #11, the user's list,
+ * 2026-11-14): RANDOM's Tekken 2 lot, and since 2026-11-19 their stage on the
+ * TEKKEN 2 value too (it was their Tekken 3 arena or TTT stage). */
 static const Home random_t2[] = {
     {"xiaoyu", 1}, {"panda", 1}, {"jin", 2}, {"bryan", 3}, {"mokujin", 7}, {"tetsujin", 7}, {"gunjack", 8},
     {"drb", 8}, {"gon", 17}, {"eddy", 17}, {"tiger", 17}, {"julia", 19}, {"hwoarang", 20}, {"ogre", 22},
     {"trueogre", 22}, {"unknown", 22}, {NULL, -1}};
 
+/* A fighter's Tekken 2 stage: Tekken 2's own (the T2 tournament's), else a
+ * newcomer's of the list above; -1 none. */
+static int t2_stage(const char *key) {
+    int s = home(tekken2, key);
+    return s >= 0 ? s : home(random_t2, key);
+}
+
+/* GAME OPTION's STAGES = TEKKEN 2 (issue #11; the user's lists, 2026-11-13,
+ * every fighter on a Tekken 2 stage since 2026-11-19): the fighter's Tekken 2
+ * stage; Xiaoyu and Jin in the school outfit Tekken 3's school. */
+int tmst_option_t2_stage(const char *key, int school, int *stage) {
+    *stage = -1;
+    if (!key) return TMST_TSTAGE_NONE;
+    if (school_outfit(key, school)) { *stage = SCHOOL; return TMST_TSTAGE_T3; }
+    if ((*stage = t2_stage(key)) < 0) return TMST_TSTAGE_NONE;
+    return TMST_TSTAGE_T2;
+}
+
 int tmst_random_t2_stage(const char *key, int school, int *stage) {
     *stage = -1;
     if (!key) return 0;
     /* the school outfit: T3 or TTT only (the user, 2026-11-14) */
-    if (school && (!strcmp(key, "xiaoyu") || !strcmp(key, "jin"))) return 0;
-    if ((*stage = home(tekken2, key)) < 0) *stage = home(random_t2, key);
-    return *stage >= 0;
+    if (school_outfit(key, school)) return 0;
+    return (*stage = t2_stage(key)) >= 0;
+}
+
+/* Tekken 1's stages (0 Windermere, 1 Kyoto, 2 Acropolis, 3 Stadium,
+ * 4 Monument Valley, 5 King George Island, 6 Fiji, 7 Venezia, 8 Angkor Wat,
+ * 9 Szechwan, 10 Chicago), one for every fighter (the user's list,
+ * 2026-11-19): the STAGES row's TEKKEN 1 and RANDOM's Tekken 1 lot. */
+static const Home option_t1[] = {
+    {"paul", 10}, {"bryan", 10}, {"law", 10}, {"kuma", 1}, {"panda", 9}, {"yoshimitsu", 8}, {"mokujin", 0},
+    {"xiaoyu", 9}, {"hwoarang", 3}, {"lei", 9}, {"ogre", 8}, {"trueogre", 8}, {"jin", 0}, {"nina", 7},
+    {"anna", 7}, {"gunjack", 5}, {"eddy", 6}, {"tiger", 10}, {"king", 3}, {"julia", 4}, {"heihachi", 1},
+    {"gon", 6}, {"drb", 5},
+    {"bruce", 3}, {"lee", 7}, {"kunimitsu", 8}, {"tetsujin", 0}, {"wang", 9}, {"baek", 3}, {"devil", 2},
+    {"angel", 2}, {"unknown", 2}, {"jun", 0}, {"jack2", 5}, {"pjack", 5}, {"armorking", 4}, {"kazuya", 1},
+    {"michelle", 4}, {"ganryu", 1}, {"roger", 6}, {"alex", 6}, {NULL, -1}};
+
+int tmst_option_t1_stage(const char *key, int school, int *stage) {
+    *stage = -1;
+    if (!key) return TMST_TSTAGE_NONE;
+    if (school_outfit(key, school)) { *stage = SCHOOL; return TMST_TSTAGE_T3; }
+    if ((*stage = home(option_t1, key)) < 0) return TMST_TSTAGE_NONE;
+    return TMST_TSTAGE_T1;
+}
+
+int tmst_random_t1_stage(const char *key, int school, int *stage) {
+    *stage = -1;
+    if (!key || school_outfit(key, school)) return 0;
+    return (*stage = home(option_t1, key)) >= 0;
 }

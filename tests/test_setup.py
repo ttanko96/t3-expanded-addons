@@ -41,7 +41,8 @@ class SetupTest(unittest.TestCase):
 
     def test_modules_first_then_the_disc_then_what_needs_it(self):
         names = [s.__name__ for s in tmst_setup.STEPS]
-        self.assertEqual(names[:2], ['python_packages', 'tekken2_disc'])
+        self.assertEqual(names[:3], ['python_packages', 'tekken2_disc', 'tekken1_disc'])
+        self.assertIn('tekken1_stages', names)
         self.assertLess(names.index('tekken2_music'), names.index('jukebox_titles'))
         self.assertLess(names.index('tekken5dr_music'), names.index('jukebox_titles'))
         self.assertIn('tekken2_stages', names)

@@ -3375,17 +3375,31 @@ static void own_tiles_draw(const Gte *g) {
     }
 }
 
-void tmst_tekken2_extras_draw(const CPUState *cpu) {
-    if (!s_pack.loaded) return;
+/* The packets read the upper VRAM half (texpage bit 11, CLUT bit 15) only
+ * from memory the GPU is told of (psx_mod_gpu_high_vram_source, eight such
+ * places in all): ours, made once, two OT buffers' worth. */
+static uint32_t trusted(void) {
     if (!s_memory) {
-        /* the packets read the upper VRAM half (texpage bit 11, CLUT bit 15)
-         * only from memory the GPU is told of */
         uint32_t m = psx_mod_alloc_gpu_dma_memory(2 * BUFFER_BYTES, 16);
-        if (!m) return;
+        if (!m) return 0;
         if (!psx_mod_gpu_high_vram_source(m, 2 * BUFFER_BYTES))
             tmst_log("tekken2: remake extras: no upper VRAM source for their packets");
         s_memory = m;
     }
+    return s_memory;
+}
+/* The same memory for Tekken 1's layers (src/tekken1/tmst_tekken1_stages.c):
+ * its fights have none of these extras. An OT buffer's (parity) part, its
+ * size in *size; 0 none. */
+uint32_t tmst_tekken2_trusted_memory(unsigned parity, uint32_t *size) {
+    uint32_t m = trusted();
+    *size = BUFFER_BYTES;
+    return m ? m + BUFFER_BYTES * (parity & 1u) : 0;
+}
+
+void tmst_tekken2_extras_draw(const CPUState *cpu) {
+    if (!s_pack.loaded) return;
+    if (!trusted()) return;
     tables();
     Gte g;
     g.ofx = (int32_t)cpu->gte_ctrl[24]; g.ofy = (int32_t)cpu->gte_ctrl[25]; g.h = cpu->gte_ctrl[26] & 0xFFFF;

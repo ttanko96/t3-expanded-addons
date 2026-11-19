@@ -1,0 +1,42 @@
+format_version = 5
+id = "tmst.tekken1"
+version = "1.0.0"
+name = "Tekken 1 Content"
+author = "TMST"
+description = "What the add-on takes from your own Tekken (1) PlayStation disc (Setup TMST.cmd), in one package: Tekken 1 Content switches it all on or off, and under it, in the TMST / Tekken 1 Content group, each part on its own. Stages: Tekken 1's 11 stages, their floor drawn by the game's stage engine and their sky and layered backgrounds as Tekken 1 draws them, picked as TEKKEN 1 on the STAGE line of VS and Practice. Restart after toggling this package."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-00402"
+exe_sha256 = "fbda8b68e5799dbef4af39a161783bc670c15b0aa0e87dce65e210717da19b8c"
+
+# The package's switch: off, none of its parts runs (each requires it); on,
+# each part is switched on its own (the parts' group, the next one down).
+[[feature]]
+id = "tekken1"
+name = "Tekken 1 Content"
+description = "Everything taken from your Tekken 1 disc (given to Setup TMST.cmd): off, none of it; on, switch its parts on one by one in the TMST / Tekken 1 Content group below (switching a part on switches this on too). Restart after changing."
+group = "TMST"
+default_enabled = false
+
+[[plugin]]
+feature = "tekken1"
+id = "tmst.tekken1"
+
+[[feature]]
+id = "stages"
+name = "Stages"
+description = "Tekken 1's 11 stages (Classic: its sky, its layered backgrounds and floor, with Monument Valley's sunset, King George Island's snow and the Stadium's big screen showing the fight), made by Setup TMST.cmd from your Tekken 1 disc; the floor drawn by the game's stage engine (keep the Arcade Stages feature on; tekken3.zip is not needed). Pick them as TEKKEN 1 on the STAGE line of VS and Practice (Stage Select on), or in every mode with TEKKEN 1 on GAME OPTION's STAGES row (each fighter on its own Tekken 1 stage; RANDOM draws them too). The Remake comes later, and with it GAME OPTION's TEKKEN 1 STAGES row. Needs Tekken 1 Content. Restart after changing."
+group = "TMST / Tekken 1 Content"
+default_enabled = false
+
+[[plugin]]
+feature = "stages"
+id = "tmst.tekken1.stages"
+
+[[constraint]]
+feature = "stages"
+kind = "requires_feature"
+requires_feature = "tekken1"
