@@ -137,10 +137,11 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
 - **Needs:** **Arcade Stages** switched on.
 - **Picking one:** in VS and Practice (Stage Select on), **TEKKEN 2** is a game on the STAGE line, after the others;
   press **Down** for its stages (RANDOM, then the 23).
-- **Every mode:** GAME OPTION's **STAGES** row has **TEKKEN 2** (with TTT's stages installed): the fighter whose stage
-  it is (the CPU in Arcade) fights on its own stage, a Tekken 2 fighter on its Tekken 2 stage, the others on their
-  Tekken 3 or TTT stage. **RANDOM** draws a Tekken 2 fighter's Tekken 2 stage too, one chance in three. The STAGE line
-  and Tournament Mode come first.
+- **Every mode:** GAME OPTION's **STAGES** row has **TEKKEN 2** at its end (with TTT's stages installed): the
+  fighter whose stage it is (the CPU in Arcade) fights on its Tekken 2 stage, a Tekken 2 fighter on its own, a Tekken 3
+  newcomer on one that suits it (Xiaoyu and Jin in the school outfit at the school). **RANDOM** draws a fighter's
+  Tekken 2 stage too: one chance in four with Tekken 1 Content's Stages on, in three without. The STAGE line and
+  Tournament Mode come first.
 - **Version:** GAME OPTION's **TEKKEN 2 STAGES** row, **CLASSIC** or **REMAKE**.
 - **Light:** on both versions the fighters are lit by daylight, dimmed only on the dark stages (Church, Pagoda,
   Serene Forest, Taj Mahal, Mirror and Eternal Darkness).
@@ -209,6 +210,26 @@ reach and the camera stay as they are.
   row reaches a guest's voice from the next pick at the selector on.
 - The shadows keep their size (in Tekken 2 they grew too).
 
+### Tekken 1 Content
+What the add-on takes from your own Tekken (1) disc (given to `Setup TMST.cmd`), in one package, switched as Tekken 2
+Content: **Tekken 1 Content** in the TMST group, its parts in **TMST / Tekken 1 Content**.
+
+#### Stages
+Tekken 1's 11 stages: the sky and the layered backgrounds as large as Tekken 1 draws them, turning and tilting with
+the camera, and Tekken 1's floor tiles (three times the size of a Tekken 2 floor cell) out to the horizon.
+- **Needs:** **Arcade Stages** switched on; tekken3.zip is not needed.
+- **Picking one:** in VS and Practice (Stage Select on), **TEKKEN 1** is a game on the STAGE line, after TEKKEN 2
+  (Left from DEFAULT); press **Down** for its stages (RANDOM, then the 11).
+- **Every mode:** GAME OPTION's **STAGES** row has **TEKKEN 1**, before TEKKEN 2 at its end (with TTT's stages
+  installed): the fighter whose stage it is (the CPU in Arcade) fights on its Tekken 1 stage, every fighter has one
+  (Xiaoyu and Jin in the school outfit at the school). **RANDOM** draws a fighter's Tekken 1 stage too: one chance in
+  four with Tekken 2 Content's Stages on, in three without. The STAGE line and Tournament Mode come first.
+- **Version:** the Classic. GAME OPTION's **TEKKEN 1 STAGES** row (**CLASSIC** or **REMAKE**) shows once the Remake
+  comes; until then it is hidden.
+- **As in Tekken 1:** Monument Valley's sunset (the sky turns over half a minute of the fight), King George Island's
+  snow, the Stadium's big screen showing the fight.
+- **Music:** the fighter's (Tekken 1's stage themes later).
+
 ## Installation
 
 The add-on runs where the Expanded runs: Windows 10/11, macOS, Linux and the Steam Deck (macOS, Linux and Steam Deck
@@ -252,18 +273,19 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
    ```
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
    progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
+   - takes your **Tekken 1** disc too (optional; Europe SCES-00005, its own field; it gives the Tekken 1 stages);
    - takes your **Tekken 2** disc (optional; it gives the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages):
      - the window fills it in when it finds one beside the discs the Expanded's setup was given; **Browse** for
        another, or clear the field to go on without it; a disc dropped on `Setup TMST.cmd` is filled in too;
      - USA (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`;
    - makes what the mods need on your machine:
      - from the Tekken 2 disc: the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages (the Remake's stages take a
-       few minutes the first time);
+       few minutes the first time); from the Tekken 1 disc: the Tekken 1 stages;
      - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
        setup imported), its Tekken 5 DR music (from the Dark Resurrection ISO the Expanded's setup was given) and its
        title lists;
      - from the Tekken 3 disc the Expanded runs: Tournament Mode's portraits of the Tekken 3 fighters;
-   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, VS Mode+, Tekken 2 Content), as the
+   - rebuilds the game with every mod of the add-on (Jukebox, Photo Mode, Tournament Mode, VS Mode+, Tekken 2 Content, Tekken 1 Content), as the
      Expanded's setup builds it: your mod settings and game data stay.
 
    The window says so if the Expanded has not been set up yet or the game is running. When it reads

@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-enum { TMST_TSTAGE_NONE, TMST_TSTAGE_T2, TMST_TSTAGE_T3, TMST_TSTAGE_TTT };
+enum { TMST_TSTAGE_NONE, TMST_TSTAGE_T2, TMST_TSTAGE_T3, TMST_TSTAGE_TTT, TMST_TSTAGE_T1 };
 
 /* The kind of tournament t's stage against `key` (TMST_TSTAGE_*), its number
  * in *stage (-1 with NONE). school: the fighter wears the school outfit
@@ -35,15 +35,22 @@ const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int 
 const char *tmst_t2_stage_music(int stage, int arcade);
 
 /* GAME OPTION's STAGES = TEKKEN 2 (issue #11, outside the tournaments): the
- * stage of the fighter who decides the fight's (TMST_TSTAGE_T2, _T3 or _TTT;
- * NONE: not on the list, the system decides), its number in *stage. school:
- * Xiaoyu or Jin in the school outfit, Tekken 3's arena 7. */
+ * stage of the fighter who decides the fight's, its Tekken 2 stage
+ * (TMST_TSTAGE_T2: Tekken 2's own, or a Tekken 3 newcomer's of the user's
+ * list; NONE: not on the list, the system decides), its number in *stage.
+ * school: Xiaoyu or Jin in the school outfit, Tekken 3's arena 7 (_T3). */
 int tmst_option_t2_stage(const char *key, int school, int *stage);
-/* STAGES = RANDOM's Tekken 2 lot: 1 and the fighter's Tekken 2 stage when it
- * was in Tekken 2, or a Tekken 3 newcomer's of the user's list (issue #11);
- * its pool then T3, TTT and T2, one chance in three each. None for Xiaoyu and
- * Jin in the school outfit (`school`). */
+/* STAGES = RANDOM's Tekken 2 lot: 1 and the fighter's Tekken 2 stage (the
+ * TEKKEN 2 value's). None for Xiaoyu and Jin in the school outfit. */
 int tmst_random_t2_stage(const char *key, int school, int *stage);
+/* STAGES = TEKKEN 1 (the user's list, 2026-11-19): the fighter's Tekken 1
+ * stage (TMST_TSTAGE_T1, 0..10; NONE: not on the list), the school outfit
+ * Tekken 3's arena 7 (_T3). */
+int tmst_option_t1_stage(const char *key, int school, int *stage);
+/* STAGES = RANDOM's Tekken 1 lot: 1 and the fighter's Tekken 1 stage. With
+ * both lots the pool is T3, TTT, T2 and T1, one chance in four each. None for
+ * the school outfit. */
+int tmst_random_t1_stage(const char *key, int school, int *stage);
 
 #ifdef __cplusplus
 }

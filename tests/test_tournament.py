@@ -274,59 +274,67 @@ class TournamentTest(unittest.TestCase):
                              {'xiaoyu': (kind, 7), 'jin': (kind, 7), 'paul': (kind, 0)})
         self.assertEqual(self.stages(1, ['jun'], 1), {'jun': (self.T2, 2)})   # T2: no school stage
 
-    # ---- GAME OPTION's STAGES = TEKKEN 2 and RANDOM (issue #11) ----
+    # ---- GAME OPTION's STAGES = TEKKEN 2, TEKKEN 1 and RANDOM (issue #11) ----
     def option_stages(self, keys, school=0):
-        return {k: (int(a), int(b), int(c)) for k, a, b, c in
-                (l.split() for l in self.run_exe('option-stage', school, *keys))}
+        """{key: (kind, stage, random-t2, kind1, stage1, random-t1)}"""
+        return {l.split()[0]: tuple(int(v) for v in l.split()[1:])
+                for l in self.run_exe('option-stage', school, *keys)}
 
-    # the user's list (2026-11-13): (kind, stage)
-    OPTION = {
-        'bryan': (3, 0), 'mokujin': (3, 2), 'xiaoyu': (3, 3), 'hwoarang': (3, 4), 'ogre': (3, 6),
-        'trueogre': (3, 6), 'jin': (3, 8), 'gunjack': (3, 9), 'eddy': (3, 10), 'julia': (3, 12), 'gon': (3, 13),
-        'drb': (3, 14),
-        'panda': (4, 1), 'tetsujin': (4, 2), 'tiger': (4, 13), 'unknown': (4, 14),
-        'bruce': (2, 0), 'wang': (2, 1), 'jun': (2, 2), 'paul': (2, 3), 'king': (2, 4), 'lei': (2, 5),
-        'heihachi': (2, 6), 'yoshimitsu': (2, 7), 'jack2': (2, 8), 'law': (2, 9), 'kunimitsu': (2, 10),
-        'nina': (2, 11), 'armorking': (2, 12), 'lee': (2, 13), 'alex': (2, 14), 'kuma': (2, 14), 'ganryu': (2, 15),
-        'anna': (2, 16), 'roger': (2, 17), 'pjack': (2, 18), 'michelle': (2, 19), 'baek': (2, 20),
-        'kazuya': (2, 21), 'devil': (2, 22), 'angel': (2, 22)}
-
-    def test_option_stages_list(self):
-        kinds = {2: self.T2, 3: self.T3, 4: self.TTT}
-        got = self.option_stages(STOCK + GUESTS)
-        self.assertEqual(set(got), set(self.OPTION))          # every fighter on the list, none missing
-        for k, (kind, stage) in self.OPTION.items():
-            self.assertEqual(got[k][:2], (kinds[kind], stage), k)
-        self.assertEqual(self.option_stages(['nobody']), {'nobody': (self.NONE, -1, -1)})
-
-    # RANDOM's Tekken 2 lot for Tekken 3's newcomers (issue #11, the user's list, 2026-11-14)
+    # Tekken 2's fighters: their own Tekken 2 stage (the T2 tournament's, the user's list, 2026-11-13)
+    T2_OWN = {
+        'bruce': 0, 'wang': 1, 'jun': 2, 'paul': 3, 'king': 4, 'lei': 5, 'heihachi': 6, 'yoshimitsu': 7,
+        'jack2': 8, 'law': 9, 'kunimitsu': 10, 'nina': 11, 'armorking': 12, 'lee': 13, 'alex': 14, 'kuma': 14,
+        'ganryu': 15, 'anna': 16, 'roger': 17, 'pjack': 18, 'michelle': 19, 'baek': 20, 'kazuya': 21,
+        'devil': 22, 'angel': 22}
+    # Tekken 3's newcomers (the user's list, 2026-11-14; the TEKKEN 2 value's too since 2026-11-19)
     RANDOM_T2 = {'xiaoyu': 1, 'panda': 1, 'jin': 2, 'bryan': 3, 'mokujin': 7, 'tetsujin': 7, 'gunjack': 8,
                  'drb': 8, 'gon': 17, 'eddy': 17, 'tiger': 17, 'julia': 19, 'hwoarang': 20, 'ogre': 22,
                  'trueogre': 22, 'unknown': 22}
+    # Tekken 1's stages, one for every fighter (the user's list, 2026-11-19)
+    OPTION_T1 = {
+        'paul': 10, 'bryan': 10, 'law': 10, 'kuma': 1, 'panda': 9, 'yoshimitsu': 8, 'mokujin': 0, 'xiaoyu': 9,
+        'hwoarang': 3, 'lei': 9, 'ogre': 8, 'trueogre': 8, 'jin': 0, 'nina': 7, 'anna': 7, 'gunjack': 5,
+        'eddy': 6, 'tiger': 10, 'king': 3, 'julia': 4, 'heihachi': 1, 'gon': 6, 'drb': 5,
+        'bruce': 3, 'lee': 7, 'kunimitsu': 8, 'tetsujin': 0, 'wang': 9, 'baek': 3, 'devil': 2, 'angel': 2,
+        'unknown': 2, 'jun': 0, 'jack2': 5, 'pjack': 5, 'armorking': 4, 'kazuya': 1, 'michelle': 4,
+        'ganryu': 1, 'roger': 6, 'alex': 6}
+    T1 = 4
+
+    def test_option_stages_list(self):
+        got = self.option_stages(STOCK + GUESTS)
+        self.assertEqual(set(got), set(STOCK + GUESTS))
+        t2 = dict(self.T2_OWN, **self.RANDOM_T2)
+        self.assertEqual(set(t2), set(got))                   # every fighter has a Tekken 2 stage
+        self.assertEqual(set(self.OPTION_T1), set(got))       # ... and a Tekken 1 stage
+        for k, v in got.items():
+            self.assertEqual(v[:2], (self.T2, t2[k]), k)      # TEKKEN 2: everyone on a Tekken 2 stage
+            self.assertEqual(v[3:5], (self.T1, self.OPTION_T1[k]), k)
+        self.assertEqual(self.option_stages(['nobody']), {'nobody': (self.NONE, -1, -1, self.NONE, -1, -1)})
+        # every Tekken 1 stage has fighters
+        self.assertEqual(sorted(set(self.OPTION_T1.values())), list(range(11)))
 
     def test_option_stages_school(self):
         got = self.option_stages(['xiaoyu', 'jin', 'paul', 'panda'], 1)
-        self.assertEqual(got['xiaoyu'][:2], (self.T3, 7))
-        self.assertEqual(got['jin'][:2], (self.T3, 7))
+        for k in ('xiaoyu', 'jin'):                           # the school outfit: Tekken 3's school on both
+            self.assertEqual(got[k][:2], (self.T3, 7))
+            self.assertEqual(got[k][3:5], (self.T3, 7))
         self.assertEqual(got['paul'][:2], (self.T2, 3))       # the outfit counts only for Xiaoyu and Jin
-        self.assertEqual(got['panda'][:2], (self.TTT, 1))
+        self.assertEqual(got['panda'][:2], (self.T2, 1))
+        self.assertEqual(got['paul'][3:5], (self.T1, 10))
 
     def test_option_random_pool(self):
         got = self.option_stages(STOCK + GUESTS)
-        for k, (kind, stage, lot) in got.items():
-            # RANDOM's Tekken 2 lot: Tekken 2's fighters on their own Tekken 2 stage,
-            # Tekken 3's newcomers on the user's list (issue #11, 2026-11-14)
-            self.assertEqual(lot, stage if kind == self.T2 else self.RANDOM_T2.get(k, -1), k)
-        self.assertEqual(got['paul'][2], 3)
-        self.assertEqual(got['panda'][2], 1)
-        self.assertEqual(got['roger'][2], 17)
-        # every stock fighter and guest has a lot (the user's lists, 2026-11-14)
-        for k, (kind, stage, lot) in got.items(): self.assertGreaterEqual(lot, 0, k)
+        for k, v in got.items():
+            self.assertEqual(v[2], v[1], k)                   # RANDOM's Tekken 2 lot: the TEKKEN 2 value's stage
+            self.assertEqual(v[5], v[4], k)                   # RANDOM's Tekken 1 lot: the TEKKEN 1 value's
+            self.assertGreaterEqual(v[2], 0, k)
+            self.assertGreaterEqual(v[5], 0, k)
         # the school outfit: T3 or TTT only
         school = self.option_stages(['xiaoyu', 'jin', 'paul', 'panda'], 1)
-        self.assertEqual((school['xiaoyu'][2], school['jin'][2]), (-1, -1))
+        for k in ('xiaoyu', 'jin'): self.assertEqual((school[k][2], school[k][5]), (-1, -1))
         self.assertEqual((school['paul'][2], school['panda'][2]), (3, 1))
-        # the T2 tournament's stages are the option's
+        self.assertEqual((school['paul'][5], school['panda'][5]), (10, 9))
+        # the T2 tournament's stages are Tekken 2's fighters' own
         for k, v in self.stages(1, STOCK + GUESTS).items():
             if v[0] == self.T2: self.assertEqual(got[k][:2], v, k)
 

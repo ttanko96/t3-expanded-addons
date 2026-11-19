@@ -48,6 +48,11 @@ void tmst_tekken2_anchor_step(uint32_t v0);
  * (src/tekken2/tmst_tekken2_extras.c), once the engine has drawn the stage. */
 int tmst_tekken2_extras_wanted(void);
 void tmst_tekken2_extras_draw(const CPUState *cpu);
+/* Tekken 1's stages (src/tekken1/tmst_tekken1_stages.c): their sky, layers
+ * and effects, once the engine has drawn the stage (its floor). */
+int tmst_tekken1_layers_wanted(void);
+void tmst_tekken1_layers_draw(CPUState *cpu);
+int tmst_tekken1_screen_on(void);       /* Stadium's big screen: its copy at the end of rank 9, as the mirror's */
 
 enum { CAMERA = 0x800a85c0, SIN_PS1 = 0x8001e8c4, COS_PS1 = 0x8001f0c4, DRAWENV = 0x800a8c54,
        FRAME_PARITY = 0x800adefc, CAMERA_Y0 = 0x80025138, CAMERA_Y0_AT = 0x800b0460 };
@@ -129,6 +134,24 @@ static int camera_point(const CPUState *cpu, int x, int y, int z, int *sx, int *
     *sx = (int)(vx < -0x400 ? -0x400 : vx > 0x3FF ? 0x3FF : vx);
     *sy = (int)(vyy < -0x400 ? -0x400 : vyy > 0x3FF ? 0x3FF : vyy);
     return sz3 > 0;
+}
+
+/* The PS1's view of its stage as camera_point() sees it, for a direction
+ * (src/tekken1/tmst_tekken1_stages.c: Tekken 1's layers, infinitely far):
+ * the rotation (its rows in 4.12, the second scaled as the GTE's), the
+ * screen's centre (pixels) and its distance h. */
+void tmst_tekken2_view(const CPUState *cpu, double r[3][3], double *ofx, double *ofy, double *h) {
+    tables();
+    int32_t m[3][3];
+    int pitch = (int)psx_mod_read_word(CAMERA), yaw = (int)psx_mod_read_word(CAMERA + 4);
+    int roll = (int)psx_mod_read_word(CAMERA + 8);
+    rot_ps1(pitch, yaw, -roll, m);
+    for (int k = 0; k < 3; k++) m[1][k] = (int16_t)((m[1][k] * 0x14) / 0xC);
+    for (int i = 0; i < 3; i++)
+        for (int k = 0; k < 3; k++) r[i][k] = m[i][k] / 4096.0;
+    *ofx = (int32_t)cpu->gte_ctrl[24] / 65536.0;
+    *ofy = (int32_t)cpu->gte_ctrl[25] / 65536.0;
+    *h = (double)(cpu->gte_ctrl[26] & 0xFFFF);
 }
 
 /* ---- the copy: this frame's picture, for the next frame's panels ---- */
@@ -471,7 +494,7 @@ void __tmst_chain_func_8006D014(CPUState *cpu) { __real_func_8006D014(cpu); }
 #endif
 void __wrap_func_8006D014(CPUState *cpu) {
     static uint32_t ret, sp;
-    static int running, extras, grounded, traced, anchored;
+    static int running, extras, grounded, traced, anchored, layers;
     static int32_t at[6];
     static uint8_t ground[3];
     if (cpu->pc == 0 || cpu->pc == 0x8006d014u) {
@@ -482,14 +505,17 @@ void __wrap_func_8006D014(CPUState *cpu) {
         tmst_tekken2_stage_entry();
         running = tmst_tekken2_mirror(at);
         extras = tmst_tekken2_extras_wanted();
+        layers = tmst_tekken1_layers_wanted();
         grounded = !running && tmst_tekken2_ground(ground);       /* the mirror clears to black itself */
         ret = cpu->gpr[31]; sp = cpu->gpr[29];
     }
     if (cpu->pc == 0x8006d110u) tmst_tekken2_anchor_step(cpu->gpr[2]);     /* back from the axis step */
     __tmst_chain_func_8006D014(cpu);
-    if ((!running && !extras && !grounded && !traced && !anchored) || cpu->pc != ret || cpu->gpr[29] != sp) return;
+    if ((!running && !extras && !grounded && !traced && !anchored && !layers) || cpu->pc != ret || cpu->gpr[29] != sp)
+        return;
     if (traced) { traced = 0; tmst_tekken2_trace_exit(); }
     if (extras) { extras = 0; tmst_tekken2_extras_draw(cpu); }     /* round the same anchor */
+    if (layers) { layers = 0; tmst_tekken1_layers_draw(cpu); }     /* Tekken 1's sky and layers, behind the floor */
     if (anchored) { anchored = 0; tmst_tekken2_anchor_end(); }
     if (grounded) {
         grounded = 0;
@@ -526,7 +552,8 @@ void __wrap_func_8006D014(CPUState *cpu) {
 /* 0x80036CAC, a model's drawing (the Expanded's src/tekken3_ttt1_renderer.c
  * wraps it: after a guest's head, Devil's and Angel's laser, its sparks and
  * Unknown's blade, put at the head of rank 1 of the ordering table it is
- * given, in packets of the GPU memory). With the mirror, as the old fork
+ * given, in packets of the GPU memory). With the mirror (and Tekken 1
+ * Stadium's big screen, its copy at the same rank's end), as the old fork
  * did: what it put there this call goes to the head of rank MIRROR_RANK,
  * before the mirror's copy at that rank's end, so the mirror shows it (in
  * front of the fighters still, after the stage; the captions after it).
@@ -540,7 +567,7 @@ void __tmst_chain_func_80036CAC(CPUState *cpu) { __real_func_80036CAC(cpu); }
 void __wrap_func_80036CAC(CPUState *cpu) {
     int32_t at[6];
     uint32_t ot = cpu->gpr[6];
-    if (!tmst_tekken2_mirror(at)) { __tmst_chain_func_80036CAC(cpu); return; }
+    if (!tmst_tekken2_mirror(at) && !tmst_tekken1_screen_on()) { __tmst_chain_func_80036CAC(cpu); return; }
     uint32_t base = psx_mod_read_word(psx_mod_read_word(DRAWENV) + 4);
     uint32_t slot = ot + 4, before = base && ot == base ? psx_mod_read_word(slot) & 0xffffffu : 0xffffffffu;
     __tmst_chain_func_80036CAC(cpu);

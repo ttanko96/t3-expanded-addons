@@ -235,8 +235,9 @@ class Tekken2StagesTest(unittest.TestCase):
         order), the same first number, its packs' folder staged by addon.cmake."""
         import re
         c = (ADDON / 'src/tekken2/tmst_tekken2_stages.c').read_text(encoding='utf-8')
-        table = re.search(r'names\[STAGES\] = \{(.*?)\};', c, re.S).group(1)
-        self.assertEqual(re.findall(r'"([^"]+)"', table), [n.upper() for n in t2.NAMES])
+        table = re.search(r'names\[ALL_STAGES\] = \{(.*?)\};', c, re.S).group(1)
+        # Tekken 2's first, then Tekken 1's (tests/test_tekken1_stages.py)
+        self.assertEqual(re.findall(r'"([^"]+)"', table)[:len(t2.NAMES)], [n.upper() for n in t2.NAMES])
         self.assertIn(f'STAGES = {len(t2.NAMES)}, NUMBER0 = {t2.NUMBER0}', c)
         self.assertIn(f'NO_DIM = {t2.NO_DIM:#x}', c)
         addon = (ADDON / 'addon.cmake').read_text(encoding='utf-8')

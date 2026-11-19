@@ -29,6 +29,7 @@ set(TMST_SOURCES
     src/core/tmst_png.c
     src/core/tmst_files.c
     src/compat/tmst_compat.c
+    src/compat/tmst_game_options.c
     src/jukebox/tmst_jukebox.c
     src/jukebox/tmst_adpcm.c
     src/photo/tmst_photo.c
@@ -53,6 +54,8 @@ set(TMST_SOURCES
     src/tekken2/tmst_tekken2_anchor.c
     src/tekken2/tmst_tekken2_wireframe.c
     src/tekken2/tmst_tekken2_bighead.c
+    src/tekken1/tmst_tekken1.c
+    src/tekken1/tmst_tekken1_stages.c
 )
 set(TMST_INCLUDE_DIRS
     src/core
@@ -79,8 +82,12 @@ set(TMST_WRAPS
     "tekken3_stage_select_arena|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_music|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_choice|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
-    "tekken3_game_options_add|src/tekken2/tmst_tekken2_stages.c|STAGE_OPTION"
-    "tekken3_game_options_value|src/tekken2/tmst_tekken2_stages.c|STAGE_OPTION"
+    "tekken3_game_options_add|src/compat/tmst_game_options.c|GAME_OPTIONS"
+    "tekken3_game_options_value|src/compat/tmst_game_options.c|GAME_OPTIONS"
+    "tekken3_game_options_tick|src/compat/tmst_game_options.c|GAME_OPTIONS"
+    "tekken3_game_options_cursor|src/compat/tmst_game_options.c|GAME_OPTIONS"
+    "tekken3_game_options_scrolls|src/compat/tmst_game_options.c|GAME_OPTIONS"
+    "tekken3_game_options_arrows|src/compat/tmst_game_options.c|GAME_OPTIONS"
     "tekken3_stage_source_decide|src/tekken2/tmst_tekken2_stages.c|STAGE_OPTION"
     "tekken3_stage_source_load_arena|src/tekken2/tmst_tekken2_stages.c|STAGE_OPTION"
     "tekken3_arcade_stages_thunder_mix|src/tekken2/tmst_tekken2_extras.c|STAGE_ENGINE"
@@ -134,6 +141,7 @@ set(TMST_PACKAGES
     tmst.tournament
     tmst.vs-plus
     tmst.tekken2
+    tmst.tekken1
 )
 
 # Folders the setup makes, staged beside the game at each build, each
@@ -145,6 +153,7 @@ set(TMST_PACKAGES
 set(TMST_STAGED
     "workspace/t2-stages/classic|mods/t2-stages/classic"
     "workspace/t2-stages/remake|mods/t2-stages/remake"
+    "workspace/t1-stages/classic|mods/t1-stages/classic"
     "data/tournament|mods/tmst-data/data/tournament"
     "data/photo|mods/tmst-data/data/photo"
     "workspace/jukebox|mods/tmst-data/workspace/jukebox"

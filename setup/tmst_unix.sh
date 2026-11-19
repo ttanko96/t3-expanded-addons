@@ -1,7 +1,7 @@
 # Sourced by Setup TMST.sh (Linux, Steam Deck) and Setup TMST.command (macOS),
 # from the add-on's folder: the add-on's setup with the Expanded's own Python
 # (.setup/venv), in its window when Tk and a display are there, else with
-# questions in the terminal. tmst_main "$@" runs it; a Tekken 2 disc given as
+# questions in the terminal. tmst_main "$@" runs it; a Tekken 2 (or 1) disc given as
 # the first argument is filled in. None of the Expanded's own files change.
 
 TMST_ROOT=$(cd ../.. && pwd)
@@ -51,18 +51,31 @@ tmst_main() {
         echo "Tekken 3 Expanded is running: close the game first (a running game cannot be built again)."
         tmst_pause; return 1
     fi
-    local args=() disc known
+    local args=() disc known which=
     if [ $# -gt 0 ]; then
-        args=(--t2-disc "$1")
-    else
-        known=$("$TMST_PYTHON" -c 'import sys; sys.path.insert(0, "setup"); import tmst_gui; print(tmst_gui.known_t2_disc())' 2>/dev/null)
+        # a Tekken 1 disc fills the Tekken 1 field, anything else the Tekken 2 field
+        which=$("$TMST_PYTHON" -c 'import sys; sys.path.insert(0, "setup"); import tmst_gui; print("t1" if tmst_gui.dropped(sys.argv[1])[1] else "t2")' "$1" 2>/dev/null)
+        if [ "$which" = t1 ]; then args=(--t1-disc "$1"); else args=(--t2-disc "$1"); which=t2; fi
+    fi
+    if [ "$which" != t2 ]; then
+        known=$("$TMST_PYTHON" -c 'import sys; sys.path.insert(0, "setup"); import tmst_gui; print(tmst_gui.known_disc("tekken2_disc", "tekken2-disc"))' 2>/dev/null)
         if [ -n "$known" ]; then
             echo "Tekken 2 disc: $known"
         else
             echo "Optional: your Tekken 2 disc (USA SLUS-00213 or Europe SCES-00255; .cue, .bin or .chd) gives the"
             echo "Jukebox's Tekken 1 and 2 music and the Tekken 2 stages. Drag it onto this window (or type its path)."
             disc=$(tmst_ask "Tekken 2 disc, or Return to go on without it")
-            if [ -n "$disc" ]; then args=(--t2-disc "$disc"); else args=(--no-t2-disc); fi
+            if [ -n "$disc" ]; then args+=(--t2-disc "$disc"); else args+=(--no-t2-disc); fi
+        fi
+    fi
+    if [ "$which" != t1 ]; then
+        known=$("$TMST_PYTHON" -c 'import sys; sys.path.insert(0, "setup"); import tmst_gui; print(tmst_gui.known_disc("tekken1_disc", "tekken1-disc"))' 2>/dev/null)
+        if [ -n "$known" ]; then
+            echo "Tekken 1 disc: $known"
+        else
+            echo "Optional: your Tekken 1 disc (Europe SCES-00005; .cue, .bin or .chd) gives the Tekken 1 stages."
+            disc=$(tmst_ask "Tekken 1 disc, or Return to go on without it")
+            if [ -n "$disc" ]; then args+=(--t1-disc "$disc"); else args+=(--no-t1-disc); fi
         fi
     fi
     # The add-on's steps, then the game built again with it (dev/build.py).
