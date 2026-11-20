@@ -1,8 +1,10 @@
 """The player's Tekken (1) PlayStation disc, for what the add-on imports from it
 (tools/tekken1_stages.py takes its stages).
 
-Supported: Tekken Europe (SCES-00005), tried; USA (SLUS-00006) and Japan
-(SLPS-00040) are taken when their stage files read as Europe's (not tried).
+Supported, as Tekken 2's (tools/tekken2_disc.py): Tekken USA (SLUS-00006),
+Europe (SCES-00005) and Japan (SLPS-00040), every version. Europe's is
+tried; the others' stages are taken when their stage files read as
+Europe's, their music by the program's table (tools/tekken1_music.py).
 A .cue with its .bin files, a .bin (with its .cue beside it, or a
 single-track one) or a .chd (tools/disc_image.py). The disc is told by the
 program its SYSTEM.CNF boots.
@@ -14,7 +16,7 @@ from disc_image import DiscError, EXTENSIONS, open_disc
 
 VERSION = 1
 REGIONS = {'SCES_000.05': 'Europe', 'SLUS_000.06': 'USA', 'SLPS_000.40': 'Japan'}
-EXPECTED = ('Expected: Tekken for PlayStation, Europe (SCES-00005), USA (SLUS-00006) or Japan '
+EXPECTED = ('Expected: Tekken for PlayStation, USA (SLUS-00006), Europe (SCES-00005) or Japan '
             '(SLPS-00040), as a .cue with its .bin files, a .bin or a .chd.')
 
 

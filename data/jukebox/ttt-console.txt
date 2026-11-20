@@ -18,6 +18,3 @@ ps2-paul.bgm = Paul Phoenix (TTT1 Console)
 ps2-school.bgm = School (TTT1 Console)
 ps2-unknown.bgm = Unknown (TTT1 Console)
 ps2-yoshimitsu.bgm = Yoshimitsu (TTT1 Console)
-ps2-bgm-02.bgm = PS2 BGM 02 (TTT1 Console) --disable
-ps2-bgm-03.bgm = PS2 BGM 03 (TTT1 Console) --disable
-ps2-bgm-08.bgm = PS2 BGM 08 (TTT1 Console) --disable

@@ -11,8 +11,8 @@ PSP_GAME/USRDIR/TKPDATA1.BIN, files without names, each a number in the
 EBOOT's table (the Expanded's tools/psp/dr_iso.py reads it whole; most of its
 files are encrypted). The music is not: 49 plain NPSF files (Namco's stream),
 found at the sectors of PIECES and checked by their SHA-256 (another dump or
-version: that piece is left out, logged). The pieces --disable in
-data/jukebox/tekken5-dr.txt are not made (skipped()).
+version: that piece is left out, logged). The pieces
+data/jukebox/tekken5-dr.txt does not name are not made (skipped()).
 
 NPSF: 'NPSF', u32 block (0x1000: both channels'), u32 bytes per channel, u32
 channels (2), u32 data offset (0x800), s32 loop start in samples (-1: none),
@@ -197,9 +197,10 @@ def make(iso: str, base: int, piece: tuple, out: str) -> str | None:
 
 
 def skipped() -> list[str]:
-    """The pieces not made: --disable in the title list (tools/jukebox_titles.py's skipped())."""
+    """The pieces not made: the title list does not name them (or only
+    --disable; tools/jukebox_titles.py's skipped())."""
     import jukebox_titles
-    return jukebox_titles.skipped('t5dr-music')
+    return jukebox_titles.skipped('t5dr-music', [p[0] for p in PIECES])
 
 
 def convert(iso: Path, out: Path, say=print, jobs: int = JOBS, skip=None) -> list[str]:

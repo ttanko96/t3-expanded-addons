@@ -853,7 +853,9 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     }
     int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1, theirs = 0;
     const char *e = getenv("TMST_T2_STAGE"), *e1 = getenv("TMST_T1_STAGE");
-    if (e1 && *e1 && game_ready(G_T1)) { stage = T1_FIRST + atoi(e1) % T1_STAGES; e = e1; }
+    if (e1 && *e1 && game_ready(G_T1)) {
+        stage = T1_FIRST + atoi(e1) % T1_STAGES; e = e1; line_fight = getenv("TMST_T2_LINE") != NULL;
+    }
     else if (e && *e && game_ready(G_T2)) { stage = atoi(e) % STAGES; line_fight = getenv("TMST_T2_LINE") != NULL; }
     else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
     else if (line >= 0 && armed[line] && game_ready(game[line])) {
@@ -893,19 +895,27 @@ int __wrap_tekken3_stage_select_music(void) {
 }
 
 /* The stage's own piece, as Tekken 3's and TTT's on the STAGE line (the
- * user's, 2026-11-08): its owner's theme (tmst_tournament_stages.c's), in
+ * user's, 2026-11-08): its owner's theme (tmst_tournament_stages.c's; a
+ * Tekken 1 stage its Tekken 1 piece, tmst_t1_stage_music, the user's
+ * 2026-11-20), in
  * the version of the fight's music (issue #9: GAME OPTION's BGM SELECT,
  * RANDOM's draw included, tmst_music_version; SILENT: the game starts no
  * music, so neither does the Jukebox). The Jukebox plays it unless the player
  * chose a piece for the opponent; without Tekken 2 Content's Music its
- * categories are off and the fighter's piece plays. */
+ * categories (TEKKEN 1's too) are off and the fighter's piece plays. */
 int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name) {
-    if (!line_fight || fight < 0 || fight >= STAGES || psx_mod_read_word(MODE) != (uint32_t)fight_mode) return 0;
+    if (!line_fight || fight < 0 || fight >= ALL_STAGES || psx_mod_read_word(MODE) != (uint32_t)fight_mode) return 0;
     int arcade = tmst_music_version() == TMST_MUSIC_ARCADE;
-    *key = "t2-stage";
-    *cat = arcade ? "t2-arcade" : "t2-console";
-    *name = tmst_t2_stage_music(fight, arcade);
-    return 1;
+    if (game_of(fight) == G_T1) {
+        *key = "t1-stage";
+        *cat = arcade ? "t1-arcade" : "t1-console";
+        *name = tmst_t1_stage_music(fight - T1_FIRST, arcade);
+    } else {
+        *key = "t2-stage";
+        *cat = arcade ? "t2-arcade" : "t2-console";
+        *name = tmst_t2_stage_music(fight, arcade);
+    }
+    return *name != NULL;
 }
 int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stage, int *arena) {
     if (forced_mode >= 0 && (unsigned)forced_mode == mode) {
@@ -937,9 +947,8 @@ int __wrap_tekken3_stage_select_choice(unsigned mode, int *source, int *ttt_stag
  * Tekken 1's (each with its part on; none in the school outfit), one chance
  * in four each (in three with one lot); the Expanded draws T3 or TTT. The
  * STAGE line of VS and Practice and the tournaments decide first. A Continue
- * keeps the stage. A Tekken 2 stage plays its own music, as from the STAGE
- * line (tmst_tekken2_fight_music); a Tekken 1 stage the fighter's (none of
- * its own yet). */
+ * keeps the stage. A Tekken 2 or Tekken 1 stage plays its own music, as from
+ * the STAGE line (tmst_tekken2_fight_music). */
 #ifdef TMST_HAS_STAGE_OPTION
 /* src/compat/tmst_game_options.c: GAME OPTION's rows (the Expanded's taken over,
  * room for more); it calls the two hooks below for every row. */
@@ -1077,9 +1086,9 @@ void __wrap_tekken3_stage_source_decide(unsigned mode, int player, const char *g
              g == G_T2 ? "TEKKEN 2" : g == G_T1 ? "TEKKEN 1" : "RANDOM", kind_words[kind], stage,
              again ? " (Continue: the same)" : "");
     if (kind == TMST_TSTAGE_T2 || kind == TMST_TSTAGE_T1) {
-        /* a Tekken 2 stage its own music (line_fight); a Tekken 1 stage none yet */
+        /* a Tekken 2 or Tekken 1 stage its own music (line_fight) */
         fight = kind == TMST_TSTAGE_T1 ? T1_FIRST + stage : stage;
-        fight_mode = (int)mode; moving = 1; line_fight = kind == TMST_TSTAGE_T2; option_mode = (int)mode;
+        fight_mode = (int)mode; moving = 1; line_fight = 1; option_mode = (int)mode;
         fight_extras();
     } else if (kind == TMST_TSTAGE_T3 || kind == TMST_TSTAGE_TTT) {
         force(mode, kind, stage, "STAGES row"); option_mode = (int)mode;

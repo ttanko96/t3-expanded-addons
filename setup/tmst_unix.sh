@@ -73,7 +73,8 @@ tmst_main() {
         if [ -n "$known" ]; then
             echo "Tekken 1 disc: $known"
         else
-            echo "Optional: your Tekken 1 disc (Europe SCES-00005; .cue, .bin or .chd) gives the Tekken 1 stages."
+            echo "Optional: your Tekken 1 disc (USA SLUS-00006, Europe SCES-00005 or Japan SLPS-00040; .cue, .bin or .chd)"
+            echo "gives the Tekken 1 stages and the Jukebox's Tekken 1 music. Drag it onto this window (or type its path)."
             disc=$(tmst_ask "Tekken 1 disc, or Return to go on without it")
             if [ -n "$disc" ]; then args+=(--t1-disc "$disc"); else args+=(--no-t1-disc); fi
         fi

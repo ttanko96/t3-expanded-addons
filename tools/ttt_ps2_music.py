@@ -59,7 +59,7 @@ FULL = 0x3FFF
 # The rest of the BGM table: number, name, first LBA, sectors, loop sector, volume, sha256 of the sectors.
 # 0x01 plays before a fight (the Embu, as the Expanded's tools/ps2/ttt_disc_fingerprint.py names its
 # sectors); 0x05 the name entry; 0x06 (and 0x07, the same file) the endings (tools/ps2/ttt_to_cine.py: piece 7);
-# 0x04 = 0x03. 0x02, 0x03 and 0x08: --disable in data/jukebox/ttt-console.txt, so not made (skipped()).
+# 0x04 = 0x03. 0x02, 0x03 and 0x08: not in data/jukebox/ttt-console.txt, so not made (skipped()).
 EXTRAS = [
     (0x01, 'embu', 111953, 922, 0, 13107, '41e8f65f2162f17f09d42efa0a140f957f4483f3a9f2bf7715cab94a69e4f578'),
     (0x02, 'bgm-02', 104579, 2290, 0, 10649, 'be8c0c371506fa241dfeab36ea81dcb7f4da1cc3b118fe9c5f542f7e241c05cd'),
@@ -152,9 +152,10 @@ def write_piece(data: bytes, sectors: int, loop: int, volume: int, out: str) -> 
 
 
 def skipped() -> list[str]:
-    """The pieces not made: --disable in the title list and played nowhere
-    else (tools/jukebox_titles.py's skipped())."""
-    return jukebox_titles.skipped('ttt-music/console')
+    """The pieces not made: the title list does not name them (or only
+    --disable) and nothing else plays them (tools/jukebox_titles.py's skipped())."""
+    return jukebox_titles.skipped('ttt-music/console', [name_of(n) for n in STAGES]
+                                  + [f'ps2-{e[1]}.bgm' for e in EXTRAS])
 
 
 def name_of(number: int) -> str:

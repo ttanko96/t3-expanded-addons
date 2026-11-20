@@ -31,6 +31,7 @@ STEP_TEXT = {
     'tekken1_disc': ('Checking your Tekken 1 disc', ''),
     'tekken1_stages': ('Making the Tekken 1 stages', 'From your Tekken 1 disc: its backgrounds and floors. Under a minute.'),
     'tekken2_music': ('Making the Jukebox’s Tekken 1 and 2 music', 'From your Tekken 2 disc. The first time takes a minute or two.'),
+    'tekken1_music': ('Making the Jukebox’s Tekken 1 music', 'From your Tekken 1 disc: its CD audio. The first time takes a minute or two.'),
     'tekken2_stages': ('Making the Tekken 2 stages', 'From your Tekken 2 disc: its backgrounds and floors. A few seconds.'),
     'tekken2_remake_pictures': ('Opening the Tekken 2 Remake backgrounds', 'With your Tekken 2 disc. A few seconds.'),
     'tekken2_remake_stages': ('Building the Tekken 2 Remake stages', 'From your Tekken 2 disc and tekken3.zip: the remade stages. A few minutes.'),
@@ -168,7 +169,7 @@ def gui(arg: str | None, test_hook=None):
                 root, 'Tekken 2 · USA or Europe PlayStation disc', t2_arg or known_disc('tekken2_disc', 'tekken2-disc'),
                 'Choose your Tekken 2 disc')
             self.t1, self.entry1, self.browse_button1 = self.disc_row(
-                root, 'Tekken 1 · Europe PlayStation disc (optional)', t1_arg or known_disc('tekken1_disc', 'tekken1-disc'),
+                root, 'Tekken 1 · USA, Europe or Japan PlayStation disc', t1_arg or known_disc('tekken1_disc', 'tekken1-disc'),
                 'Choose your Tekken 1 disc')
             ttk.Label(root, text='Use your own game files. Nothing is uploaded.\n'
                       'Uses the Expanded’s own Python and compilers; the first build takes a few minutes.\n'

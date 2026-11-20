@@ -12,7 +12,7 @@ by the add-on's setup, setup/tmst_setup.py).
 Classic: Tekken's own background and floor, as the PlayStation draws them,
 nothing added (the Remake comes later, in t1-stages/remake).
 
-The disc (Europe SCES-00005): BG/STGnnXXX, a stage a file, the program's
+The disc (Europe SCES-00005; USA and Japan taken when their files read alike): BG/STGnnXXX, a stage a file, the program's
 names at TEKKEN.EXE 0x8001D4CC ("/bg/STG10NGT" .. "/bg/STG00GRS"). A file:
 eleven u32 offsets, then
 - 0, the floor: 10 x 10 tiles, 8 bytes each, as Tekken 2's (u | v << 8;

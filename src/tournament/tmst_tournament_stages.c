@@ -69,6 +69,20 @@ const char *tmst_t2_stage_music(int stage, int arcade) {
     return arcade ? t2_arcade[stage] : t2_music[stage];
 }
 
+/* Tekken 1's stages (the user's, 2026-11-20): Venezia the Tekken 1 disc's
+ * (t1-music), the rest the Tekken 1 themes the Tekken 2 disc plays again
+ * (t2-music), as data/jukebox/tekken1-console|arcade.txt name them. */
+static const char *const t1_music[11] = {
+    "pjack.bgm", "t2-ganryu.bgm", "t2-kuma.bgm", "bruce.bgm", "t2-armor-king.bgm", "t2-anna.bgm", "t2-roger.bgm",
+    "t1-venezia.bgm", "t2-kunimitsu.bgm", "t2-wang.bgm", "lee.bgm"};
+static const char *const t1_arcade[11] = {
+    "t2-pjack.bgm", "t2-ganryu.bgm", "t2-kuma.bgm", "t2-bruce.bgm", "t2-armor-king.bgm", "t2-anna.bgm",
+    "t2-roger.bgm", "t1-venezia.bgm", "t2-kunimitsu.bgm", "t2-wang.bgm", "t2-lee.bgm"};
+const char *tmst_t1_stage_music(int stage, int arcade) {
+    if (stage < 0 || stage >= 11) return NULL;
+    return arcade ? t1_arcade[stage] : t1_music[stage];
+}
+
 const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int arcade, const char **cat) {
     *cat = NULL;
     if (kind == TMST_TSTAGE_T2 && (t == TMST_TOURNEY_T1 || t == TMST_TOURNEY_T2) && stage >= 0 && stage < 23) {

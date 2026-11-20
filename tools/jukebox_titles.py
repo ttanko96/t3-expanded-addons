@@ -8,25 +8,22 @@ One file per category of the Jukebox (src/jukebox/tmst_jukebox.c), each line
 
     file = title
 
-for the music this install has now: the .bgm files of the category's
-folders, and for Tekken 3 the music the disc's executable names (xa-NN, an
-XA stream of TEKKEN3.XAS; cd-track-N, a CD audio track). A new file gets a
-line whose title is its name (without .bgm), the new files' lines in the
-order of their titles. A title with "--disable" in it keeps that music out of
-the game's list. The game lists the music in the order of these lines, then
-the rest by name.
+for the music the add-on's lists name: the game lists a category's music in
+the order of its lines, and only that (src/jukebox/tmst_jukebox.c: a file or
+an xa-NN / cd-track-N of the Tekken 3 disc without a line is left out). A
+title with "--disable" in it keeps that music out of the game's list.
 
 data/jukebox/<category>.txt (this add-on) are the lists every install starts
-with: a list not there yet starts as that file, and a new file it names gets
-its line from it (its title) rather than its name. A list the setup wrote and
-nobody changed since (WRITTEN) is made again from that file, so a new title or
-"--disable" there reaches it; a list written by hand keeps its lines (never
-changed or reordered, the lines of music that is gone too: the game leaves
-those out), but for those of the pieces the setup does not make (skipped()).
+with, and they decide what is made: a piece none of its folder's lists names
+is not made at all (skipped(); KEEP excepted). A list not there yet starts as
+that file; a list the setup wrote and nobody changed since (WRITTEN) is made
+again from it, so a new title reaches it; a list written by hand keeps its
+lines (never changed or reordered, the lines of music that is gone too: the
+game leaves those out) and gets the lines it lacks of the music the add-on's
+list names and this install has.
 
-Tekken 1's two lists are only what they name: its music is the Tekken 2
-folders' files the Tekken 2 disc plays again, so a new file there gets a
-line in the Tekken 2 list, never in Tekken 1's.
+Tekken 1's lists name files of two folders: the Tekken 1 disc's
+(workspace/t1-music) and those the Tekken 2 disc plays again (t2-music).
 """
 from __future__ import annotations
 
@@ -61,15 +58,16 @@ LISTS = 'addons/tmst/workspace/jukebox'
 WRITTEN = 'addons/tmst/workspace/jukebox-titles.json'
 
 # The music folders whose pieces the setup makes, each with the lists that name
-# them (Tekken 1's name the Tekken 2 folders' files). A piece "--disable" in a
-# list there and enabled in none is not made at all (tools/tekken2_music.py,
-# ttt_ps2_music.py, tekken5dr_music.py), and its line is left out of the lists
-# the setup writes: it would only take room. KEEP: the pieces the add-on plays
-# outside the Jukebox too (src/tournament/tmst_tournament_stages.c's
+# them (Tekken 1's name the Tekken 2 folders' files too). A piece no list there
+# names (or only "--disable") is not made at all (tools/tekken2_music.py,
+# tekken1_music.py, ttt_ps2_music.py, tekken5dr_music.py). KEEP: the pieces the
+# add-on plays outside the Jukebox too (src/tournament/tmst_tournament_stages.c's
 # BGM SELECT), made even when the Jukebox leaves them out.
 MADE = {
     't2-music/console': ('tekken2-console.txt', 'tekken1-console.txt'),
     't2-music/arcade': ('tekken2-arcade.txt', 'tekken1-arcade.txt'),
+    't1-music/console': ('tekken1-console.txt',),
+    't1-music/arcade': ('tekken1-arcade.txt',),
     'ttt-music/console': ('ttt-console.txt',),
     'ttt-music/arcade': ('ttt-arcade.txt',),
     't5dr-music': ('tekken5-dr.txt',),
@@ -82,6 +80,8 @@ KEEP = {
         'anna', 'armor-king', 'baek', 'bruce', 'devil', 'ganryu', 'heihachi', 'jack-2', 'jun', 'kazuya', 'king',
         'kuma', 'kunimitsu', 'law', 'lee', 'lei', 'michelle', 'nina', 'paul', 'pjack', 'roger', 'wang',
         'yoshimitsu')},
+    't1-music/console': {'t1-venezia.bgm'},       # Tekken 1's Venezia stage (tmst_t1_stage_music)
+    't1-music/arcade': {'t1-venezia.bgm'},
     'ttt-music/console': {f'ps2-{n}.bgm' for n in (
         'paul', 'law', 'yoshimitsu', 'xiaoyu', 'hwoarang', 'lei', 'ogre', 'school', 'jin', 'nina', 'eddy', 'king',
         'heihachi', 'unknown')},
@@ -91,19 +91,21 @@ KEEP = {
 }
 
 
-def skipped(folder: str) -> list[str]:
-    """The pieces of workspace/<folder> not made (see MADE), by name."""
-    off, on = set(), set()
+def wanted(folder: str) -> set[str]:
+    """The pieces of workspace/<folder> the setup makes (see MADE): those its
+    lists name (without "--disable") and KEEP's."""
+    on = set()
     for file in MADE[folder]:
         for name, line in default_lines(file).items():
-            name = name if name.endswith('.bgm') else name + '.bgm'
-            (off if '--disable' in line.split('=', 1)[1] else on).add(name)
-    return sorted(off - on - KEEP.get(folder, set()))
+            if '--disable' not in line.split('=', 1)[1]:
+                on.add(name if name.endswith('.bgm') else name + '.bgm')
+    return on | KEEP.get(folder, set())
 
 
-def skipped_in(file: str) -> set[str]:
-    """The pieces a list's lines are left out for: those of the folders it names."""
-    return {name for folder, files in MADE.items() if file in files for name in skipped(folder)}
+def skipped(folder: str, names) -> list[str]:
+    """The pieces of names (a tool's, workspace/<folder>) not made, see wanted()."""
+    want = wanted(folder)
+    return sorted(set(names) - want)
 HEADER = ('# Jukebox titles, {name}: one line per music file, "file = title".\n'
           '# Write the title you want after the "="; the setup only adds lines for new files.\n'
           '# "--disable" after the "=" (with or without a title) leaves that music out of the list.\n')
@@ -175,15 +177,6 @@ def default_lines(file: str) -> dict[str, str]:
     return lines
 
 
-def without(text: str, names: set[str]) -> str:
-    """text without the lines of names (with or without .bgm)."""
-    def named(line: str) -> str:
-        name = line.split('=', 1)[0].strip()
-        return name if name.endswith('.bgm') else name + '.bgm'
-    return ''.join(line for line in text.splitlines(keepends=True)
-                   if not (line.strip() and not line.lstrip().startswith('#') and '=' in line and named(line) in names))
-
-
 def digest(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
@@ -208,13 +201,12 @@ def update(root: Path) -> int:
             text = (DEFAULTS / file).read_text(encoding='utf-8')
         else:
             text = old if old is not None else HEADER.format(name=cid)
-        skip = skipped_in(file)
-        text = without(text, skip)
         have = listed(text)
-        new = [n for n in names if n not in have and n not in skip]
+        defaults = default_lines(file)
+        named = listed('\n'.join(defaults.values()))
+        new = [n for n in names if n not in have and n in named]
         if text and not text.endswith('\n'):
             text += '\n'
-        defaults = default_lines(file)
         lines = [defaults.get(n, f'{n} = {n[:-4] if n.endswith(".bgm") else n}') for n in new]
         if mode is None:                # files: in the order of their titles (the disc's music: its own)
             lines.sort(key=lambda line: line.split('=', 1)[1].strip().casefold())

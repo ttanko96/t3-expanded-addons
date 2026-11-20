@@ -29,16 +29,19 @@ class JukeboxTitlesTest(unittest.TestCase):
         text = (self.root / 'addons/tmst/workspace/jukebox' / name).read_text(encoding='utf-8')
         return [line for line in text.splitlines() if line and not line.startswith('#')]
 
-    def test_defaults_then_names(self) -> None:
+    def test_only_what_the_defaults_name(self) -> None:
         jukebox_titles.update(self.root)
-        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul.bgm = Paul (T2 Arcade)', 't2-new.bgm = t2-new'])
+        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul.bgm = Paul (T2 Arcade)'])
 
     def test_user_lines_stay(self) -> None:
         lists = self.root / 'addons/tmst/workspace/jukebox'
         lists.mkdir(parents=True)
         (lists / 'tekken2-arcade.txt').write_text('# mine\nt2-paul = Mine --disable\ngone.bgm = Gone\n', encoding='utf-8')
         jukebox_titles.update(self.root)
-        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul = Mine --disable', 'gone.bgm = Gone', 't2-new.bgm = t2-new'])
+        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul = Mine --disable', 'gone.bgm = Gone'])
+        (jukebox_titles.DEFAULTS / 'tekken2-arcade.txt').write_text('t2-paul.bgm = Paul\nt2-new.bgm = New\n', encoding='utf-8')
+        jukebox_titles.update(self.root)                    # a line the add-on's list has
+        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul = Mine --disable', 'gone.bgm = Gone', 't2-new.bgm = New'])
 
     def test_made_again_while_nobody_changed_it(self) -> None:
         jukebox_titles.update(self.root)
@@ -52,22 +55,18 @@ class JukeboxTitlesTest(unittest.TestCase):
         jukebox_titles.update(self.root)                    # written by hand: it stays
         self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul.bgm = Paul, new title', 't2-new.bgm = New', 'mine.bgm = Mine'])
 
-    def test_disabled_pieces_left_out(self) -> None:
+    def test_pieces_not_named_not_made(self) -> None:
         (jukebox_titles.DEFAULTS / 'tekken2-arcade.txt').write_text(
-            't2-paul.bgm = Paul --disable\nt2-new.bgm = New --disable\nt2-music-10.bgm = Ten\n', encoding='utf-8')
+            't2-paul.bgm = Paul --disable\nt2-music-10.bgm = Ten\n', encoding='utf-8')
         (jukebox_titles.DEFAULTS / 'tekken1-arcade.txt').write_text('t2-new.bgm = New (T1)\n', encoding='utf-8')
         (jukebox_titles.DEFAULTS / 'tekken2-console.txt').write_text('t2-music-10.bgm = Ten --disable\n', encoding='utf-8')
-        # t2-paul: the Tournament's (KEEP); t2-new: Tekken 1's list has it on.
-        self.assertEqual(jukebox_titles.skipped('t2-music/arcade'), [])
-        self.assertEqual(jukebox_titles.skipped('t2-music/console'), ['t2-music-10.bgm'])
+        pieces = ['t2-paul.bgm', 't2-new.bgm', 't2-music-10.bgm', 't2-music-18.bgm']
+        # t2-paul: the Tournament's (KEEP); t2-new: Tekken 1's list names it; t2-music-18: no list.
+        self.assertEqual(jukebox_titles.skipped('t2-music/arcade', pieces), ['t2-music-18.bgm'])
+        self.assertEqual(jukebox_titles.skipped('t2-music/console', ['t2-music-10.bgm', 't2-paul.bgm']),
+                         ['t2-music-10.bgm'])
         (jukebox_titles.DEFAULTS / 'tekken1-arcade.txt').unlink()
-        self.assertEqual(jukebox_titles.skipped('t2-music/arcade'), ['t2-new.bgm'])
-        lists = self.root / 'addons/tmst/workspace/jukebox'
-        lists.mkdir(parents=True)
-        (lists / 'tekken2-arcade.txt').write_text('t2-new.bgm = Mine\nt2-paul.bgm = Mine too\n', encoding='utf-8')
-        jukebox_titles.update(self.root)
-        self.assertEqual(self.lines('tekken2-arcade.txt'), ['t2-paul.bgm = Mine too'])
-        self.assertEqual(self.lines('tekken2-console.txt'), [])
+        self.assertEqual(jukebox_titles.skipped('t2-music/arcade', pieces), ['t2-music-18.bgm', 't2-new.bgm'])
 
     def test_keep_is_what_the_addon_plays(self) -> None:
         played = set()
@@ -79,7 +78,8 @@ class JukeboxTitlesTest(unittest.TestCase):
         self.assertEqual(played - kept, set())
         jukebox_titles.DEFAULTS = self.defaults             # the add-on's own lists
         for folder in jukebox_titles.MADE:
-            self.assertEqual(set(jukebox_titles.skipped(folder)) & played, set(), folder)
+            mine = played & jukebox_titles.KEEP.get(folder, set())
+            self.assertEqual(jukebox_titles.skipped(folder, mine), [], folder)
 
     def test_tekken1_only_what_it_names(self) -> None:
         jukebox_titles.update(self.root)

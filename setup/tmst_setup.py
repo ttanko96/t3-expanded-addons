@@ -156,8 +156,8 @@ def pinned(name: str, requirements: Path) -> str:
 
 
 def python_packages() -> None:
-    """numpy and Pillow, for tools/tekken2_music.py, tekken2_stages.py and
-    t2_remake_stages.py: the Expanded's setup puts them in its .setup/venv,
+    """numpy and Pillow, for tools/tekken2_music.py, tekken1_music.py,
+    tekken2_stages.py and t2_remake_stages.py: the Expanded's setup puts them in its .setup/venv,
     which runs this. For those it has not, the Expanded's own pinned versions
     (tools/requirements-import.txt, by their hashes, wheels only) into
     workspace/python; none of the Expanded's files change. Without them the
@@ -298,6 +298,35 @@ def tekken2_music() -> None:
         log(f'Tekken 2 music: {error}; left out')
         return
     save_stamp('tekken2-music', {'stamp': want, 'files': names})
+
+
+def tekken1_music() -> None:
+    """The Jukebox's Tekken 1 music (tools/tekken1_music.py), from the Tekken 1
+    disc its step kept: again when the disc or the tool's VERSION changed or a
+    file is gone; nothing without a disc."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    from disc_image import DiscError
+    try:
+        import tekken1_music as music
+    except ImportError as error:                    # numpy: the Expanded's setup installs it
+        log(f'Tekken 1 music: {error}, skipped')
+        return
+    disc = music.find_disc(STATE)
+    if not disc:
+        log('Tekken 1 music: no Tekken 1 disc, skipped')
+        return
+    want = {'version': music.VERSION, 'disc': {'path': str(disc), **file_stamp(disc)}, 'skip': music.skipped()}
+    have = stamp('tekken1-music')
+    out = ROOT / music.OUT
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 1 music: taking it from the disc (a minute or two)')
+    try:
+        names = music.convert(disc, out, say=log)
+    except (DiscError, OSError) as error:
+        log(f'Tekken 1 music: {error}; left out')
+        return
+    save_stamp('tekken1-music', {'stamp': want, 'files': names})
 
 
 def tekken2_stages() -> None:
@@ -544,8 +573,8 @@ def jukebox_titles() -> None:
     titles.update(ROOT)
 
 
-STEPS: list = [python_packages, tekken2_disc, tekken1_disc, tekken2_music, tekken2_stages, tekken2_remake_pictures,
-               tekken2_remake_stages, tekken1_stages, ttt_ps2_music, ttt_arcade_music, tekken5dr_music,
+STEPS: list = [python_packages, tekken2_disc, tekken1_disc, tekken2_music, tekken1_music, tekken2_stages,
+               tekken2_remake_pictures, tekken2_remake_stages, tekken1_stages, ttt_ps2_music, ttt_arcade_music, tekken5dr_music,
                jukebox_titles,   # the music first: the titles list it
                tekken3_portraits]
 

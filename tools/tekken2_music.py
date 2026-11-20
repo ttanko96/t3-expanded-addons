@@ -100,10 +100,10 @@ def pieces() -> list[tuple[str, str, tuple]]:
 
 
 def skipped() -> list[str]:
-    """The pieces not made ('<folder>/<file>'): --disable in the title lists
-    and played nowhere else (tools/jukebox_titles.py's skipped())."""
+    """The pieces not made ('<folder>/<file>'): no title list names them (or
+    only --disable) and nothing else plays them (tools/jukebox_titles.py's skipped())."""
     return [f'{folder}/{name}' for folder in ('console', 'arcade')
-            for name in jukebox_titles.skipped(f't2-music/{folder}')]
+            for name in jukebox_titles.skipped(f't2-music/{folder}', [n for f, n, _ in pieces() if f == folder])]
 
 
 def find_disc(state: Path) -> Path | None:
