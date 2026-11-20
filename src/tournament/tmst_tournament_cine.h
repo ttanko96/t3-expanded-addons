@@ -44,6 +44,7 @@ typedef struct {
     uint8_t aura_bones[TMST_AURA_BONES]; int aura_bone_count;
     const char *own;            /* the boss's own pack's stem ("Heihachi-TTT1": a native's TTT1 pack, its moves
                                    in the fight not TTT1); NULL: P2's TTT1 moves' (a guest's) */
+    int wolf;                   /* Unknown's wolf behind her (the Expanded's, drawn in fights only) */
 } TmstBossIntro;
 
 /* The entry for `key` (the fallback when it has none; never NULL). */
@@ -55,10 +56,11 @@ typedef const uint8_t *(*TmstPackOf)(const char *stem, size_t *size, void *ctx);
 
 /* The .cine for entry e into `out`, the poses from the packs `pack_of`
  * gives: actor 0 the player (ID, hidden), actor 1 the boss (ID, costume;
- * e->start until e->swap). A clip a pack does not hold (or a pack missing)
- * is the boss's neutral instead. Returns 1 when written. */
+ * e->start, in start_costume, until e->swap). A clip a pack does not hold
+ * (or a pack missing) is the boss's neutral instead. Returns 1 when written. */
 int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of, void *ctx, unsigned player_id,
-                          unsigned player_costume, unsigned boss_id, unsigned boss_costume);
+                          unsigned player_costume, unsigned boss_id, unsigned boss_costume,
+                          unsigned start_costume);
 
 /* A sound of the intro: at its frame, the TTT1 sound `index` of the pack
  * `stem`'s fighter (NULL: the boss's; its <stem>-sfx.jus). */

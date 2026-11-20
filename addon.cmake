@@ -39,6 +39,7 @@ set(TMST_SOURCES
     src/tournament/tmst_tournament_progress.c
     src/tournament/tmst_tournament_stages.c
     src/tournament/tmst_tournament_cine.c
+    src/tournament/tmst_tournament_costume.c
     src/tournament/tmst_tournament_art.c
     src/tournament/tmst_tournament_screens.c
     src/tournament/tmst_tournament_story.c
@@ -74,6 +75,10 @@ set(TMST_WRAPS
     "spu_write|src/tekken2/tmst_tekken2_bighead.c"
     "tekken3_ttt1_wolf_after_actor|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_ttt1_wolf_high_vram_used|src/compat/tmst_compat.c|UNKNOWN_WOLF"
+    "tekken3_cine_pending|src/compat/tmst_compat.c|WOLF_CINE"
+    "tekken3_native_model_variant|src/tournament/tmst_tournament.c|CPU_COSTUME"
+    "tekken3_cpu_native_variant|src/tournament/tmst_tournament.c|CPU_COSTUME"
+    "tekken3_cpu_guest_costume|src/tournament/tmst_tournament.c|CPU_COSTUME"
     "tekken3_stage_source|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_ttt_stage|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"
     "tekken3_stage_select_fight|src/tekken2/tmst_tekken2_stages.c|STAGE_ENGINE"

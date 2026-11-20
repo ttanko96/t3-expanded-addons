@@ -93,6 +93,10 @@ const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int 
         *cat = arcade ? "ttt-arcade" : "ttt-console";
         return arcade ? ttt_arcade[stage] : ttt_music[stage];
     }
+    if (kind == TMST_TSTAGE_T1 && t == TMST_TOURNEY_T1 && stage >= 0 && stage < TMST_T1_STAGES) {
+        *cat = arcade ? "t1-arcade" : "t1-console";
+        return tmst_t1_stage_music(stage, arcade);
+    }
     if (kind == TMST_TSTAGE_T3 && t == TMST_TOURNEY_T3 && key)
         for (const Theme *m = t3_music; m->key; m++)
             if (!strcmp(m->key, key)) { *cat = "t3-console"; return m->piece; }
@@ -122,6 +126,28 @@ int tmst_tourney_stage(int t, const char *key, int school, int *stage) {
     if (s < 0) kind = TMST_TSTAGE_NONE;
     *stage = s;
     return kind;
+}
+
+/* The Tekken 1 Tournament on Tekken 1's stages (the user's, 2026-11-20): as
+ * the original game, a stage drawn for every match, none twice till all 11
+ * have come (the run's order, a shuffle); Heihachi keeps his Tekken 2 stage
+ * (the Pagoda, the list above). */
+void tmst_t1_stage_order(uint32_t seed, int order[TMST_T1_STAGES]) {
+    uint32_t x = seed ? seed : 0x9e3779b9u;
+    for (int i = 0; i < TMST_T1_STAGES; i++) order[i] = i;
+    for (int i = TMST_T1_STAGES - 1; i > 0; i--) {
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;                 /* xorshift32 */
+        int j = (int)((uint64_t)x * (uint32_t)(i + 1) >> 32), t = order[i];
+        order[i] = order[j]; order[j] = t;
+    }
+}
+int tmst_t1_tourney_stage(const char *key, int drawn, int *stage) {
+    *stage = -1;
+    if (!key) return TMST_TSTAGE_NONE;
+    if (!strcmp(key, "heihachi")) return (*stage = home(tekken1, key)) >= 0 ? TMST_TSTAGE_T2 : TMST_TSTAGE_NONE;
+    if (drawn < 0 || drawn >= TMST_T1_STAGES) return TMST_TSTAGE_NONE;
+    *stage = drawn;
+    return TMST_TSTAGE_T1;
 }
 
 /* Tekken 2 stages for Tekken 3's newcomers (issue #11, the user's list,

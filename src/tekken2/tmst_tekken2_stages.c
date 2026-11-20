@@ -636,6 +636,8 @@ static int game_ready(int g) {
 }
 /* Either. */
 static int ready(void) { return game_ready(G_T2) || game_ready(G_T1); }
+/* Tekken 1's stages can be drawn: the Tekken 1 Tournament's (src/tournament/tmst_tournament.c). */
+int tmst_tekken1_stages_ready(void) { return game_ready(G_T1); }
 
 static int pick(int count) {
     draw ^= draw << 13; draw ^= draw >> 7; draw ^= draw << 17;
@@ -847,8 +849,9 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     fight = fight_mode = -1; moving = 0; line_fight = 0; forced_mode = -1; forced_held = 0; option_mode = -1;
     int tournament_stage, tournament = tmst_tournament_fight_stage(mode, &tournament_stage);
     if (tournament == TMST_TSTAGE_T3 || tournament == TMST_TSTAGE_TTT) { force(mode, tournament, tournament_stage, "tournament"); return; }
-    if (!ready() || (tournament == TMST_TSTAGE_T2 && !game_ready(G_T2))) {
+    if (!ready() || (tournament == TMST_TSTAGE_T2 && !game_ready(G_T2)) || (tournament == TMST_TSTAGE_T1 && !game_ready(G_T1))) {
         if (tournament == TMST_TSTAGE_T2) tmst_log("tekken2: tournament fight, Tekken 2's stages off: the system's stage");
+        if (tournament == TMST_TSTAGE_T1) tmst_log("tekken2: tournament fight, Tekken 1's stages off: the system's stage");
         return;
     }
     int line = mode == VS ? LINE_VS : mode == PRACTICE ? LINE_PRACTICE : -1, stage = -1, theirs = 0;
@@ -858,6 +861,7 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
     }
     else if (e && *e && game_ready(G_T2)) { stage = atoi(e) % STAGES; line_fight = getenv("TMST_T2_LINE") != NULL; }
     else if (tournament == TMST_TSTAGE_T2) stage = tournament_stage;
+    else if (tournament == TMST_TSTAGE_T1) stage = T1_FIRST + tournament_stage;      /* the Tekken 1 Tournament's draw */
     else if (line >= 0 && armed[line] && game_ready(game[line])) {
         int g = game[line], s = *chosen_of(line);
         stage = game_first[g] + (s >= 0 ? s : pick(game_count[g]));
@@ -880,7 +884,7 @@ void __wrap_tekken3_stage_select_fight(unsigned mode) {
              game_of(stage) == G_T1 ? "Tekken 1" : "Tekken 2", names[stage], stage - game_first[game_of(stage)],
              version_words[drawn_version()], T2_ARENA,
              theirs ? ", their GAME RANDOM" : line >= 0 && *chosen_of(line) < 0 && !(e && *e) ? ", RANDOM" : "",
-             tournament == TMST_TSTAGE_T2 ? ", the tournament's" : "");
+             tournament == TMST_TSTAGE_T2 || tournament == TMST_TSTAGE_T1 ? ", the tournament's" : "");
 }
 /* The same arena for the guests' correction (src/tekken3_ttt1_roster.c) and
  * the STAGES row's decision (Tekken 3's stage there: nothing moved). */
