@@ -11,7 +11,7 @@ _spec.loader.exec_module(jukebox_titles)
 FOLDER = {'t2-console': 't2-music/console', 't2-arcade': 't2-music/arcade', 'ttt-console': 'ttt-music/console',
           'ttt-arcade': 'ttt-music/arcade'}
 SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c',
-           'tmst_tournament_cine.c', 'tmst_tournament_story.c']
+           'tmst_tournament_cine.c', 'tmst_tournament_story.c', 'tmst_tournament_costume.c']
 # The roster keys the Expanded has today: the stock fighters, Panda and Tiger, its guests.
 STOCK = ['paul', 'law', 'lei', 'king', 'yoshimitsu', 'nina', 'hwoarang', 'xiaoyu', 'eddy', 'jin', 'julia', 'kuma',
          'bryan', 'heihachi', 'ogre', 'mokujin', 'gunjack', 'gon', 'anna', 'drb', 'trueogre', 'panda', 'tiger']
@@ -293,6 +293,26 @@ class TournamentTest(unittest.TestCase):
                              {'xiaoyu': (kind, 7), 'jin': (kind, 7), 'paul': (kind, 0)})
         self.assertEqual(self.stages(1, ['jun'], 1), {'jun': (self.T2, 2)})   # T2: no school stage
 
+    def test_t1_tourney_order(self):
+        """The Tekken 1 Tournament's stages (2026-11-20): a run's order of all 11, none twice, the seed's."""
+        orders = [tuple(map(int, self.run_exe('t1-order', seed)[0].split())) for seed in (1, 2, 0x1234567, 0)]
+        for o in orders: self.assertEqual(sorted(o), list(range(11)), o)
+        self.assertEqual(len(set(orders)), 4)                                     # the seeds' own orders
+        self.assertEqual(orders[0], tuple(map(int, self.run_exe('t1-order', 1)[0].split())))   # the same again
+
+    def test_t1_tourney_stage(self):
+        T1 = 4
+        out = {l.split()[0]: l.split()[1:] for l in self.run_exe('t1-stage', 7, 'law', 'kazuya', 'heihachi', 'xiaoyu')}
+        # the drawn Tekken 1 stage (Venezia, 7) with its piece; Heihachi his Tekken 2 Pagoda (6) and its piece
+        self.assertEqual(out['law'], [str(T1), '7', 't1-console/t1-venezia.bgm'])
+        self.assertEqual(out['kazuya'], out['law'])
+        self.assertEqual(out['xiaoyu'], out['law'])                                # no school stage in T1
+        self.assertEqual(out['heihachi'], [str(self.T2), '6', 't2-console/t2-heihachi.bgm'])
+        arcade = {l.split()[0]: l.split()[1:] for l in self.run_exe('t1-stage-arcade', 0, 'law', 'heihachi')}
+        self.assertEqual(arcade['law'], [str(T1), '0', 't1-arcade/t2-pjack.bgm'])
+        self.assertEqual(arcade['heihachi'], [str(self.T2), '6', 't2-arcade/t2-heihachi.bgm'])
+        self.assertEqual(self.run_exe('t1-stage', 11, 'law'), ['law 0 -1 -/-'])  # no such stage
+
     # ---- GAME OPTION's STAGES = TEKKEN 2, TEKKEN 1 and RANDOM (issue #11) ----
     def option_stages(self, keys, school=0):
         """{key: (kind, stage, random-t2, kind1, stage1, random-t1)}"""
@@ -358,18 +378,30 @@ class TournamentTest(unittest.TestCase):
             if v[0] == self.T2: self.assertEqual(got[k][:2], v, k)
 
     # ---- the boss intros (tmst_tournament_cine.c) ----
+    FLIP_JOINT = (1000, 16300, 2000)      # joint 7 (channels 24..26), near a quarter turn on its middle axis
+
     @staticmethod
-    def pack(records=4, clips=None, ch3=0, sounds=None):
+    def flipped(t):
+        """The same rotation's other triple."""
+        return ((t[0] + 0x8000) & 0xffff, (0x8000 - t[1]) & 0xffff, (t[2] + 0x8000) & 0xffff)
+
+    @staticmethod
+    def pack(records=4, clips=None, ch3=0, sounds=None, flips=None):
         """A TTT1 combat pack: record 0 the neutral (3 still frames), the
         records in `clips` ({record: (frames, step)}) on their own: heading
         0x8000, distance step a frame, channel 3 from `ch3` on, wrapping
         past 0xFFFF; `sounds` ({record: (event1, event2, frame)}) their
-        sound lists (the others 0xFFFF, 0xFFFF, 0)."""
-        def clip(frames, step):
+        sound lists (the others 0xFFFF, 0xFFFF, 0). Joint 7 holds FLIP_JOINT;
+        in a record of `flips` ({record: frame}) from that frame on as its
+        other triple (one rotation all along)."""
+        flips = flips or {}
+        def clip(frames, step, flip=None):
             rows = []
             for f in range(frames):
                 row = [0] * 57
                 row[0], row[1], row[2], row[3] = 0x8000, 1040, f * step, (ch3 + f * 8) & 0xffff
+                j = TournamentTest.FLIP_JOINT
+                row[24:27] = TournamentTest.flipped(j) if flip is not None and f >= flip else j
                 rows.append(struct.pack('<57H', *row))
             return struct.pack('<II', 0x4a554e00 | frames, 57) + b''.join(rows)
         clips, sounds = clips or {}, sounds or {}
@@ -378,7 +410,7 @@ class TournamentTest(unittest.TestCase):
         blobs, offsets, lists = [clip(3, 0)], {None: at}, {}
         at += len(blobs[0])
         for r, (frames, step) in sorted(clips.items()):
-            blobs.append(clip(frames, step)); offsets[r] = at; at += len(blobs[-1])
+            blobs.append(clip(frames, step, flips.get(r))); offsets[r] = at; at += len(blobs[-1])
         for r in range(records):
             blobs.append(struct.pack('<3H', *sounds.get(r, (0xffff, 0xffff, 0))) + b'\xff\xff'); lists[r] = at; at += 8
         head = struct.pack('<8I', 0x314d554a, 4, 0, records, 0, 0, 0, table)
@@ -426,10 +458,10 @@ class TournamentTest(unittest.TestCase):
         head, cam, poses = self.blocks(out)
         n = int(head['length'][0][0])
         self.assertEqual((len(cam), len(poses[1]), len(poses[0])), (n, n, 1))
-        # Kazuya first, Devil (the boss, 33 costume 0) from the swap on
-        self.assertEqual(head['actor'], [['0', '7', '1'], ['1', 'kazuya', '0']])
+        # Kazuya first (in his own costume: 2), Devil (the boss, 33 costume 1) from the swap on
+        self.assertEqual(head['actor'], [['0', '7', '1'], ['1', 'kazuya', '2']])
         swap = int(head['swap'][0][3])
-        self.assertEqual(head['swap'][0][:3], ['1', '33', '0'])
+        self.assertEqual(head['swap'][0][:3], ['1', '33', '1'])
         self.assertEqual(head['hide'], [['0', '0']])
         self.assertEqual(head['dark'], [['0']])
         # the flash: up to white before the swap, down after; black at both ends
@@ -486,7 +518,7 @@ class TournamentTest(unittest.TestCase):
         head, cam, poses = self.blocks(out)
         n = int(head['length'][0][0])
         self.assertEqual((len(cam), len(poses[1])), (n, n))
-        self.assertEqual(head['actor'][1], ['1', '33', '0'])                 # the boss all along
+        self.assertEqual(head['actor'][1], ['1', '33', '1'])                 # the boss all along
         self.assertNotIn('swap', head)
         self.assertEqual(len(head['fade']), 2)                               # no flash
         aura = list(map(int, head['aura'][0]))
@@ -502,6 +534,75 @@ class TournamentTest(unittest.TestCase):
         # without his pack: not written (no intro)
         self.assertEqual(self.cine('heihachi', self.pack())[0], 1)
 
+    def test_intro_unknown(self):
+        # a guest alone: her own pack by its fixed stem (Unknown-TTT1), not
+        # P2's moves' (an Unknown@X pack here, channel 3 from 30000)
+        unk = self.pack(records=780, clips={772: (61, 0), 769: (150, 0), 773: (60, 0), 764: (105, 0)}, ch3=5000)
+        code, out = self.cine('unknown', self.pack(ch3=30000), Unknown=unk)
+        self.assertEqual((code, out[0]), (0, 'entry unknown'))
+        head, cam, poses = self.blocks(out)
+        n = int(head['length'][0][0])
+        self.assertEqual((n, len(cam), len(poses[1])), (472, n, n))
+        self.assertEqual(head['actor'][1], ['1', '33', '1'])                 # herself all along
+        self.assertNotIn('swap', head)
+        self.assertEqual(len(head['fade']), 2)                               # no flash
+        self.assertEqual(list(map(int, head['aura'][0]))[:4], [1, 120, 382, 2])
+        c3 = [p[3] for p in poses[1]]
+        self.assertTrue(all(5000 <= v < 5000 + 150 * 8 for v in c3), (min(c3), max(c3)))
+        for a, b in zip(cam, cam[1:]):
+            self.assertTrue(all(abs(x - y) <= 40 for x, y in zip(a, b)), (a, b))
+        # without her pack: not written (no intro)
+        self.assertEqual(self.cine('unknown', self.pack())[0], 1)
+
+    # ---- the opponents' costume from the player's button (tmst_tournament_costume.c) ----
+    def costume(self, *args):
+        r = subprocess.run([str(self.exe), 'costume', *map(str, args)], capture_output=True, text=True)
+        return tuple(map(int, r.stdout.split()))
+
+    def test_costume_native(self):
+        # keys square, cross, triangle, circle, R1: its model a key, the game's costume the model's
+        self.assertEqual([self.costume('native', k, 'law', 0x1f, 0) for k in range(5)],
+                         [(0, 0), (1, 1), (2, 0), (3, 1), (4, 2)])
+        self.assertEqual(self.costume('native', 4, 'law', 0x0f, 1), (2, 0))       # no Start model: triangle
+        self.assertEqual(self.costume('native', 2, 'law', 0x1b, 0), (-1, 0))      # no triangle model: the game's
+        # without TTT1 models: the game's costume; R1 its third when unlocked, else triangle's
+        self.assertEqual([self.costume('native', k, 'law', 0, 0) for k in range(5)],
+                         [(-1, 0), (-1, 1), (-1, 0), (-1, 1), (-1, 0)])
+        self.assertEqual(self.costume('native', 4, 'law', 0, 1), (-1, 2))
+
+    def test_costume_own_fighters(self):
+        # Kuma stays Kuma (cross, circle: Panda's models), Panda Panda, Eddy not Tiger, Tiger Tiger
+        self.assertEqual([self.costume('native', k, 'kuma', 0x1f, 1) for k in range(5)],
+                         [(0, 0), (0, 0), (2, 0), (2, 0), (4, 2)])
+        self.assertEqual([self.costume('native', k, 'kuma', 0, 0) for k in range(4)], [(-1, 0)] * 4)
+        self.assertEqual([self.costume('native', k, 'panda', 0x1f, 0) for k in range(5)],
+                         [(1, 1), (1, 1), (3, 1), (3, 1), (3, 1)])
+        self.assertEqual(self.costume('native', 0, 'panda', 0x08, 0), (3, 1))
+        self.assertEqual(self.costume('native', 0, 'panda', 0, 0), (-1, 1))
+        self.assertEqual(self.costume('native', 4, 'eddy', 0x1f, 1), (2, 0))
+        self.assertEqual([self.costume('native', k, 'tiger', 0x1f, 0) for k in range(5)], [(4, 2)] * 5)
+        self.assertEqual(self.costume('native', 1, 'tiger', 0, 0), (-1, 2))
+
+    def test_costume_guest(self):
+        self.assertEqual([self.costume('guest', k, 3) for k in range(5)], [(-1, 0), (-1, 1), (-1, 0), (-1, 1), (-1, 0)])
+        self.assertEqual(self.costume('guest', 1, 1), (-1, 0))                   # no second costume
+        self.assertEqual(self.costume('guest', 3, 7), (-1, 1))
+
+    def test_intro_joint_flip(self):
+        # a clip flipping a joint to its other triple (TTT1's Unknown 772 at
+        # its frame 5, played at 15 %; 769 from its frame 45, blended into):
+        # every pose the same rotation, none eased through a wrong one
+        unk = self.pack(records=780, clips={772: (61, 0), 769: (150, 0), 773: (60, 0), 764: (105, 0)},
+                        flips={772: 5, 769: 45})
+        code, out = self.cine('unknown', self.pack(), Unknown=unk)
+        self.assertEqual(code, 0)
+        poses = self.blocks(out)[2][1]
+        j, alt = self.FLIP_JOINT, self.flipped(self.FLIP_JOINT)
+        gap = lambda a, b: min((a - b) & 0xffff, (b - a) & 0xffff)
+        for f, p in enumerate(poses):
+            t = p[24:27]
+            self.assertLessEqual(min(sum(map(gap, t, j)), sum(map(gap, t, alt))), 4, (f, t))
+
     def test_intro_trueogre(self):
         # two natives: Ogre's parts from his pack (Ogre-TTT1, channel 3 from
         # 1000), True Ogre's from his own (Trueogre-TTT1, from 5000), not P2's
@@ -513,9 +614,9 @@ class TournamentTest(unittest.TestCase):
         n = int(head['length'][0][0])
         self.assertEqual((len(cam), len(poses[1])), (n, n))
         # Ogre first, True Ogre (the boss) from the swap on, in a white flash
-        self.assertEqual(head['actor'][1], ['1', 'ogre', '0'])
+        self.assertEqual(head['actor'][1], ['1', 'ogre', '2'])
         swap = int(head['swap'][0][3])
-        self.assertEqual(head['swap'][0][:3], ['1', '33', '0'])
+        self.assertEqual(head['swap'][0][:3], ['1', '33', '1'])
         fades = [list(map(int, f)) for f in head['fade']]
         self.assertIn([swap - 16, swap - 1, 0, 256], fades)
         self.assertIn([swap, swap + 32, 256, 0], fades)
@@ -543,7 +644,7 @@ class TournamentTest(unittest.TestCase):
         head, cam, poses = self.blocks(out)
         self.assertNotIn('swap', head)
         self.assertNotIn('aura', head)
-        self.assertEqual(head['actor'][1], ['1', '33', '0'])
+        self.assertEqual(head['actor'][1], ['1', '33', '1'])
         self.assertEqual(len(head['fade']), 2)                                # no flash
         self.assertTrue(all(p[2] == 0 for p in poses[1]))                     # the stance, standing
         # Kazuya's pack missing: the boss's neutral instead, still written

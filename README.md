@@ -82,6 +82,15 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
     · Tekken 3 Ogre, then True Ogre (one round each, you take the life you have left on to the second)
     · Tekken Tag - Unknown (one round: she heals and changes her style)
     · Free - a boss drawn at the start randomly (three rounds). The bosses cannot be picked.
+- **Costumes:** every opponent, the bosses too, wears the costume of the button you picked yours with (□ ✕ △ ○
+  R1), whatever CPU COSTUME says; who has no R1 costume wears △'s. Kuma stays Kuma (✕ his □, ○ his △), Panda is
+  always Panda, Eddy's R1 is his △, Tiger always Tiger; the TTT1 guests wear their first costume for □ △ R1, their
+  second for ✕ ○. Xiaoyu and Jin in the school outfit (R1) fight at the school: High School (A) in the Tekken 3
+  Tournament, High School (B) in the Tekken Tag Tournament. The boss intros show the same costume, Kazuya and Ogre
+  before their change too.
+- **Stages:** each fighter's home stage; the Tekken 1 Tournament, with Tekken 1 Content's Stages on, a Tekken 1
+  stage drawn for every match as in the original game, none twice (Heihachi in Tekken 2's Pagoda), with its Tekken 1
+  theme; without them the Tekken 2 stages.
 - **Boss intro:** before Devil, a short cinematic: Kazuya standing in the dark, the camera coming to him, then his
   Tekken Tag change in lightning and a white flash, and Devil stands there; his music starts with it, the move's
   own sounds too. START skips it (from the change on). Made from the fighters' own TTT1 moves in your install
@@ -89,7 +98,10 @@ The King of Iron Fist Tournament, as an additional game mode of its own.
   after the VS screen): he sits cross-legged, his back to you, gets up and turns to you in his blue lightning, into
   his stance. Before True Ogre (the Tekken 3 Grand Final, after Ogre's knock-out): Ogre gets up from the ground,
   draws himself up, arms spread, in his lightning, rises into the air, a white flash, and True Ogre lands on his
-  wings; he fights on the moves the tournament picked for him (CPU MOVESET). Unknown is coming in the future.
+  wings; he fights on the moves the tournament picked for him (CPU MOVESET). Before Unknown (the Tekken Tag
+  Tournament Grand Final, after the VS screen): she kneels, bent, her back to you, drops into a deep crouch with a
+  hand on the ground as her lightning wakes, rises from it, turns to you in her lightning, raises her hand before
+  her face, into her stance, her wolf burning behind her all along.
 - **Screens:** the bracket after each match (✕ next match · ○ leave the tournament), the next match before each
   fight, CHAMPION (and the tournament it unlocks) or TOURNAMENT OVER at the end. The Tekken 3 fighters' big VS
   portraits on them come from your Tekken 3 disc (the add-on's setup takes them, USA SLUS-00402); without them a

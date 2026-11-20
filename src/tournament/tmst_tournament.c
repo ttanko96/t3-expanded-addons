@@ -49,6 +49,7 @@
 #include "tmst_tournament_story.h"
 #include "tmst_tournament_options.h"
 #include "tmst_tournament_cine.h"
+#include "tmst_tournament_costume.h"
 #include "tmst_files.h"
 #include "cpu_state.h"
 #include "mod_plugins.h"
@@ -291,6 +292,7 @@ static void restrict_grid(int t) {
     if (mask != keep) psx_mod_write_word(b + B_MASK, mask);
 }
 
+static int t1_order[TMST_T1_STAGES];        /* the Tekken 1 Tournament's stages, this run's order */
 static int start_bracket(unsigned id, unsigned costume) {
     int t = tm.tourney, pool[MAX_FIGHTERS], boss, n = pool_of(t, pool, &boss);
     int player = roster_find(pick_key(t, id, costume));
@@ -304,6 +306,8 @@ static int start_bracket(unsigned id, unsigned costume) {
     if (!tmst_bracket_new(&bracket, player, boss, pool, n, seed)) {
         tmst_log("tournament: %s has too few fighters here", tmst_tourney(t)->name); return 0;
     }
+    /* The Tekken 1 Tournament's stages, a run's order (tmst_tournament_stages.h). */
+    tmst_t1_stage_order(seed ^ 0x5bd1e995u, t1_order);
     tmst_log("tournament: %s, %s against the field, %s waits in the Grand Final", tmst_tourney(t)->name,
              roster[player].name, roster[boss].name);
     for (int s = 0; s < TMST_BRACKET_SLOTS; s += 2)
@@ -418,6 +422,32 @@ static unsigned match_rounds(void) {
     return 1;
 }
 static const Fighter *member_fighter(int i) { return &roster[i && mt.second >= 0 ? mt.second : mt.opponent]; }
+/* The opponents in the player's costume (the user's request, 2026-11-20;
+ * tmst_tournament_costume.h): the button that picked the player's fighter
+ * (issue #14's key; without one the pick's costume), as a TMST_KEY_. */
+extern int tekken3_ttt1_native_variant_file(unsigned id, unsigned v) __attribute__((weak));
+extern unsigned tekken3_guest_costume_files(unsigned id) __attribute__((weak));
+static int player_key(void) {
+    uint16_t k = mt.key;
+    if (k & B_R1) return TMST_KEY_R1;
+    if (k & B_TRIANGLE) return TMST_KEY_TRIANGLE;
+    if (k & B_CIRCLE) return TMST_KEY_CIRCLE;
+    if (k & B_CROSS) return TMST_KEY_CROSS;
+    if (k & B_SQUARE) return TMST_KEY_SQUARE;
+    unsigned c = mt.pick & 3;
+    return c == 1 ? TMST_KEY_CROSS : c == 2 ? TMST_KEY_R1 : TMST_KEY_SQUARE;
+}
+static int native_has(unsigned v, void *ctx) {
+    return tekken3_ttt1_native_variant_file && tekken3_ttt1_native_variant_file(*(const unsigned *)ctx, v);
+}
+/* An opponent's TTT1 model (a native's; -1 none) and game costume. */
+static TmstCostume opponent_costume(const Fighter *f) {
+    unsigned id = f->id;
+    if (id < STOCK)
+        return tmst_costume_native(player_key(), f->key, native_has, &id, (int)(psx_mod_read_word(THIRD_COSTUMES) >> id & 1));
+    return tmst_costume_guest(player_key(), tekken3_guest_costume_files ? tekken3_guest_costume_files(id) : 1u);
+}
+static unsigned member_costume(const Fighter *f) { return opponent_costume(f).costume; }
 /* The member due: the first, or (a team of two) the next once one is lost. */
 static int member_due(void) {
     int due = psx_mod_read_byte(TEAMS + TEAM_STRIDE + T_LOST);
@@ -428,12 +458,20 @@ static int member_due(void) {
  * own record for its ID and costume names the school arena (Xiaoyu's,
  * Jin's school outfit; 0x80097D40 + (ID * 4 + costume) * 4, arena at +10). */
 enum { RECORDS = 0x80097d40, RECORD_ARENA = 10, SCHOOL_ARENA = 7, ARENA = 0x800adc84, ARENA_COPY = 0x800afaa2 };
+extern int tmst_tekken1_stages_ready(void) __attribute__((weak));     /* src/tekken2/tmst_tekken2_stages.c */
 static int due_stage(const Fighter *f, int *stage, int *school) {
     *school = 0;
     if (f->id < STOCK) {
-        uint32_t record = psx_mod_read_word(RECORDS + (f->id * 4 + f->costume) * 4);
+        /* The costume it wears (the player's button's), not the roster's:
+         * Xiaoyu's and Jin's third (R1, Start) is the school's. */
+        uint32_t record = psx_mod_read_word(RECORDS + (f->id * 4 + member_costume(f)) * 4);
         *school = record >> 24 == 0x80 && psx_mod_read_byte(record + RECORD_ARENA) == SCHOOL_ARENA;
     }
+    /* The Tekken 1 Tournament on Tekken 1's stages (Tekken 1 Content's, its
+     * part on): this run's order, a stage a match (the player's k-th the
+     * order's k-th); Heihachi his Tekken 2 Pagoda. Without them its Tekken 2 list. */
+    if (tm.tourney == TMST_TOURNEY_T1 && tmst_tekken1_stages_ready && tmst_tekken1_stages_ready() && mt.match >= 0)
+        return tmst_t1_tourney_stage(f->key, t1_order[tmst_bracket_round(mt.match) % TMST_T1_STAGES], stage);
     return tmst_tourney_stage(tm.tourney, f->key, *school, stage);
 }
 static int in_match(void) {
@@ -479,7 +517,7 @@ int tmst_tournament_fight_stage(unsigned mode, int *stage) {
     if (!in_match() || mode != TEAM_BATTLE) return TMST_TSTAGE_NONE;
     const Fighter *f = member_fighter(member_due());
     int school, kind = due_stage(f, stage, &school);
-    static const char *const kinds[] = {"none", "Tekken 2", "Tekken 3", "Tekken Tag"};
+    static const char *const kinds[] = {"none", "Tekken 2", "Tekken 3", "Tekken Tag", "Tekken 1"};
     tmst_log("tournament: %s's stage in %s: %s %d%s", f->name, tmst_tourney(tm.tourney)->name, kinds[kind], *stage,
              school ? " (school)" : "");
     return kind;
@@ -489,7 +527,7 @@ int tmst_tournament_fight_stage(unsigned mode, int *stage) {
 static void member_on(int i) {
     const Fighter *f = member_fighter(i);
     psx_mod_write_half(FIGHTERS + 2, (uint16_t)f->id);
-    psx_mod_write_half(COSTUMES + 2, (uint16_t)f->costume);
+    psx_mod_write_half(COSTUMES + 2, (uint16_t)member_costume(f));
     if (f->id < STOCK && tekken3_native_moves_assign) tekken3_native_moves_assign(1, f->id, 0);
     mt.member = i;
 }
@@ -501,8 +539,10 @@ static void member_on(int i) {
 static void place_opponent(void) {
     for (int i = 0; i < team_size(); i++) {
         const Fighter *f = member_fighter(i);
-        psx_mod_write_byte(TEAMS + TEAM_STRIDE + (uint32_t)i, (uint8_t)(f->id * 4 + f->costume));
-        tmst_log("tournament: the CPU's member %d is %s (ID %u, costume %u)", i + 1, f->name, f->id, f->costume);
+        TmstCostume c = opponent_costume(f);
+        psx_mod_write_byte(TEAMS + TEAM_STRIDE + (uint32_t)i, (uint8_t)(f->id * 4 + c.costume));
+        tmst_log("tournament: the CPU's member %d is %s (ID %u, costume %u, TTT1 model %d; the player's key %d)", i + 1,
+                 f->name, f->id, c.costume, c.variant, player_key());
     }
     member_on(0);
     psx_mod_write_byte(TEAMS + TEAM_STRIDE + T_SIZE, 0);
@@ -596,7 +636,16 @@ static struct {
     uint32_t frame_sp;                        /* the fight frame's stack at 0x80050450 (none playing) */
     unsigned phase; uint32_t actor[2][12], fill[4], mode[CAM_MODE_SIZE / 4], object[CAM_OBJECT_SIZE / 4]; uint8_t dark;
     int cine_used;                            /* an intro took the engine's prepared cinematic (embu_restore) */
+    int wolf;                                 /* the playing intro's entry wants Unknown's wolf */
 } intro = {.played_match = -2, .native_swap = -1};
+/* Unknown's wolf in her intro (src/compat/tmst_compat.c asks): while an
+ * intro with `wolf` plays. Bench: TMST_WOLF_IN_CINE=1, in any cinematic
+ * (the engine's TEKKEN3_CINE_TEST in Practice). */
+int tmst_tournament_intro_wolf(void) {
+    static int bench = -1;
+    if (bench < 0) { const char *e = getenv("TMST_WOLF_IN_CINE"); bench = e && *e == '1'; }
+    return bench || (intro.playing && intro.wolf);
+}
 /* The engine keeps one prepared cinematic (src/tekken3_cine.c `cine`), and
  * the attract's Embu rotation prepares its TTT Embu ahead (the turn chosen
  * as the attract is left for the title, src/tekken3_cine_trigger.c
@@ -813,9 +862,14 @@ static void boss_intro_tick(unsigned screen, int due) {
     char dir[4200], path[4300];
     snprintf(dir, sizeof dir, "%s/addons/tmst/workspace/boss-intro", tmst_files_root());
     snprintf(path, sizeof path, "%s/%s.cine", dir, boss->key);
+    /* The form it starts as (Kazuya, Ogre) in the player's costume too, as
+     * the boss is (the user's request, 2026-11-20). */
+    int start = e->start ? roster_find(e->start) : -1;
+    unsigned start_costume = start >= 0 ? member_costume(&roster[start]) : 0;
+    if (start >= 0) tmst_log("tournament: the intro starts as %s in costume %u", roster[start].name, start_costume);
     FILE *f = tmst_files_make_dirs(dir) ? fopen(path, "w") : NULL;
     int ok = f && tmst_boss_intro_write(f, e, intro_pack, NULL, psx_mod_read_half(FIGHTERS), psx_mod_read_half(COSTUMES),
-                                        boss->id, boss->costume);
+                                        boss->id, member_costume(boss), start_costume);
     if (f && fclose(f)) ok = 0;
     if (ok) intro_sounds_load(e);
     intro_packs_free();
@@ -825,7 +879,7 @@ static void boss_intro_tick(unsigned screen, int due) {
     intro_save();
     if (!tekken3_cine_play(path, 0, NULL)) { tmst_log("tournament: %s not played", path); return; }
     intro.cine_used = 1;
-    intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0;
+    intro.playing = 1; intro.skip = 0; intro.previous = 0; intro.swap = e->start ? e->swap : 0; intro.wolf = e->wolf;
     intro.native_swap = e->start && boss->id < STOCK ? (int)boss->id : -1;
     tmst_log("tournament: %s's intro (%s) at phase %d, %d frames", boss->name, e->key ? e->key : "the fallback",
              intro_phase(alone), e->frames);
@@ -835,6 +889,54 @@ static void boss_intro_tick(unsigned screen, int due) {
     if (tmst_music_version() == TMST_MUSIC_SILENT) tmst_log("tournament: the intro without music (BGM SELECT: SILENT)");
     else if (!tmst_jukebox_lead_in()) tmst_log("tournament: the intro without music (no Jukebox piece)");
 }
+#if TMST_HAS_CPU_COSTUME
+/* The opponents' models (the player's costume): the Expanded asks
+ * src/tekken3_native_moves.c for a native's TTT1 model (tekken3_ttt1_mod.c),
+ * for the CPU's drawn one (the arena, tekken3_ttt1_roster.c) and for a CPU
+ * guest's costume (CPU COSTUME, tekken3_ttt1_mod.c): for the CPU's member
+ * of a tournament match, the player's button's, whatever CPU COSTUME says.
+ * A native's only while the game's costume is the one written for it. */
+static const Fighter *cpu_member(unsigned slot, unsigned id) {
+    if (!on || slot != 1 || mt.flow != FLOW_MATCH || mt.opponent < 0) return NULL;
+    for (int i = 0; i < team_size(); i++)
+        if (member_fighter(i)->id == id) return member_fighter(i);
+    return NULL;
+}
+/* Each answer logged once a fighter and model (the log's "tournament: ... wears"). */
+static void costume_told(const Fighter *f, const char *what, int value) {
+    static unsigned last = 0xffffffffu;
+    unsigned now = f->id << 8 | (unsigned)(value & 0xff);
+    if (now == last) return;
+    last = now;
+    tmst_log("tournament: %s wears the player's key %d: %s %d", f->name, player_key(), what, value);
+}
+static int cpu_variant(unsigned slot, unsigned id, unsigned costume) {
+    const Fighter *f = cpu_member(slot, id);
+    if (!f) return -2;
+    TmstCostume c = opponent_costume(f);
+    if (c.variant < 0 || (costume & 3) != c.costume) return -2;
+    costume_told(f, "TTT1 model", c.variant);
+    return c.variant;
+}
+extern int __real_tekken3_native_model_variant(unsigned slot, unsigned id, unsigned costume);
+int __wrap_tekken3_native_model_variant(unsigned slot, unsigned id, unsigned costume) {
+    int v = cpu_variant(slot, id, costume);
+    return v >= 0 ? v : __real_tekken3_native_model_variant(slot, id, costume);
+}
+extern int __real_tekken3_cpu_native_variant(unsigned slot, unsigned id, unsigned costume);
+int __wrap_tekken3_cpu_native_variant(unsigned slot, unsigned id, unsigned costume) {
+    int v = cpu_variant(slot, id, costume);
+    return v >= 0 ? v : __real_tekken3_cpu_native_variant(slot, id, costume);
+}
+extern int __real_tekken3_cpu_guest_costume(unsigned slot, unsigned id, unsigned have);
+int __wrap_tekken3_cpu_guest_costume(unsigned slot, unsigned id, unsigned have) {
+    const Fighter *f = cpu_member(slot, id);
+    if (!f || id < STOCK) return __real_tekken3_cpu_guest_costume(slot, id, have);
+    unsigned c = tmst_costume_guest(player_key(), have).costume;
+    costume_told(f, "costume", (int)c);
+    return (int)c;
+}
+#endif
 /* The fight frame's piece after its pause check (src/tekken3_cine.c runs its
  * frames there): a skip at a frame's start. */
 extern void __tmst_chain_func_80050450(CPUState *cpu);
@@ -875,7 +977,7 @@ static void match_tick(unsigned screen) {
     if (screen == LOADING && (psx_mod_read_half(FIGHTERS + 2) != f->id || mt.member != due)) {
         if (mt.member == due) tmst_log("tournament: the CPU's member was changed (ID %u), %s again", psx_mod_read_half(FIGHTERS + 2), f->name);
         else tmst_log("tournament: the CPU's next member, %s", f->name);
-        psx_mod_write_byte(TEAMS + TEAM_STRIDE + (uint32_t)due, (uint8_t)(f->id * 4 + f->costume));
+        psx_mod_write_byte(TEAMS + TEAM_STRIDE + (uint32_t)due, (uint8_t)(f->id * 4 + member_costume(f)));
         member_on(due);
     }
     /* The fight over (the winner's pose played to its end), its screen back
@@ -1283,6 +1385,7 @@ static void shaded_band(TmstPrims *k, int x0, int x1, int y, int h, uint32_t a, 
 static int showing(void) { return tm.active && (tm.view == VIEW_LIST || tm.view == VIEW_GRID || tm.exiting); }
 static const char *boss_name(int t);
 static void hud_prims(TmstPrims *k);
+static void hint_prims(TmstPrims *k);
 /* Under the cover's picture: black, and the match in the UI font (Fira
  * Sans; scale 2: capitals 24 tall, 1: 12), seen only where the picture is
  * not (a screen without a list to draw on, the picture given up to the
@@ -1362,6 +1465,7 @@ static void tournament_prims(TmstPrims *k) {
         font_line(k, line, CENTRE_X, 300, 1, 1, 2, 0x808080);
         font_line(k, "ONLY THE HIGHLIGHTED PLAYERS PARTICIPATE IN THIS TOURNAMENT", CENTRE_X, 330, 1, 2, 5, 0x606060);
     }
+    hint_prims(k);
 }
 
 /* The game's primitives lying wholly below the grid go off screen, but the
@@ -1872,49 +1976,54 @@ static void grid_visitor(uint32_t node) {
     each_textured(node, grey_icon);
 }
 
-/* The panel's picture: 1024 x 392 texels for the screen's 368 x 196 (576
- * wide in the upper half where the grid has the Expanded's HD faces:
- * TMST_OVERLAY_ROOM_FOR_HD). */
-enum { PIC_X = 0, PIC_Y = 284, PIC_W = 368, PIC_H = 196, PW = 1024, PH = 392, HINT_UP = 50,   /* the hint clear of the screen's edge */
-       MATTE = 0xff805858u };      /* about the red-brown backdrop under the hint (measured headless, 128 88 88) */
-static uint32_t pic[PW * PH];
-static unsigned pic_version = ~0u;
+/* A cover screen's canvas is up (show_canvas). */
 static int pic_on;
-static void fill(int x, int y, int w, int h, uint32_t c) { tmst_fill_argb(pic, PW, PH, x, y, w, h, c); }
-/* The UI font (Fira Sans), y the capitals' top. */
-static void txt(int x, int y, const char *s, uint32_t c) { tmst_ui_text_argb(pic, PW, PH, x, y, &tmst_ui_face_list, s, c, MATTE); }
-static int text_w(const char *s) { return tmst_ui_width(&tmst_ui_face_list, s); }
-static void centred(int y, const char *s, uint32_t c) { txt((PW - text_w(s)) / 2, y, s, c); }
-/* A hint with the pad's buttons (ART_X, ART_O), centred: the symbol alone
- * in the PlayStation's colour, 16 x 16 texels with 2-texel strokes, as the
- * Jukebox's and Photo Mode's hints draw it. */
-enum { KEY_W = 18, KEY_GAP = 6 };
-static void key_px(int x, int y, uint32_t c) { if (x >= 0 && x < PW && y >= 0 && y < PH) pic[y * PW + x] = c; }
-static void key_line(int x0, int y0, int x1, int y1, uint32_t c) {
-    int n = abs(x1 - x0) > abs(y1 - y0) ? abs(x1 - x0) : abs(y1 - y0);
-    for (int i = 0; i <= n; i++)
-        for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++)
-            key_px(x0 + (x1 - x0) * i / (n ? n : 1) - 1 + dx, y0 + (y1 - y0) * i / (n ? n : 1) - 1 + dy, c);
+/* The buttons under the list or the grid, as the Jukebox draws its own:
+ * by the GPU each frame, in screen units, the UI font's SCREEN face
+ * (tmst_ui_prim_text: capitals 12 tall, sharp where the renderer draws at
+ * a higher resolution) with the pad's symbols among its glyphs, under a
+ * rule. No picture of our own: one narrowed for the Expanded's HD faces
+ * was too small and soft to read (the user's request, 2026-11-20, as the
+ * Jukebox's issue #10). Clear of the list's last line (to 442) and of
+ * the screen's visible bottom (468). */
+enum { HINT_X0 = 10, HINT_X1 = 358, HINT_SEP_Y = 444, HINT_Y = 448, C_HINT_LINE = 0x5a4a6a };
+static const uint32_t C_HINT_LABEL = 0xffd8d0c8u, C_HINT_PLAIN = 0xffe8dccfu, C_HINT_CROSS = 0xff7aa7ffu,
+                      C_HINT_CIRCLE = 0xffff6b6bu;
+/* The tint for an ARGB colour (0xBBGGRR, 128 = as the glyph is). */
+static uint32_t hint_tint(uint32_t argb) {
+    uint32_t r = (argb >> 16 & 255) * 128 / 255, g = (argb >> 8 & 255) * 128 / 255, b = (argb & 255) * 128 / 255;
+    return b << 16 | g << 8 | r;
 }
-static void pad_key(char b, int x, int y) {
-    if (b == ART_CROSS) { key_line(x + 2, y + 2, x + 14, y + 14, 0xff7aa7ffu); key_line(x + 14, y + 2, x + 2, y + 14, 0xff7aa7ffu); return; }
-    for (int dy = -7; dy <= 7; dy++)                    /* a ring of radius 7, 2 thick */
-        for (int dx = -7; dx <= 7; dx++) { int d = dx * dx + dy * dy; if (d <= 49 && d >= 25) key_px(x + 8 + dx, y + 8 + dy, 0xffff6b6bu); }
-}
-static void hint(int y, const char *s, uint32_t c) {
-    int width = 0;
-    for (const char *p = s; *p;) {
-        if (*p == ART_CROSS || *p == ART_CIRCLE) { width += KEY_W + KEY_GAP; p++; continue; }
-        char part[128]; int n = 0;
-        while (p[n] && p[n] != ART_CROSS && p[n] != ART_CIRCLE && n < 127) { part[n] = p[n]; n++; }
-        part[n] = 0; width += text_w(part); p += n;
+/* Each an icon (or L2/R2, SELECT) and its label, centred. */
+typedef struct { const char *icon; uint32_t colour; const char *label; } Hint;
+static void hints(TmstPrims *k, const Hint *h, int n) {
+    int w = 0, gap = 12;
+    for (int i = 0; i < n; i++) w += tmst_ui_prim_width(h[i].icon, 1) + 3 + tmst_ui_prim_width(h[i].label, 1);
+    if (n > 1 && w + gap * (n - 1) > HINT_X1 - HINT_X0) gap = (HINT_X1 - HINT_X0 - w) / (n - 1);
+    if (gap < 4) gap = 4;
+    int x = CENTRE_X - (w + gap * (n - 1)) / 2;
+    for (int i = 0; i < n; i++) {
+        x += tmst_ui_prim_text(k, x, HINT_Y, h[i].icon, 1, hint_tint(h[i].colour)) + 3;
+        x += tmst_ui_prim_text(k, x, HINT_Y, h[i].label, 1, hint_tint(C_HINT_LABEL)) + gap;
     }
-    int x = (PW - width) / 2;
-    for (const char *p = s; *p;) {
-        if (*p == ART_CROSS || *p == ART_CIRCLE) { pad_key(*p, x, y); x += KEY_W + KEY_GAP; p++; continue; }
-        char part[128]; int n = 0;
-        while (p[n] && p[n] != ART_CROSS && p[n] != ART_CIRCLE && n < 127) { part[n] = p[n]; n++; }
-        part[n] = 0; txt(x, y, part, c); x += text_w(part); p += n;
+}
+static void hint_prims(TmstPrims *k) {
+    flat(k, C_HINT_LINE, HINT_X0, HINT_SEP_Y, HINT_X1 - HINT_X0, 1);
+    if (tm.view == VIEW_LIST || (tm.exiting && tm.view != VIEW_GRID)) {
+        Hint h[] = {{TMST_UI_ICON_UP TMST_UI_ICON_DOWN, C_HINT_PLAIN, "Choose"}, {TMST_UI_ICON_CROSS, C_HINT_CROSS, "Confirm"},
+                    {TMST_UI_ICON_CIRCLE, C_HINT_CIRCLE, "Exit"}};
+        hints(k, h, 3);
+    } else if (card_open) {
+        Hint h[] = {{TMST_UI_ICON_LEFT_RIGHT, C_HINT_PLAIN, "Change moveset"}, {TMST_UI_ICON_CROSS, C_HINT_CROSS, "Take"},
+                    {TMST_UI_ICON_CIRCLE, C_HINT_CIRCLE, "Back"}};
+        hints(k, h, 3);
+    } else {
+        /* L2 / R2 switch the Expanded's grid pages; one grid (Unified
+         * Character Select), nothing to switch. */
+        int pages = tekken3_ttt1_selector_page && tekken3_ttt1_selector_page() >= 0 && !unified();
+        Hint h[] = {{"L2/R2", C_HINT_PLAIN, "Switch character panel"}, {TMST_UI_ICON_CROSS, C_HINT_CROSS, "Select"},
+                    {"SELECT", C_HINT_PLAIN, "Back"}};
+        hints(k, pages ? h : h + 1, pages ? 3 : 2);
     }
 }
 static const char *boss_name(int t) {
@@ -1923,22 +2032,8 @@ static const char *boss_name(int t) {
     int b = roster_find(d->boss);
     return b >= 0 ? roster[b].name : "NOT IN THIS INSTALL";
 }
-static void draw(void) {
-    fill(0, 0, PW, PH, 0);
-    if (tm.view == VIEW_LIST || (tm.exiting && tm.view != VIEW_GRID)) {
-        hint(PH - HINT_UP, "UP / DOWN  Choose     " ART_X "Confirm     " ART_O "Exit", 0xffd8d0c8u);
-    } else {
-        int pages = tekken3_ttt1_selector_page && tekken3_ttt1_selector_page() >= 0 && !unified();
-        if (card_open) hint(PH - HINT_UP, "LEFT/RIGHT  Change moveset     " ART_X "Take     " ART_O "Back", 0xffd8d0c8u);
-        else hint(PH - HINT_UP, pages ? "L2/R2  Switch character panel     " ART_X "Select     SELECT  Back"
-                                      : ART_X "Select     SELECT  Back", 0xffd8d0c8u);
-    }
-}
-static void show_picture(void) {
-    if (pic_version != tm.version) { draw(); pic_version = tm.version; }
-    tmst_overlay_show_scaled(pic, PW, PH, PIC_X, PIC_Y, PIC_W, PIC_H, TMST_OVERLAY_BORROW | TMST_OVERLAY_ROOM_FOR_HD);
-    pic_on = 1;
-}
+/* The panel: our primitives only (tournament_prims, its hints hint_prims). */
+static void show_panel(void) { tmst_overlay_show_prims(); }
 
 /* ---- the cover's screens ------------------------------------------------------------ */
 /* The canvas over the 16:9 screen (490 units across, the 4:3 screen's 368 in
@@ -2178,7 +2273,7 @@ static void tick(void) {
      * loaded: covered until then (3 seconds at most). */
     if (tm.active && tm.exiting && !team_grid() && screen != MENU && !mt.cover) {
         if (!tm.left_at) tm.left_at = tm.frames;
-        if (tm.frames - tm.left_at < 180) { show_picture(); return; }
+        if (tm.frames - tm.left_at < 180) { show_panel(); return; }
     }
     if (tm.active && !team_grid()) close_screen();
     static int covered;
@@ -2197,7 +2292,7 @@ static void tick(void) {
             covered = 0; canvas_borrowed = -1; tmst_overlay_backdrop(0, 0); pic_on = 0;
             if (mt.flow == FLOW_MATCH && screen == LOADING) tmst_overlay_hide_picture(); else tmst_overlay_hide();
         }
-        if (showing()) show_picture();
+        if (showing()) show_panel();
         /* The loading screen's VS portraits and the fight's HUD are read in
          * the visitor, which runs while something of ours is drawn. */
         static int watching_vs;

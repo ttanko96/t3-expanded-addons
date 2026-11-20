@@ -88,6 +88,33 @@ static const TmstCineKey trueogre_cam[] = {
     {390, {450, -800, -2800}, {0, -1500, 1800}},    /* True Ogre coming down */
     {484, {400, -950, -1900}, {0, -1050, 1800}},    /* landed: his whole figure */
 };
+/* Unknown (the TTT Grand Final, 2026-11-20: Claude's own take, "epic"):
+ * kneeling, bent, her back to us (her TTT1 record 772, barely moving), the
+ * camera low, coming to her; she drops into a deep crouch, a hand on the
+ * ground (769's frame 40), the lightning waking round her, and rises from
+ * it into a wide stance (769 on); she turns to the camera in her lightning
+ * (773: its own lightning properties, frames 1..40 on bones 2, 8, 11, 13,
+ * 17), raises her hand before her face (764), into her stance, then black.
+ * A guest: her own pack's stem fixed (the guest prefix may be Unknown@X).
+ * Her wolf behind her all along (the user, 2026-11-20). */
+static const TmstCinePart unknown_parts[] = {
+    {NULL, 772, 0, 15, 100, 0},                  /* kneeling, her back to us: clip frames 0..15 */
+    {NULL, 769, 40, 25, 40, 24},                 /* the deep crouch, a hand down: 40..50 */
+    {NULL, 769, 50, 60, 142, 0},                 /* rising into the wide stance, slowly: 50..135 */
+    {NULL, 773, 0, 100, 59, 12},                 /* the turn in lightning: 0..58 */
+    {NULL, 764, 20, 90, 70, 14},                 /* the hand before her face: 20..83 */
+    {NULL, -1, 0, 100, 61, 18},                  /* her stance */
+};
+static const TmstCineKey unknown_cam[] = {
+    {0, {700, -400, -1600}, {0, -450, 1800}},       /* low, wide */
+    {100, {250, -350, -200}, {0, -450, 1800}},      /* close behind her */
+    {140, {650, -400, -800}, {0, -600, 1800}},      /* the crouch, from the side, low */
+    {200, {600, -600, -1400}, {0, -850, 1800}},     /* back as she rises (her head in) */
+    {282, {500, -850, -1700}, {0, -1050, 1800}},
+    {342, {300, -1350, -500}, {0, -1400, 1800}},    /* the turn: close, her face */
+    {412, {250, -1400, -300}, {0, -1450, 1800}},
+    {472, {450, -950, -1500}, {0, -1000, 1800}},    /* her whole figure */
+};
 /* The fallback: standing in its stance, the camera coming closer. */
 static const TmstCinePart stance_parts[] = {{NULL, -1, 0, 100, 240, 0}};
 static const TmstCineKey stance_cam[] = {
@@ -102,6 +129,8 @@ static const TmstBossIntro intros[] = {
      NULL, 0, 0, 221, 266, 2, {2, 4, 11, 16, 17, 14, 9}, 7, "Heihachi-TTT1"},
     {"trueogre", trueogre_parts, N(trueogre_parts), 484, {0, 0, 1800, 0x8000}, 30, 24, trueogre_cam, N(trueogre_cam),
      "ogre", 316, 16, 147, 390, 2, {2, 5, 8, 10, 13, 14, 16, 17}, 8, "Trueogre-TTT1"},
+    {"unknown", unknown_parts, N(unknown_parts), 472, {0, 0, 1800, 0x8000}, 30, 24, unknown_cam, N(unknown_cam),
+     NULL, 0, 0, 120, 382, 2, {2, 8, 11, 13, 17, 4, 14, 16}, 8, "Unknown-TTT1", 1},
 };
 static const TmstBossIntro fallback = {NULL, stance_parts, N(stance_parts), 240, {0, 0, 1800, 0x8000}, 30, 24,
                                        stance_cam, N(stance_cam), NULL, 0, 0, 0, 0, 0, {0}, 0, NULL};
@@ -160,6 +189,26 @@ static unsigned lerp_angle(unsigned a, unsigned b, int t, int den) {
     int d = (int)((b - a + 32768u) & 0xffff) - 32768;
     return (unsigned)(a + d * t / den) & 0xffff;
 }
+static int angle_gap(unsigned a, unsigned b) {
+    int d = (int)((b - a + 32768u) & 0xffff) - 32768;
+    return d < 0 ? -d : d;
+}
+/* A joint's three rotations (channels 3 + 3j..): near a quarter turn on
+ * the middle axis a clip may flip to the same rotation's other triple
+ * (x + 1/2, 1/2 - y, z + 1/2 of a turn: TTT1's Unknown 769, 772); easing
+ * between the two triples gives a wrong pose for a frame (a hand jumping).
+ * nearer: b, or its other triple when that is nearer to ref. */
+static void nearer(const unsigned ref[3], const unsigned b[3], unsigned out[3]) {
+    unsigned alt[3] = {(b[0] + 0x8000) & 0xffff, (0x8000 - b[1]) & 0xffff, (b[2] + 0x8000) & 0xffff};
+    int keep = angle_gap(ref[0], b[0]) + angle_gap(ref[1], b[1]) + angle_gap(ref[2], b[2]) <=
+               angle_gap(ref[0], alt[0]) + angle_gap(ref[1], alt[1]) + angle_gap(ref[2], alt[2]);
+    memcpy(out, keep ? b : alt, 3 * sizeof *out);
+}
+static void lerp_joint(const unsigned a[3], const unsigned b[3], int t, int den, unsigned out[3]) {
+    unsigned to[3];
+    nearer(a, b, to);
+    for (int i = 0; i < 3; i++) out[i] = lerp_angle(a[i], to[i], t, den);
+}
 
 /* ---- the poses ------------------------------------------------------------------ */
 /* Clip c (n frames) at time t (hundredths of its frames, looped). raw: the
@@ -171,7 +220,12 @@ static void clip_at(const uint8_t *c, int n, long t, unsigned v[CHANNELS], int *
     v[0] = half(c);
     v[1] = (unsigned)(half(a + 2) + ((int)half(b + 2) - (int)half(a + 2)) * frac / 100);
     *raw = lap * cycle + s16(half(a + 4)) + (s16(half(b + 4)) - s16(half(a + 4))) * frac / 100;
-    for (int ch = 3; ch < CHANNELS; ch++) v[ch] = lerp_angle(half(a + ch * 2), half(b + ch * 2), frac, 100);
+    for (int ch = 3; ch < CHANNELS; ch += 3) {
+        unsigned x[3] = {half(a + ch * 2), half(a + ch * 2 + 2), half(a + ch * 2 + 4)};
+        unsigned y[3] = {half(b + ch * 2), half(b + ch * 2 + 2), half(b + ch * 2 + 4)};
+        if (!frac) memcpy(v + ch, x, sizeof x);
+        else lerp_joint(x, y, frac, 100, v + ch);
+    }
 }
 static void put_pose(FILE *out, const unsigned v[CHANNELS]) {
     for (int ch = 0; ch < CHANNELS; ch++) fprintf(out, ch ? " %u" : "%u", v[ch]);
@@ -196,7 +250,8 @@ static void camera_at(const TmstBossIntro *e, int f, int out[6]) {
 
 /* ---- the file ------------------------------------------------------------------- */
 int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of, void *ctx, unsigned player_id,
-                          unsigned player_costume, unsigned boss_id, unsigned boss_costume) {
+                          unsigned player_costume, unsigned boss_id, unsigned boss_costume,
+                          unsigned start_costume) {
     size_t size = 0;
     if (!out || !e || !pack_of || !pack_ok(pack_of(e->own, &size, ctx), size) || e->frames <= 0 || e->cam_count < 1 ||
         e->part_count < 1)
@@ -208,9 +263,9 @@ int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of,
             return 0;
     fprintf(out, "cine 1\nname boss-intro\nlength %d\narena 0\ndark 0\n", e->frames);
     fprintf(out, "actor 0 %u %u\nhide 0 0\n", player_id, player_costume);
-    /* Another character first (`start`), the boss from `swap` on. */
+    /* Another character first (`start`, in its own costume), the boss from `swap` on. */
     if (e->start && e->swap > 0 && e->swap < e->frames)
-        fprintf(out, "actor 1 %s 0\nswap 1 %u %u %d\n", e->start, boss_id, boss_costume, e->swap);
+        fprintf(out, "actor 1 %s %u\nswap 1 %u %u %d\n", e->start, start_costume, boss_id, boss_costume, e->swap);
     else fprintf(out, "actor 1 %u %u\n", boss_id, boss_costume);
     if (e->aura_bone_count > 0 && e->aura_to > e->aura_from) {
         fprintf(out, "aura 1 %d %d %d", e->aura_from, e->aura_to, e->aura_step > 0 ? e->aura_step : 1);
@@ -230,7 +285,7 @@ int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of,
         camera_at(e, f, c);
         fprintf(out, "%d %d %d %d %d %d\n", c[0], c[1], c[2], c[3], c[4], c[5]);
     }
-    unsigned v[CHANNELS], last[CHANNELS];
+    unsigned v[CHANNELS], last[CHANNELS], goal[CHANNELS];
     int raw, raw0, base = 0, f = 0;
     const uint8_t *c = part_clip(&e->parts[0], e->own, pack_of, ctx, &n);
     /* Actor 0, hidden: one pose, far behind the boss. */
@@ -255,10 +310,18 @@ int tmst_boss_intro_write(FILE *out, const TmstBossIntro *e, TmstPackOf pack_of,
             clip_at(c, n, start + (long)i * part->speed, v, &raw);
             v[2] = (unsigned)(base + raw - raw0) & 0xffff;
             if (keep) v[0] = last[0];
-            if (p && i < part->blend)
-                for (int ch = 0; ch < CHANNELS; ch++)
-                    if (ch != 2) v[ch] = ch == 1 ? last[1] + ((int)v[1] - (int)last[1]) * i / part->blend
-                                                 : lerp_angle(last[ch], v[ch], i, part->blend);
+            /* The blend: towards the part's poses, each joint's triple
+             * kept the nearer to the one before (from the last pose's), so
+             * a flip in the clip never jumps the eased pose. */
+            if (p && i < part->blend) {
+                v[0] = lerp_angle(last[0], v[0], i, part->blend);
+                v[1] = last[1] + ((int)v[1] - (int)last[1]) * i / part->blend;
+                for (int ch = 3; ch < CHANNELS; ch += 3) {
+                    unsigned to[3] = {v[ch], v[ch + 1], v[ch + 2]};
+                    nearer(i ? goal + ch : last + ch, to, goal + ch);
+                    for (int k = 0; k < 3; k++) v[ch + k] = lerp_angle(last[ch + k], goal[ch + k], i, part->blend);
+                }
+            }
             put_pose(out, v);
         }
         base = s16(v[2]);

@@ -178,12 +178,41 @@ static int unknown_actor(unsigned p) {
     return key && !strcmp(key, "unknown");
 }
 
+#if TMST_HAS_WOLF_CINE
+/* Her wolf in her boss intro (tmst.tournament, the user's wish 2026-11-20):
+ * theirs is drawn in fights only, not while a cinematic is pending
+ * (fighting(): !tekken3_cine_pending(), and not in phases 16, 17). While
+ * the intro plays, the one question the wolf asks first, inside its call, is
+ * answered "none" (every other caller gets the real answer), and the phase
+ * reads 7 for the call. */
+extern int tmst_tournament_intro_wolf(void) __attribute__((weak));
+enum { WOLF_PHASE = 0x800ae224 };
+static int wolf_asks;
+extern int __real_tekken3_cine_pending(void);
+int __wrap_tekken3_cine_pending(void) {
+    if (wolf_asks) { wolf_asks = 0; return 0; }
+    return __real_tekken3_cine_pending();
+}
+#endif
 extern void __real_tekken3_ttt1_wolf_after_actor(CPUState *cpu, uint32_t actor);
 void __wrap_tekken3_ttt1_wolf_after_actor(CPUState *cpu, uint32_t actor) {
     /* Not Unknown: no call, so no wolf; theirs starts it again (comes out of
      * her) once she is drawn after a gap of 8 frames or more. */
     if ((actor == ACTOR0 || actor == ACTOR0 + ACTOR_SIZE) && !unknown_actor(actor != ACTOR0)) return;
+#if TMST_HAS_WOLF_CINE
+    wolf_asks = (actor == ACTOR0 || actor == ACTOR0 + ACTOR_SIZE) && tmst_tournament_intro_wolf &&
+                tmst_tournament_intro_wolf();
+    /* The engine plays a cinematic in phase 17, which the wolf leaves out
+     * (Ogre's cutscene): the intro's own phase (7) for the call only. */
+    unsigned phase = psx_mod_read_half(WOLF_PHASE);
+    int shown = wolf_asks && (phase == 16 || phase == 17);
+    if (shown) psx_mod_write_half(WOLF_PHASE, 7);
     __real_tekken3_ttt1_wolf_after_actor(cpu, actor);
+    if (shown) psx_mod_write_half(WOLF_PHASE, (uint16_t)phase);
+    wolf_asks = 0;
+#else
+    __real_tekken3_ttt1_wolf_after_actor(cpu, actor);
+#endif
 }
 /* Its pages for the PS2 lasers and weapons, and for us: taken only while
  * Unknown is one of the fighters, as the loading screen names them (the

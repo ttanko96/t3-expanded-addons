@@ -8,16 +8,19 @@
  *   option-stage <school> <key...>     STAGES = TEKKEN 2 and TEKKEN 1, per key:
  *                                       "<key> <kind> <stage> <random-t2> <kind1> <stage1> <random-t1>"
  *   cine <key|-> <own.jmv> [<stem>=<file>...]
- *                                       "entry <key|->", then the boss intro's .cine (player 7/1, boss 33/0)
+ *                                       "entry <key|->", then the boss intro's .cine (player 7/1, boss 33/1, its start 2)
  *   sounds <key|-> <own.jmv> [<stem>=<file>...]
  *                                       "entry <key|->", then "<frame> <stem|-> <index>" per sound
- *   story <file> <width>                "title|<header>", then "|<line>" per line, cut at <width> characters */
+ *   story <file> <width>                "title|<header>", then "|<line>" per line, cut at <width> characters
+ *   costume native <key> <who> <models> <third> | costume guest <key> <have>
+ *                                       "<variant> <costume>" (key 0 square .. 4 R1; models: a mask of the variants) */
 #include "tmst_bracket.h"
 #include "tmst_tournament_pools.h"
 #include "tmst_tournament_progress.h"
 #include "tmst_tournament_stages.h"
 #include "tmst_tournament_cine.h"
 #include "tmst_tournament_story.h"
+#include "tmst_tournament_costume.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +49,7 @@ static int story_chars(const char *text, void *ctx) {
     return n;
 }
 
+static int costume_has(unsigned v, void *ctx) { return *(unsigned *)ctx >> v & 1; }
 int main(int argc, char **argv) {
     if (argc >= 2 && !strcmp(argv[1], "pools")) {
         for (int t = 0; t < TMST_TOURNEYS; t++) {
@@ -116,6 +120,21 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
+    if (argc >= 3 && !strcmp(argv[1], "t1-order")) {
+        int order[TMST_T1_STAGES];
+        tmst_t1_stage_order((uint32_t)strtoul(argv[2], NULL, 0), order);
+        for (int i = 0; i < TMST_T1_STAGES; i++) printf("%d%s", order[i], i + 1 < TMST_T1_STAGES ? " " : "\n");
+        return 0;
+    }
+    if (argc >= 4 && (!strcmp(argv[1], "t1-stage") || !strcmp(argv[1], "t1-stage-arcade"))) {
+        int arcade = !strcmp(argv[1], "t1-stage-arcade");
+        for (int i = 3; i < argc; i++) {
+            int stage, kind = tmst_t1_tourney_stage(argv[i], atoi(argv[2]), &stage);
+            const char *cat, *music = tmst_tourney_music(0, argv[i], kind, stage, arcade, &cat);
+            printf("%s %d %d %s/%s\n", argv[i], kind, stage, cat ? cat : "-", music ? music : "-");
+        }
+        return 0;
+    }
     if (argc >= 4 && !strcmp(argv[1], "option-stage")) {
         for (int i = 3; i < argc; i++) {
             int school = atoi(argv[2]), stage, t2, stage1, t1;
@@ -125,6 +144,15 @@ int main(int argc, char **argv) {
             int lot1 = tmst_random_t1_stage(argv[i], school, &t1) ? t1 : -1;
             printf("%s %d %d %d %d %d %d\n", argv[i], kind, stage, lot, kind1, stage1, lot1);
         }
+        return 0;
+    }
+    if (argc >= 5 && !strcmp(argv[1], "costume")) {
+        TmstCostume c;
+        if (!strcmp(argv[2], "native") && argc >= 7) {
+            unsigned models = (unsigned)strtoul(argv[5], NULL, 0);
+            c = tmst_costume_native(atoi(argv[3]), argv[4], costume_has, &models, atoi(argv[6]));
+        } else c = tmst_costume_guest(atoi(argv[3]), (unsigned)strtoul(argv[4], NULL, 0));
+        printf("%d %u\n", c.variant, c.costume);
         return 0;
     }
     if (argc >= 4 && (!strcmp(argv[1], "cine") || !strcmp(argv[1], "sounds"))) {
@@ -147,7 +175,7 @@ int main(int argc, char **argv) {
             for (int i = 0; i < n; i++) printf("%d %s %u\n", out[i].frame, out[i].stem ? out[i].stem : "-", out[i].index);
             return 0;
         }
-        return tmst_boss_intro_write(stdout, e, pack_of, NULL, 7, 1, 33, 0) ? 0 : 1;
+        return tmst_boss_intro_write(stdout, e, pack_of, NULL, 7, 1, 33, 1, 2) ? 0 : 1;
     }
     return 2;
 }
