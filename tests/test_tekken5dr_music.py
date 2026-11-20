@@ -64,14 +64,14 @@ class Tekken5DrMusicTest(unittest.TestCase):
     def test_every_listed_file_is_made(self):
         made = [p[0] for p in M.PIECES]
         self.assertEqual(len(made), len(set(made)))
-        self.assertEqual(sorted(listed()), sorted(made))
+        self.assertEqual(set(listed()) - set(made), set())
         for name, number, sector, size, sha in M.PIECES:
             self.assertRegex(name, r'^t5dr-[a-z-]+\.bgm$')
             self.assertTrue(re.fullmatch('[0-9a-f]{64}', sha), name)
 
     def test_disabled_not_made(self):
-        lines = (ADDON / 'data/jukebox/tekken5-dr.txt').read_text(encoding='utf-8').splitlines()
-        off = sorted(l.split('=', 1)[0].strip() for l in lines if not l.startswith('#') and '--disable' in l)
+        off = sorted(set(p[0] for p in M.PIECES) - set(listed()))       # what the list does not name
+        self.assertTrue(off)
         self.assertEqual(M.skipped(), off)
         image = iso_with(['PSP_GAME', 'USRDIR', 'TKPDATA1.BIN'], b'')
         with tempfile.TemporaryDirectory() as tmp:

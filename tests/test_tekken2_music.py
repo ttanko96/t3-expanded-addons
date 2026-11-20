@@ -30,6 +30,8 @@ class Tekken2MusicTest(unittest.TestCase):
         for folder in ('console', 'arcade'):
             for game in ('tekken1', 'tekken2'):
                 for name in names(f'{game}-{folder}.txt'):
+                    if name.startswith('t1-'):              # the Tekken 1 disc's (tools/tekken1_music.py)
+                        continue
                     self.assertIn((folder, name), made, f'{game}-{folder}.txt')
         self.assertEqual(len(made), len(tekken2_music.pieces()))
 

@@ -9,9 +9,11 @@
  * Categories, each there when it has music now:
  *
  *   (TEKKEN 1 and 2 only while Tekken 2 Content's Music, tmst.tekken2, is on too)
- *   TEKKEN 1 CONSOLE / ARCADE  the Tekken 1 pieces the Tekken 2 disc plays
- *                      again: the T2 folders' files that the TEKKEN 1 list
- *                      names, only those
+ *   TEKKEN 1 CONSOLE / ARCADE  addons/tmst/workspace/t1-music/{console,arcade}/*.bgm,
+ *                      made by the add-on's setup from the player's T1 disc
+ *                      (tools/tekken1_music.py), and the Tekken 1 pieces the
+ *                      Tekken 2 disc plays again (the T2 folders' files): those
+ *                      the TEKKEN 1 list names, only those
  *   TEKKEN 2 CONSOLE / ARCADE  addons/tmst/workspace/t2-music/{console,arcade}/*.bgm,
  *                      made by the add-on's setup from the player's T2 disc
  *                      (tools/tekken2_music.py)
@@ -36,7 +38,8 @@
  *
  * Titles: addons/tmst/workspace/jukebox/<category>.txt ("file = title"; the setup
  * writes the defaults, the player may edit them; "--disable" in a title
- * leaves that piece out), else the file's name. Choices: jukebox.txt beside
+ * leaves that piece out). A category with a list has only what it names;
+ * with none (TEKKEN 1 excepted), every piece by the file's name. Choices: jukebox.txt beside
  * the memory card ("key = category/file"). An opponent (P2) with a choice
  * whose music is there plays it in its fights instead of the game's piece:
  * when the game starts the fight's music (0x8006AE14, chained), it plays a
@@ -165,17 +168,19 @@ typedef struct {
     const char *id, *name, *titles;
     const char *dirs[2];                     /* .bgm folders under the Expanded's folder */
     int disc_mode;                           /* the Tekken 3 disc's music of this mode, -1 none */
-    int only_listed;                         /* only the files its list names (another's folders) */
+    int only_listed;                         /* only the files its list names, even with no list (another's folders) */
     Track track[MAX_TRACKS]; unsigned count;
 } Category;
+#define T1_CONSOLE "addons/tmst/workspace/t1-music/console"
+#define T1_ARCADE "addons/tmst/workspace/t1-music/arcade"
 #define T2_CONSOLE "addons/tmst/workspace/t2-music/console"
 #define T2_ARCADE "addons/tmst/workspace/t2-music/arcade"
 #define TTT_CONSOLE "addons/tmst/workspace/ttt-music/console"
 #define TTT_ARCADE "addons/tmst/workspace/ttt-music/arcade"
 #define T5DR "addons/tmst/workspace/t5dr-music"
 static Category cats[CATS] = {
-    {"t1-console", "TEKKEN 1 CONSOLE", "tekken1-console.txt", {T2_CONSOLE, NULL}, -1, 1},
-    {"t1-arcade", "TEKKEN 1 ARCADE", "tekken1-arcade.txt", {T2_ARCADE, NULL}, -1, 1},
+    {"t1-console", "TEKKEN 1 CONSOLE", "tekken1-console.txt", {T1_CONSOLE, T2_CONSOLE}, -1, 1},
+    {"t1-arcade", "TEKKEN 1 ARCADE", "tekken1-arcade.txt", {T1_ARCADE, T2_ARCADE}, -1, 1},
     {"t2-console", "TEKKEN 2 CONSOLE", "tekken2-console.txt", {T2_CONSOLE, NULL}, -1, 0},
     {"t2-arcade", "TEKKEN 2 ARCADE", "tekken2-arcade.txt", {T2_ARCADE, NULL}, -1, 0},
     {"t3-console", "TEKKEN 3 CONSOLE", "tekken3-console.txt", {NULL, NULL}, 0, 0},
@@ -347,7 +352,7 @@ static void sort_tracks(Category *c) {
     /* The list's order first, the rest by name. */
     Track *t = c->track; unsigned n = c->count;
     char path[4200];
-    unsigned placed = 0;
+    unsigned placed = 0, read = 0;
     if (snprintf(path, sizeof path, "%s/addons/tmst/workspace/jukebox/%s", game_root(), c->titles) < (int)sizeof path) {
         FILE *f = fopen(path, "rb");
         if (!f) {               /* the copy the build staged beside the game (the Expanded's own APK) */
@@ -356,6 +361,7 @@ static void sort_tracks(Category *c) {
             if (tmst_files_staged(path, sizeof path, rel)) f = fopen(path, "rb");
         }
         char line[1024];
+        read = f != NULL;
         while (f && fgets(line, sizeof line, f)) {
             char *s = trim(line);
             if (!*s || *s == '#') continue;
@@ -374,7 +380,9 @@ static void sort_tracks(Category *c) {
         }
         if (f) fclose(f);
     }
-    if (c->only_listed) n = placed;            /* the rest are another category's */
+    /* Only what the list names (the add-on's lists decide, tools/jukebox_titles.py);
+     * without a list, every piece but another category's (only_listed). */
+    if (read || c->only_listed) n = placed;
     c->count = n;
     for (unsigned i = placed; i < n; i++) for (unsigned j = i + 1; j < n; j++)
         if (strcmp(t[j].name, t[i].name) < 0) { Track tmp = t[i]; t[i] = t[j]; t[j] = tmp; }
@@ -1308,8 +1316,9 @@ static Choice *opponent_choice(const char **key) {
         else tmst_log("jukebox: the tournament's %s/%s is not there, %s", t_cat, t_name,
                       c ? "the default choice plays" : "the game's piece plays");
     }
-    /* A Tekken 2 stage of the STAGE line (src/tekken2/tmst_tekken2_stages.c):
-     * its own piece, unless the player chose one for this opponent. */
+    /* A Tekken 2 or Tekken 1 stage of the STAGE line or the STAGES row
+     * (src/tekken2/tmst_tekken2_stages.c): its own piece, unless the player
+     * chose one for this opponent. */
     static Choice stage_piece;
     if (!(c && *key && c == choice_of(*key)) && c != &tournament && tmst_tekken2_fight_music(&t_key, &t_cat, &t_name)) {
         Track t;
@@ -1318,7 +1327,7 @@ static Choice *opponent_choice(const char **key) {
         snprintf(stage_piece.name, NAME, "%s", t_name);
         stage_piece.cat = category_of(t_cat);
         if (stage_piece.cat >= 0 && resolve(&stage_piece, &t)) { c = &stage_piece; *key = stage_piece.key; }
-        else tmst_log("jukebox: the Tekken 2 stage's %s/%s is not there (Tekken 2 Content's Music off?), %s", t_cat,
+        else tmst_log("jukebox: the stage's %s/%s is not there (Tekken 2 Content's Music off?), %s", t_cat,
                       t_name, c ? "the default choice plays" : "the game's piece plays");
     }
     return c;

@@ -42,6 +42,7 @@ DATA = (
     'workspace/tournament',            # the portraits the game made (a cache)
 )
 MUSIC = (
+    'workspace/t1-music',              # TEKKEN 1 (its own disc's)
     'workspace/t2-music',              # TEKKEN 1 and 2 (Tekken 2 Content's Music)
     'workspace/ttt-music',             # TEKKEN TAG TOURNAMENT
     'workspace/t5dr-music',            # TEKKEN 5 DR

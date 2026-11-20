@@ -1,9 +1,15 @@
 """src/tournament: the pools, the bracket and the progress file, built alone with
 the C compiler at hand (skipped without one) through tests/c/tournament_main.c."""
-import os, shutil, struct, subprocess, tempfile, unittest
+import importlib.util, os, shutil, struct, subprocess, tempfile, unittest
 from pathlib import Path
 
 ADDON = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location('jukebox_titles', ADDON / 'tools/jukebox_titles.py')
+jukebox_titles = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(jukebox_titles)
+# The music folder of a category: the pieces made there without a line (KEEP) play too.
+FOLDER = {'t2-console': 't2-music/console', 't2-arcade': 't2-music/arcade', 'ttt-console': 'ttt-music/console',
+          'ttt-arcade': 'ttt-music/arcade'}
 SOURCES = ['tmst_bracket.c', 'tmst_tournament_pools.c', 'tmst_tournament_progress.c', 'tmst_tournament_stages.c',
            'tmst_tournament_cine.c', 'tmst_tournament_story.c']
 # The roster keys the Expanded has today: the stock fighters, Panda and Tiger, its guests.
@@ -186,14 +192,27 @@ class TournamentTest(unittest.TestCase):
         return {k: m for k, _, _, m in
                 (l.split() for l in self.run_exe('stage-arcade' if arcade else 'stage', t, school, *keys))}
 
+    def test_t1_stage_music_is_listed(self):
+        """tmst_t1_stage_music: each Tekken 1 stage's piece a line of its TEKKEN 1 list (the Jukebox plays only those)."""
+        import re
+        source = (ADDON / 'src/tournament/tmst_tournament_stages.c').read_text(encoding='utf-8')
+        for table, file in (('t1_music', 'tekken1-console'), ('t1_arcade', 'tekken1-arcade')):
+            body = re.search(r'%s\[11\] = \{(.*?)\};' % table, source, re.S)[1]
+            names = re.findall(r'"([a-z0-9-]+\.bgm)"', body)
+            listed = {l.split('=')[0].strip() for l in (ADDON / 'data/jukebox' / (file + '.txt')).read_text().splitlines()
+                      if '=' in l and not l.startswith('#')}
+            self.assertEqual(len(names), 11, table)
+            self.assertEqual(set(names) - listed, set(), table)
+        self.assertIn('"t1-venezia.bgm"', source)
+
     def test_music_arcade(self):
-        """Issue #9: BGM SELECT's ARCADE (RANDOM's draw): T1, T2 and TTT the Arcade pieces, every one in its list;
+        """Issue #9: BGM SELECT's ARCADE (RANDOM's draw): T1, T2 and TTT the Arcade pieces, every one in its list or KEEP;
         T3 still the Console XA (the game side maps it by the game's table)."""
         lists = {}
         for cat, files in (('t2-arcade', ['tekken1-arcade', 'tekken2-arcade']), ('ttt-arcade', ['ttt-arcade'])):
             lists[cat] = {l.split('=')[0].strip() for f in files
                           for l in (ADDON / 'data/jukebox' / (f + '.txt')).read_text().splitlines()
-                          if '=' in l and not l.startswith('#')}
+                          if '=' in l and not l.startswith('#')} | jukebox_titles.KEEP.get(FOLDER.get(cat), set())
         p = self.pools(); everyone = STOCK + GUESTS
         for t, cat in ((0, 't2-arcade'), (1, 't2-arcade'), (3, 'ttt-arcade')):
             tid = ['t1', 't2', 't3', 'ttt'][t]
@@ -214,7 +233,7 @@ class TournamentTest(unittest.TestCase):
                            ('ttt-console', ['ttt-console'])):
             lists[cat] = {l.split('=')[0].strip() for f in files
                           for l in (ADDON / 'data/jukebox' / (f + '.txt')).read_text().splitlines()
-                          if '=' in l and not l.startswith('#')}
+                          if '=' in l and not l.startswith('#')} | jukebox_titles.KEEP.get(FOLDER.get(cat), set())
         p = self.pools(); everyone = STOCK + GUESTS
         for t, cat in ((0, 't2-console'), (1, 't2-console'), (2, 't3-console'), (3, 'ttt-console')):
             tid = ['t1', 't2', 't3', 'ttt'][t]

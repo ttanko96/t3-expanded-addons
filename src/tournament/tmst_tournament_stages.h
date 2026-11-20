@@ -33,6 +33,11 @@ const char *tmst_tourney_music(int t, const char *key, int kind, int stage, int 
 /* A Tekken 2 stage's piece (0..22: its owner's theme), Console or Arcade;
  * the tournaments' and the STAGE line's (src/tekken2/tmst_tekken2_stages.c). */
 const char *tmst_t2_stage_music(int stage, int arcade);
+/* A Tekken 1 stage's piece (0..10, the stage files' order: Windermere ..
+ * Chicago), Console or Arcade: the Jukebox's TEKKEN 1 lists' (t1-console /
+ * t1-arcade; the Tekken 2 disc's Tekken 1 themes and Venezia, the Tekken 1
+ * disc's); the STAGE line's and the STAGES row's (src/tekken2/tmst_tekken2_stages.c). */
+const char *tmst_t1_stage_music(int stage, int arcade);
 
 /* GAME OPTION's STAGES = TEKKEN 2 (issue #11, outside the tournaments): the
  * stage of the fighter who decides the fight's, its Tekken 2 stage

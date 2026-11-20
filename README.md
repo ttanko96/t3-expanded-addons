@@ -26,7 +26,7 @@ Choose the music of every fighter.
     · □ reset this fighter 
     · ○ back.
 - **Categories** (console and arcade each): Tekken 1 and Tekken 2 (with **Tekken 2 Content**'s Music on, from your Tekken 2
-  disc: it plays ten Tekken 1 stage themes again), Tekken 3 (the game's disc), Tekken Tag Tournament (the TTT music
+  disc: it plays ten Tekken 1 stage themes again; Tekken 1 also from your Tekken 1 disc's CD audio), Tekken 3 (the game's disc), Tekken Tag Tournament (the TTT music
   the Expanded imported), and **Tekken 5 DR** (one category: the music of the Dark Resurrection PSP ISO the
   Expanded's setup was given).
 - In a fight the opponent's (P2's) chosen music plays, whatever stage is picked; without a choice, the game's own.
@@ -273,14 +273,16 @@ Below, `C:\<your_folder>\tekken3-expanded` is the Expanded's folder: change it i
    ```
 3. **Double-click `addons\tmst\Setup TMST.cmd`.** It opens the add-on's setup window (the Expanded's look, with a
    progress bar and a setup log), which uses the Expanded's own Python and compilers. Click **Install & play**; it:
-   - takes your **Tekken 1** disc too (optional; Europe SCES-00005, its own field; it gives the Tekken 1 stages);
+   - takes your **Tekken 1** disc too (optional; USA SLUS-00006, Europe SCES-00005 or Japan SLPS-00040, every
+     version, its own field; it gives the Tekken 1 stages and the Jukebox's Tekken 1 music);
    - takes your **Tekken 2** disc (optional; it gives the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages):
      - the window fills it in when it finds one beside the discs the Expanded's setup was given; **Browse** for
        another, or clear the field to go on without it; a disc dropped on `Setup TMST.cmd` is filled in too;
      - USA (SLUS-00213) and Europe (SCES-00255), as a `.cue` with its `.bin` files, a `.bin` or a `.chd`;
    - makes what the mods need on your machine:
      - from the Tekken 2 disc: the Jukebox's Tekken 1 and 2 music and the Tekken 2 stages (the Remake's stages take a
-       few minutes the first time); from the Tekken 1 disc: the Tekken 1 stages;
+       few minutes the first time); from the Tekken 1 disc: the Tekken 1 stages and
+       the Jukebox's Tekken 1 music;
      - the Jukebox's TTT console and arcade music (from the TTT PS2 disc's and tektagt.zip's music the Expanded's
        setup imported), its Tekken 5 DR music (from the Dark Resurrection ISO the Expanded's setup was given) and its
        title lists;
