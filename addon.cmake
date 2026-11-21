@@ -131,6 +131,7 @@ set(TMST_CHAINS
     "func_8004F0E4|src/tournament/tmst_tournament.c"
     "func_8004439C|src/tournament/tmst_tournament.c"
     "func_80050450|src/tournament/tmst_tournament.c"
+    "func_8003DA8C|src/tournament/tmst_tournament.c"
     "func_800826E8|src/tekken2/tmst_tekken2_stages.c"
     "func_8006D014|src/tekken2/tmst_tekken2_mirror.c"
     "func_80049848|src/tekken2/tmst_tekken2_stages.c"
