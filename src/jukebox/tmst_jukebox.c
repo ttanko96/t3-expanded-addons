@@ -1288,10 +1288,27 @@ static void mix(int16_t *out, int frames, int audible, int gain) {
  * stage select gave the chosen stage) or the opponent's record piece. The
  * Jukebox follows the opponent, never the stage; without a choice the
  * game's own piece plays. */
+/* Whose piece the fight's music is: P2's. Tekken Force (mode 8, issue #23)
+ * has no opponent there (P2 is its soldiers, fighter 21, no key) and plays
+ * the player's piece through its stages: P1's. Its boss (actor 1, whose
+ * +0x14 is fighter * 4 + costume, the soldiers' fighter 21 otherwise) plays
+ * the boss's piece: the boss's, from before its music starts until the next
+ * stage's soldiers. */
+enum { FORCE = 8, ACTOR1_SELECTION = 0x800a9228 + 0x188c + 0x14 };
+static void fight_fighter(unsigned *fid, unsigned *costume) {
+    if (psx_mod_read_word(MODE) != FORCE) {
+        *fid = psx_mod_read_half(P2_ID); *costume = psx_mod_read_byte(P2_COSTUME);
+        return;
+    }
+    unsigned boss = psx_mod_read_half(ACTOR1_SELECTION);
+    if (fighter_key(boss / 4)) { *fid = boss / 4; *costume = boss % 4; return; }
+    *fid = psx_mod_read_half(P1_ID); *costume = psx_mod_read_byte(P1_COSTUME);
+}
 /* The opponent's choice for its fight (its own, else a tournament's piece),
  * NULL none; *key its key. */
 static Choice *opponent_choice(const char **key) {
-    unsigned fid = psx_mod_read_half(P2_ID), costume = psx_mod_read_byte(P2_COSTUME);
+    unsigned fid, costume;
+    fight_fighter(&fid, &costume);
     Choice *c = NULL;
     *key = NULL;
     /* Kuma's second costume is Panda, Eddy's third Tiger: their own choice
@@ -1351,7 +1368,8 @@ static int music(int id) {
     if (jb.active) return -1;                             /* the preview only, while open */
     unsigned screen = psx_mod_read_word(SCREEN);
     if (screen != FIGHT && screen != LOADING) { if (fight_armed) fight_stop(); lead_in = 0; return id; }
-    unsigned fid = psx_mod_read_half(P2_ID), costume = psx_mod_read_byte(P2_COSTUME);
+    unsigned fid, costume;
+    fight_fighter(&fid, &costume);
     Choice *c = NULL;
     const char *key = NULL;
     if (id == (int)psx_mod_read_byte(ROUND_MUSIC) || record_music(fid, costume) == id) c = opponent_choice(&key);
