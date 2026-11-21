@@ -73,6 +73,7 @@ set(TMST_WRAPS
     "psx_mod_gpu_high_vram_upload|src/core/tmst_overlay.c"
     "psx_sdl_audio_open|src/core/tmst_audio.c"
     "spu_write|src/tekken2/tmst_tekken2_bighead.c"
+    "tekken3_guest_generation|src/tekken2/tmst_tekken2_bighead.c|GUEST_GENERATION"
     "tekken3_ttt1_wolf_after_actor|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_ttt1_wolf_high_vram_used|src/compat/tmst_compat.c|UNKNOWN_WOLF"
     "tekken3_cine_pending|src/compat/tmst_compat.c|WOLF_CINE"
