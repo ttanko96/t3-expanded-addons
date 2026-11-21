@@ -474,6 +474,47 @@ def tekken2_remake_stages() -> None:
     save_stamp('tekken2-remake-stages', {'stamp': want, 'files': names})
 
 
+def tekken2_performance_stages() -> None:
+    """Tekken 2 Content's Stages, Performance: the Remake's packs with less
+    on them (tools/t2_performance_stages.py, issue #13): again when the Remake's
+    packs, the tool or its recipe changed or a pack is gone."""
+    sys.path.insert(0, str(ADDON / 'tools'))
+    import hashlib
+    import t2_performance_stages as performance
+    import tekken2_stages as stages
+    out = ROOT / stages.OUT
+    remade = stamp('tekken2-remake-stages')
+    if not remade.get('files') or not all((out / n).is_file() for n in remade['files']):
+        log('Tekken 2 Performance stages: no Remake packs, skipped')
+        return
+    code = hashlib.sha256()
+    for f in ('tools/t2_performance_stages.py', 'tools/data/t2_performance_stages.json'):
+        code.update((ADDON / f).read_bytes())
+    want = {'version': performance.VERSION, 'code': code.hexdigest()[:16], 'remake': remade.get('stamp')}
+    have = stamp('tekken2-performance-stages')
+    if have.get('stamp') == want and all((out / n).is_file() for n in have.get('files', [])):
+        return
+    log('Tekken 2 Performance stages: making them from the Remake’s')
+    try:
+        # the stages losing pieces of their scenery: built again by the
+        # Remake's generator (its inputs: the disc, tekken3.zip, the storm)
+        import t2_remake_stages as remake
+        from disc_image import DiscError
+        disc, tekken3 = stages.find_disc(STATE), remake.tekken3_zip()
+        tiles = {}
+        if disc and tekken3:
+            log('Tekken 2 Performance stages: building the stages with less scenery again (a minute or two)')
+            try:
+                tiles = performance.scenery_tiles(out, disc, tekken3, remake.storm_pack(ROOT), say=log)
+            except (DiscError, SystemExit, ImportError) as error:     # the generator says SystemExit
+                log(f'Tekken 2 Performance stages: the scenery not built again ({error}): the Remake’s kept')
+        names = performance.convert(out, say=log, tiles=tiles)
+    except (OSError, ValueError, KeyError) as error:
+        log(f'Tekken 2 Performance stages: {error}; left out')
+        return
+    save_stamp('tekken2-performance-stages', {'stamp': want, 'files': names})
+
+
 def ttt_ps2_music() -> None:
     """The Jukebox's TTT console music (tools/ttt_ps2_music.py), from the
     Expanded's PS2 stage music pack and the TTT PS2 disc it was made from."""
@@ -574,7 +615,7 @@ def jukebox_titles() -> None:
 
 
 STEPS: list = [python_packages, tekken2_disc, tekken1_disc, tekken2_music, tekken1_music, tekken2_stages,
-               tekken2_remake_pictures, tekken2_remake_stages, tekken1_stages, ttt_ps2_music, ttt_arcade_music, tekken5dr_music,
+               tekken2_remake_pictures, tekken2_remake_stages, tekken2_performance_stages, tekken1_stages, ttt_ps2_music, ttt_arcade_music, tekken5dr_music,
                jukebox_titles,   # the music first: the titles list it
                tekken3_portraits]
 

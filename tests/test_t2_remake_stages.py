@@ -777,9 +777,10 @@ class WolfVariant(unittest.TestCase):
 
     def test_runtime(self):
         s = (ADDON / 'src/tekken2/tmst_tekken2_stages.c').read_text(encoding='utf-8')
-        for part in ('"%s/stage%02dw.ast"', 'static int wolf_pack(int stage, char *out, size_t size)',
-                     'int wolf = held_as == REMAKE && wolf_pack(stage, from, sizeof from);',
-                     'held_wolf != wolf_pack(fight, NULL, 0)', 'extras_wolf = drawn_version() == REMAKE && wolf_pack('):
+        # the Remake's and the Performance's (issue #13: wolf_pack's version, remake_like())
+        for part in ('"%s/stage%02dw.ast"', 'static int wolf_pack(int v, int stage, char *out, size_t size)',
+                     'if (!remake_like(v) ||', 'int wolf = wolf_pack(held_as, stage, from, sizeof from);',
+                     'held_wolf != wolf_pack(as, fight, NULL, 0)', 'extras_wolf = wolf_pack(drawn_version(), fight,'):
             self.assertIn(part, s)
         c = (ADDON / 'src/compat/tmst_compat.c').read_text(encoding='utf-8')
         self.assertIn('tekken3_guest_key(psx_mod_read_half(LOADING_FIGHTERS + 2 * p))', c)

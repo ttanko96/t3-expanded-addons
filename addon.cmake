@@ -160,6 +160,7 @@ set(TMST_PACKAGES
 set(TMST_STAGED
     "workspace/t2-stages/classic|mods/t2-stages/classic"
     "workspace/t2-stages/remake|mods/t2-stages/remake"
+    "workspace/t2-stages/performance|mods/t2-stages/performance"
     "workspace/t1-stages/classic|mods/t1-stages/classic"
     "data/tournament|mods/tmst-data/data/tournament"
     "data/photo|mods/tmst-data/data/photo"
