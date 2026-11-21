@@ -218,10 +218,27 @@ static void copy_quads(uint32_t pk, const Part *m) {
         psx_mod_write_word(w, (w + COPY_PIECE_WORDS * 4) & 0xffffffu);
     }
 }
+/* The game's drawing area in the fight (E3, E4): its DRAWENV's clip
+ * (libgpu's, 0x800ADDA0: x, y, w, h), y 20..467; the whole screen if it
+ * looks wrong. Issue #25: given back as the whole screen after the copy,
+ * the effects drawn after it (ranks 8..0) reached the screen's rows above
+ * 20 and below 467, which nothing clears in the fight (Tekken 3 leaves
+ * them black): their trails stayed there till the fight's end. Also
+ * src/tekken1/tmst_tekken1_stages.c (Stadium's big screen). */
+enum { GAME_DRAWENV = 0x800adda0 };
+void tmst_tekken2_game_area(uint32_t *e3, uint32_t *e4) {
+    int x = (int16_t)psx_mod_read_half(GAME_DRAWENV), y = (int16_t)psx_mod_read_half(GAME_DRAWENV + 2);
+    int w = (int16_t)psx_mod_read_half(GAME_DRAWENV + 4), h = (int16_t)psx_mod_read_half(GAME_DRAWENV + 6);
+    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 1024 || y + h > 512) { x = 0; y = 0; w = 368; h = 480; }
+    *e3 = 0xe3000000u | (uint32_t)y << 10 | (uint32_t)x;
+    *e4 = 0xe4000000u | (uint32_t)(y + h - 1) << 10 | (uint32_t)(x + w - 1);
+}
+
 /* Back to the game's drawing area after the copy: its own packet at rank
- * 1023 (E3, E4), else the whole screen; the offset its DRAWENV's. */
+ * 1023 (E3, E4), else its DRAWENV's; the offset its DRAWENV's. */
 static void game_env(uint32_t base, uint32_t pk) {
-    uint32_t e3 = 0xe3000000u, e4 = 0xe4000000u | 479u << 10 | 367u;
+    uint32_t e3, e4;
+    tmst_tekken2_game_area(&e3, &e4);
     uint32_t link = base + 4 * 1023, end = (base + 4 * 1022) & 0xffffffu;
     for (unsigned guard = 0; guard < 4096; guard++) {
         uint32_t tag = psx_mod_read_word(link), next = tag & 0xffffffu;
