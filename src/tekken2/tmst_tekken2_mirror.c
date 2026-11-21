@@ -37,6 +37,7 @@ int tmst_tekken2_mirror(int32_t at[6]);
 int tmst_tekken2_mirror_style(uint8_t style[20]);
 /* ... and, as the stage routine starts, its pack switch (when one is due). */
 void tmst_tekken2_stage_entry(void);
+void tmst_tekken2_lamp_light(CPUState *cpu);     /* Hong Kong's lamps on the fighters */
 int tmst_tekken2_ground(uint8_t rgb[3]);
 int tmst_tekken2_drawn(void);
 void tmst_tekken2_trace_entry(void);       /* src/tekken2/tmst_tekken2_trace.c */
@@ -503,6 +504,7 @@ void __wrap_func_8006D014(CPUState *cpu) {
         traced = tmst_tekken2_drawn();
         anchored = tmst_tekken2_anchor_begin();     /* the fighters at the scenery's anchor (the extras step there too) */
         tmst_tekken2_stage_entry();
+        tmst_tekken2_lamp_light(cpu);
         running = tmst_tekken2_mirror(at);
         extras = tmst_tekken2_extras_wanted();
         layers = tmst_tekken1_layers_wanted();
