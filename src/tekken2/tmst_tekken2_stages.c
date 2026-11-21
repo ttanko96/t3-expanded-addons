@@ -288,6 +288,20 @@ static struct {
     uint16_t at[BLEND_MAX][2];
     uint16_t a[BLEND_MAX][16], b[BLEND_MAX][16];
 } blend;
+/* Hong Kong's lamps on the fighters: as in Tekken 2, the floor's orange and
+ * teal light falls on them from below, the colour the floor has turned to
+ * (blend_tick()'s f, 0 the orange palette A, 1024 the teal B; -1 none yet).
+ * Every stage with a T2BL, Classic and Remake (only Hong Kong has one); the
+ * user's, 2026-11-21 (Tekken 2's screenshots: Lei's trousers orange, his
+ * shirt teal). Tekken 3 lights its fighters with two lights (0x80039960):
+ * light 0 the arena's (its angles at +12 / +14, colour matrix column 0 its
+ * colour at +8..+10), light 2 straight up from below (0, -100, 0; column 2
+ * half that colour); column 1 the hit flash's. Each stage frame (lamp_light())
+ * column 2 is the lamps' colour, column 0 LAMP_MAIN / 1024 of the way to it,
+ * in RAM (0x8009E5C0) and the GTE, as Tekken 1's sunset (dusk_light()). */
+static int blend_f = -1;
+static const int LAMP_ORANGE[3] = { 210, 104, 24 }, LAMP_TEAL[3] = { 24, 160, 150 };
+enum { LAMP_MAIN = 256, COLOUR_MATRIX = 0x8009e5c0 };
 /* T2AN: the place (halfwords), the period, the entries (each a frame), the
  * frames' pixels; in the section's copy (anim_data) */
 static uint8_t *anim_data;
@@ -664,6 +678,7 @@ static void fight_extras(void) {
     coll_n = coll_radius = 0;
     memset(&chase, 0, sizeof chase);
     memset(&blend, 0, sizeof blend);
+    blend_f = -1;
     memset(mirror_at, 0, sizeof mirror_at);
     free(anim_data);
     anim_data = NULL;
@@ -730,6 +745,7 @@ static void fight_extras(void) {
                 memcpy(blend.a[p], o + 12 + 68u * p, 32);
                 memcpy(blend.b[p], o + 44 + 68u * p, 32);
             }
+            tmst_log("tekken2: %s's lamps (orange, teal) from below on the fighters", names[fight]);
         }
     }
     o = section(b, size, "T2AN", &len);
@@ -1327,6 +1343,29 @@ static void switch_now(void) {
     psx_mod_write_half(ARENA, (uint16_t)switch_to);
 }
 
+/* From src/tekken2/tmst_tekken2_mirror.c, as the PS1's stage routine starts:
+ * Hong Kong's lamps on the fighters (see blend_f), this frame's colour. */
+void tmst_tekken2_lamp_light(CPUState *cpu) {
+    if (!blend.count || blend_f < 0 || !drawn()) return;
+    int arena = (int16_t)psx_mod_read_half(ARENA);
+    if (arena < 0 || arena > 17) return;
+    uint32_t e = LIGHT_TABLE + LIGHT_ENTRY * (uint32_t)arena;
+    for (int i = 0; i < 3; i++) {
+        int c = psx_mod_read_byte(e + 10u - (uint32_t)i);                  /* r, g, b */
+        int lamp = (LAMP_ORANGE[i] * (1024 - blend_f) + LAMP_TEAL[i] * blend_f) / 1024;
+        int main = c + (lamp - c) * LAMP_MAIN / 1024;
+        psx_mod_write_half(COLOUR_MATRIX + 6u * i, (uint16_t)(main << 4));
+        psx_mod_write_half(COLOUR_MATRIX + 6u * i + 4u, (uint16_t)(lamp << 4));
+    }
+    uint16_t mx[9];
+    for (int i = 0; i < 9; i++) mx[i] = psx_mod_read_half(COLOUR_MATRIX + 2u * i);
+    cpu->gte_ctrl[16] = mx[0] | (uint32_t)mx[1] << 16;           /* SetColorMatrix */
+    cpu->gte_ctrl[17] = mx[2] | (uint32_t)mx[3] << 16;
+    cpu->gte_ctrl[18] = mx[4] | (uint32_t)mx[5] << 16;
+    cpu->gte_ctrl[19] = mx[6] | (uint32_t)mx[7] << 16;
+    cpu->gte_ctrl[20] = (uint32_t)(int32_t)(int16_t)mx[8];
+}
+
 /* From src/tekken2/tmst_tekken2_mirror.c, as the PS1's stage routine
  * (0x8006D014) starts, before the engine's wrapper asks for its pack: the
  * switch's arena, read by the engine this very frame. */
@@ -1371,6 +1410,7 @@ static void light_tick(void) {
 static void blend_tick(void) {
     long c = lround(cos(TAU * (double)(blend.clock & 0xFFF) / 4096.0) * 4096.0);
     int f = (int)((c + 4096) / 2 / 4);
+    blend_f = f;                                     /* the lamps' mix on the fighters */
     blend.clock += blend.add;
     for (unsigned p = 0; p < blend.count; p++) {
         uint16_t out[16];
@@ -1460,6 +1500,7 @@ int tmst_tekken2_remake_drawn(void) { return 0; }
 int32_t tmst_tekken2_fixed_period(void) { return 0; }
 const int16_t *tmst_tekken2_walls(int *n, int *radius) { *n = *radius = 0; return NULL; }
 void tmst_tekken2_stage_entry(void) {}
+void tmst_tekken2_lamp_light(CPUState *cpu) { (void)cpu; }
 int tmst_stage_forced_arena(void) { return -1; }
 int tmst_tekken2_fight_music(const char **key, const char **cat, const char **name) {
     (void)key; (void)cat; (void)name; return 0;
