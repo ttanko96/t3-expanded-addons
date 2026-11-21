@@ -260,7 +260,8 @@ the camera, and Tekken 1's floor tiles (three times the size of a Tekken 2 floor
   comes; until then it is hidden.
 - **As in Tekken 1:** Monument Valley's sunset (the sky turns over half a minute of the fight), King George Island's
   snow, the Stadium's big screen showing the fight.
-- **Music:** the fighter's (Tekken 1's stage themes later).
+- **Music:** the stage's own Tekken 1 theme (BGM SELECT's arranged: Console, original: Arcade; with Tekken 2
+  Content's Music on), unless the opponent has a Jukebox piece.
 
 ## Installation
 
