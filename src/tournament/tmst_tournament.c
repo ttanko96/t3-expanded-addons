@@ -54,6 +54,7 @@
 #include "cpu_state.h"
 #include "mod_plugins.h"
 #include "memcard.h"
+#include "savestate.h"
 #include "psx_sdl.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -598,6 +599,57 @@ void __wrap_func_8004439C(CPUState *cpu) {
         tekken3_guest_switches_on_button && tekken3_guest_switches_on_button(1))
         regenerate(cpu->gpr[4]);
     __tmst_chain_func_8004439C(cpu);
+}
+
+/* The announcer's round (issue #20): the round's opening (0x8003DA8C, each
+ * frame of the fight's intro) calls the announcer (0x80040C00, a0 its
+ * index) by the mode (0x800AFA88, its table at 0x8001A3D4): the Arcade
+ * "ROUND" (0x103B), the round's number (half 0x8001A3BA + 2 x the round:
+ * 0x1034 ONE ...) or "FINAL ROUND" (0x103A) once the round (0x80095484, from
+ * 1) is the last there can be (half 0x800ADF3C), then "FIGHT" (0x103C);
+ * Team Battle "FIGHT" alone. In a tournament's fights (Team Battle, in_match)
+ * the Arcade's words come before the game's "FIGHT", on the Arcade's
+ * frames of the opening's counter (0x80095460): the first round 61 and 100,
+ * a later one 1 and 40. Team Battle outside a tournament stays as it is. */
+enum { ROUND_INTRO = 0x8003da8c, ANNOUNCE = 0x80040c00, ROUND_NOW = 0x80095484, ROUND_LAST = 0x800adf3c,
+       INTRO_COUNTER = 0x80095460, ROUND_NUMBERS = 0x8001a3ba, SAY_ROUND = 0x103b, SAY_FINAL = 0x103a,
+       NESTED_RETURN = 0x80010000, ROUND_NUMBERS_N = 8 };
+static void announce(CPUState *cpu, unsigned index) {
+    uint32_t saved[32];
+    memcpy(saved, cpu->gpr, sizeof saved);
+    uint32_t pc = cpu->pc;
+    cpu->gpr[4] = index; cpu->gpr[31] = NESTED_RETURN; cpu->pc = 0;
+    psx_savestate_hold++;                     /* no save state inside the nested call (as the Expanded's) */
+    psx_dispatch_call(cpu, ANNOUNCE, NESTED_RETURN);
+    psx_savestate_hold--;
+    memcpy(cpu->gpr, saved, sizeof saved);
+    cpu->pc = pc;
+}
+static void announce_round(CPUState *cpu) {
+    static unsigned said;                     /* (the fight's frame) of the last word said: once each */
+    if (!in_match() || psx_mod_read_half(SCREEN) != FIGHT) return;
+    unsigned round = psx_mod_read_word(ROUND_NOW), last = psx_mod_read_half(ROUND_LAST);
+    unsigned t = psx_mod_read_word(INTRO_COUNTER), first = round == 1, index = 0;
+    if (!round) return;
+    if (t == (first ? 61u : 1u)) index = round >= last ? SAY_FINAL : SAY_ROUND;
+    else if (t == (first ? 100u : 40u) && round < last && round <= ROUND_NUMBERS_N)
+        index = psx_mod_read_half(ROUND_NUMBERS + 2 * round);
+    if (!index) return;
+    unsigned key = (psx_mod_read_half(0x800afa4c) << 16) ^ index;
+    if (key == said) return;
+    said = key;
+    tmst_log("tournament: the announcer's %s (round %u of %u)", index == SAY_FINAL ? "FINAL ROUND" :
+             index == SAY_ROUND ? "ROUND" : "number", round, last);
+    announce(cpu, index);
+}
+extern void __tmst_chain_func_8003DA8C(CPUState *cpu);
+#ifdef TMST_BRIDGE_func_8003DA8C
+extern void __real_func_8003DA8C(CPUState *cpu);
+void __tmst_chain_func_8003DA8C(CPUState *cpu) { __real_func_8003DA8C(cpu); }
+#endif
+void __wrap_func_8003DA8C(CPUState *cpu) {
+    if (cpu->pc == 0 || cpu->pc == ROUND_INTRO) announce_round(cpu);
+    __tmst_chain_func_8003DA8C(cpu);
 }
 
 /* ---- the boss intro ------------------------------------------------------------ */
