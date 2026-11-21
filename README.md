@@ -270,7 +270,8 @@ experimental). You need a Tekken 3 Expanded that has been set up once with its o
 add-on's ZIP for your platform from the [latest release](https://github.com/ttanko96/t3-expanded-addons/releases/latest)
 (`TMST-<version>-Windows.zip`, `-macOS.zip` or `-Linux.zip`; or `git clone` this repository) and about 1 GB of free
 space: the Jukebox's music takes it in `addons/tmst/workspace/`
-(Tekken 1 and 2 about 320 MB, TTT about 280 MB, Tekken 5 DR about 210 MB; Tekken 1, 2, TTT console and Tekken 5 DR
+(Tekken 1 and 2 from the Tekken 2 disc about 320 MB, the Tekken 1 disc's about 90 MB, TTT about 280 MB, Tekken 5 DR
+about 210 MB; Tekken 1, 2, TTT console and Tekken 5 DR
 keep the games' own ADPCM, which the Jukebox decodes as it plays).
 
 ### Tekken 3 Expanded 1.5.0 and later
@@ -284,8 +285,8 @@ The Expanded builds add-ons in by itself
 2. **Start the Expanded's setup and click Update & play.** It runs the add-on's setup (the Jukebox's music, and the
    Tekken 2 content from a disc it already knows), then builds the game with the add-on. Its mods show in the
    launcher's **Mods** page, in the **TMST** group.
-3. **The Tekken 2 disc** (optional): Update & play asks nothing, so give it once with `Setup TMST` (step 3 below for
-   your platform); every later Update & play reuses it.
+3. **The Tekken 1 and Tekken 2 discs** (optional): Update & play asks nothing, so give them once with `Setup TMST`
+   (step 3 below for your platform); every later Update & play reuses them.
 
 If the add-on cannot be set up or built with your release, the setup leaves it out, builds the game without it and
 says so (`.setup/setup.log` tells why): the game stays playable.
@@ -396,7 +397,7 @@ downloads Google's Android tools, about 1 GB, into `.setup/android`).
    "C:\<your_folder>\tekken3-expanded\addons\tmst\Build Android APK (TMST).cmd" --install
    ```
 
-- **The Jukebox's music:** the Tekken 1, 2, TTT and Tekken 5 DR music is in the APK (about 800 MB). The phone unpacks it
+- **The Jukebox's music:** the Tekken 1, 2, TTT and Tekken 5 DR music is in the APK (about 900 MB). The phone unpacks it
   at the install, so it needs about that much free space again. Add `--no-music` to leave it out: the Jukebox then
   shows only the Tekken 3 disc's music.
 - **Photo Mode** works, but its pictures stay in the game's private storage on the phone: they cannot be copied off
