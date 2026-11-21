@@ -75,6 +75,8 @@
 #include <string.h>
 
 void tmst_tekken2_view(const CPUState *cpu, double r[3][3], double *ofx, double *ofy, double *h);
+/* ... and the game's drawing area in the fight (E3, E4; issue #25). */
+void tmst_tekken2_game_area(uint32_t *e3, uint32_t *e4);
 /* src/tekken2/tmst_tekken2_extras.c: the packet memory the GPU lets read the
  * upper VRAM half (the Remake's extras', never drawn in our fights) */
 uint32_t tmst_tekken2_trusted_memory(unsigned parity, uint32_t *size);
@@ -524,12 +526,14 @@ static void screen_copy(uint32_t base, unsigned parity) {
             psx_mod_write_word(w + 32, xy(dx1, dy1));
             psx_mod_write_word(w + 36, v1 << 8 | u1);
         }
-    /* back to the game's drawing area: the whole screen, its offset its DRAWENV's */
-    uint32_t back = q + COPY_PIECES * COPY_PIECE_WORDS * 4;
+    /* back to the game's drawing area (its DRAWENV's, not the whole screen:
+     * issue #25), its offset its DRAWENV's */
+    uint32_t back = q + COPY_PIECES * COPY_PIECE_WORDS * 4, e3, e4;
+    tmst_tekken2_game_area(&e3, &e4);
     int ox = (int16_t)psx_mod_read_half(0x800a8f14u + 8), oy = (int16_t)psx_mod_read_half(0x800a8f14u + 10);
     psx_mod_write_word(back, (uint32_t)(COPY_BACK_WORDS - 1) << 24 | (e & 0xffffffu));
-    psx_mod_write_word(back + 4, 0xe3000000u);
-    psx_mod_write_word(back + 8, 0xe4000000u | 479u << 10 | 367u);
+    psx_mod_write_word(back + 4, e3);
+    psx_mod_write_word(back + 8, e4);
     psx_mod_write_word(back + 12, 0xe5000000u | (uint32_t)(oy & 0x7ff) << 11 | (uint32_t)(ox & 0x7ff));
     psx_mod_write_word(link, (e & 0xff000000u) | (pk & 0xffffffu));
 }
