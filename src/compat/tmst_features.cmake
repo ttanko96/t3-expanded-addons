@@ -102,6 +102,17 @@ function(tmst_detect_features out)
             list(APPEND _defs "TMST_HAS_WOLF_CINE=1")
         endif()
     endif()
+    # The guest's generation (src/tekken3_ttt1_roster.c, built with TTT1
+    # Characters): Big Head Mode moves it when its row turns the voices up or
+    # down, so the guest's voice bank is read again (Local #2).
+    set(_text "")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/src/tekken3_ttt1_roster.c")
+        file(READ "${CMAKE_SOURCE_DIR}/src/tekken3_ttt1_roster.c" _text)
+    endif()
+    string(FIND "${_text}" "unsigned tekken3_guest_generation(unsigned player){" _at)
+    if(NOT _at EQUAL -1 AND (NOT DEFINED TEKKEN3_TTT1_CHARACTERS OR TEKKEN3_TTT1_CHARACTERS))
+        list(APPEND _defs "TMST_HAS_GUEST_GENERATION=1")
+    endif()
     # The CPU's TTT1 models and guest costumes (tmst.tournament: the player's
     # costume for the opponents): the three asked of src/tekken3_native_moves.c.
     set(_moves "")

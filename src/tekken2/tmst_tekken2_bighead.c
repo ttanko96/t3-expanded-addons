@@ -28,8 +28,10 @@
  * hands it a copy of that bank with every sample 3 semitones up (linear
  * interpolation, as the Expanded's B140 does), written beside the memory
  * card (t2-bighead-voices.juv). The bank follows the guest's generation,
- * bumped at each pick at the selector: the row's change counts from the
- * next pick on.
+ * bumped only when the cursor goes to another guest: the row turned OFF
+ * with the same guest kept the raised bank (Local #2, the user's report,
+ * 2026-11-21), so the generation is moved here too when the row turns the
+ * voices up or down (__wrap_tekken3_guest_generation).
  *
  * Tekken 3: the fighter's drawing (0x8003AFCC, from 0x8003A818) takes each
  * bone in turn: its world matrix built in a scratch matrix (0x8003B5C0),
@@ -358,6 +360,24 @@ static int voices_on(void) {
     uint32_t m = psx_mod_read_word(MODE);
     return m <= 31 && (ROW_MODES >> m & 1u);
 }
+
+#ifdef TMST_HAS_GUEST_GENERATION
+/* Local #2: the guest's voice bank (src/tekken3_ttt1_voices.c load_bank) is
+ * read again only when tekken3_guest_generation changes, and the roster
+ * moves it only for another guest. One more each time voices_on() turns,
+ * so the next fight reads the bank again: raised or as it is. The models
+ * (src/tekken3_ttt1_mod.c follow_models) read it too and are loaded once
+ * more, as at a move to another guest; the row turns only out of the fight. */
+unsigned __real_tekken3_guest_generation(unsigned player);
+unsigned __wrap_tekken3_guest_generation(unsigned player) {
+    static int was = -1;
+    static unsigned turns;
+    int on = voices_on();
+    if (was >= 0 && on != was) turns++;
+    was = on;
+    return __real_tekken3_guest_generation(player) + turns;
+}
+#endif
 
 static uint32_t le32(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 static void put32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
