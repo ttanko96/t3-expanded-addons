@@ -77,9 +77,13 @@
  * Survival's next opponent on the same arena, has the engine read the pack
  * again (fight_start(): the switch, as for another stage).
  *
- * GAME OPTION's TEKKEN 2 STAGES row: CLASSIC, REMAKE. REMAKE draws the
- * Classic's packs while mods/t2-stages/remake has none (the user's choice,
- * 2026-11-03). The choices are kept beside the memory card in t2-stages.txt
+ * GAME OPTION's TEKKEN 2 STAGES row: CLASSIC, REMAKE, PERFORMANCE. REMAKE
+ * draws the Classic's packs while mods/t2-stages/remake has none (the
+ * user's choice, 2026-11-03); PERFORMANCE the Remake's with less on them
+ * (mods/t2-stages/performance, tools/t2_performance_stages.py: issue #13,
+ * the user's, 2026-11-21), drawn as the Remake's in every way (their
+ * extras, Unknown's packs, the anchor), the Classic's while it has none.
+ * TEKKEN 1 STAGES has the first two. The choices are kept beside the memory card in t2-stages.txt
  * ("vs on 13", "practice off random", "version classic").
  *
  * Tournament Mode (src/tournament/tmst_tournament.c, its matches only): the
@@ -175,10 +179,17 @@ enum { LINE_VS, LINE_PRACTICE, LINES };
 static const char *const line_words[LINES] = { "vs", "practice" };
 /* NIGHT: not a choice, what the engine holds in the dark arena (the Classic's
  * pack, its floor lit round the fighters) */
-enum { CLASSIC, REMAKE, VERSIONS, NIGHT = VERSIONS };
-static const char *const version_words[VERSIONS] = { "classic", "remake" };
-static const char *const held_words[VERSIONS + 1] = { "classic", "remake", "night" };
-static const char *const version_labels[VERSIONS] = { "CLASSIC", "REMAKE" };
+enum { CLASSIC, REMAKE, PERFORMANCE, VERSIONS, NIGHT = VERSIONS, T1_VERSIONS = PERFORMANCE };
+static const char *const version_words[VERSIONS] = { "classic", "remake", "performance" };
+static const char *const held_words[VERSIONS + 1] = { "classic", "remake", "performance", "night" };
+static const char *const version_labels[VERSIONS] = { "CLASSIC", "REMAKE", "PERFORMANCE" };
+/* the Remake's packs or the Performance's: drawn the same way */
+static int remake_like(int v) { return v == REMAKE || v == PERFORMANCE; }
+static int version_of(const char *word, int count) {
+    for (int v = 0; v < count; v++)
+        if (!strcmp(word, version_words[v])) return v;
+    return CLASSIC;
+}
 /* What the engine holds for an arena: the game's own pack, the empty one, or
  * Tekken 2's stage n (0..22). */
 enum { HELD_NONE = -3, HELD_BLANK = -2, HELD_REAL = -1 };
@@ -374,10 +385,10 @@ static int version_made_of(int g, int v) {
     return made[g][v] > 0;
 }
 static int version_made(int v) { return version_made_of(G_T2, v); }
-/* The version drawn for the fight's game: REMAKE's packs only once they exist. */
+/* The version drawn for the fight's game: REMAKE's (PERFORMANCE's) packs only once they exist. */
 static int drawn_version_of(int g) {
     int v = g == G_T1 ? version1 : version;
-    return v == REMAKE && version_made_of(g, REMAKE) ? REMAKE : CLASSIC;
+    return remake_like(v) && version_made_of(g, v) ? v : CLASSIC;
 }
 static int drawn_version(void) { return drawn_version_of(fight >= 0 ? game_of(fight) : G_T2); }
 /* Tekken 3's own packs (tekken3.zip), any of the 13 (cached). */
@@ -419,14 +430,15 @@ static const uint8_t *section(const uint8_t *b, long size, const char *id, uint3
     return NULL;
 }
 
-/* A "wolf_cut" stage's Remake pack for Unknown's fights (stageNNw.ast: its
- * background's top cut, off her wolf; tools/t2_remake_stages.py wolf_name()),
- * when she is one of the fight's fighters and the stage has one: 1, its path
- * into out (out may be NULL). The whole one otherwise. */
-static int wolf_pack(int stage, char *out, size_t size) {
-    if (stage < 0 || stage >= STAGES || !tmst_compat_unknown_fights()) return 0;
+/* A "wolf_cut" stage's Remake (Performance) pack for Unknown's fights
+ * (stageNNw.ast: its background's top cut, off her wolf;
+ * tools/t2_remake_stages.py wolf_name()), when she is one of the fight's
+ * fighters and the stage has one: 1, its path into out (out may be NULL).
+ * The whole one otherwise. */
+static int wolf_pack(int v, int stage, char *out, size_t size) {
+    if (!remake_like(v) || stage < 0 || stage >= STAGES || !tmst_compat_unknown_fights()) return 0;
     char name[64], path[1100];
-    snprintf(name, sizeof name, "%s/stage%02dw.ast", version_words[REMAKE], stage);
+    snprintf(name, sizeof name, "%s/stage%02dw.ast", version_words[v], stage);
     our_path(name, path, sizeof path);
     if (!there(path)) return 0;
     if (out) snprintf(out, size, "%s", path);
@@ -443,7 +455,7 @@ static FILE *hand_over(int stage, int n, int held_as, const char *mode) {
     char from[1100], to[1100];
     long size = 0;
     pack_path(held_as == NIGHT ? CLASSIC : held_as, stage, from, sizeof from);
-    int wolf = held_as == REMAKE && wolf_pack(stage, from, sizeof from);
+    int wolf = wolf_pack(held_as, stage, from, sizeof from);
     uint8_t *b = read_all(from, &size);
     if (!b) return NULL;
     uint16_t number = (uint16_t)n;
@@ -619,8 +631,8 @@ static void load(void) {
     char key[16], a[16], b[16], line[64];
     while (fgets(line, sizeof line, f)) {
         int n = sscanf(line, "%15s %15s %15s", key, a, b);
-        if (n == 2 && !strcmp(key, "version")) version = !strcmp(a, "remake") ? REMAKE : CLASSIC;
-        if (n == 2 && !strcmp(key, "t1version")) version1 = !strcmp(a, "remake") ? REMAKE : CLASSIC;
+        if (n == 2 && !strcmp(key, "version")) version = version_of(a, VERSIONS);
+        if (n == 2 && !strcmp(key, "t1version")) version1 = version_of(a, T1_VERSIONS);
         for (int i = 0; n == 2 && i < LINES; i++) {
             char k1[24], k2[24];
             snprintf(k1, sizeof k1, "%s-game", line_words[i]);
@@ -687,7 +699,7 @@ static void fight_extras(void) {
     tmst_tekken1_layers_clear();
     pack_path(drawn_version(), fight, path, sizeof path);
     /* the pack the engine gets (hand_over()): its animations' places are its own */
-    extras_wolf = drawn_version() == REMAKE && wolf_pack(fight, path, sizeof path);
+    extras_wolf = wolf_pack(drawn_version(), fight, path, sizeof path);
     uint8_t *b = read_all(path, &size);
     if (!b) return;
     uint32_t len = 0;
@@ -817,7 +829,7 @@ int tmst_tekken2_drawn(void) { return drawn(); }
 /* ... a Tekken 1 pack, drawn now (src/tekken1/tmst_tekken1_stages.c). */
 int tmst_tekken1_drawn(void) { return fight >= 0 && game_of(fight) == G_T1 && drawn(); }
 /* ... a Remake pack, drawn now (src/tekken2/tmst_tekken2_anchor.c). */
-int tmst_tekken2_remake_drawn(void) { return drawn() && held_version == REMAKE; }
+int tmst_tekken2_remake_drawn(void) { return drawn() && remake_like(held_version); }
 int32_t tmst_tekken2_fixed_period(void) { return fixed_period; }
 /* ... and its walls: the shapes (6 halfwords each), their count, the fighters' radius (cm). */
 const int16_t *tmst_tekken2_walls(int *n, int *radius) {
@@ -1270,7 +1282,7 @@ static void menu(void) {
      * user's, 2026-11-19: nothing to choose before; its code stays) */
     if (row1 == -2) {
         row1 = game_ready(G_T1) && version_made_of(G_T1, REMAKE)
-             ? tekken3_game_options_add("TEKKEN 1 STAGES", version_labels, VERSIONS, (unsigned)version1, CLASSIC,
+             ? tekken3_game_options_add("TEKKEN 1 STAGES", version_labels, T1_VERSIONS, (unsigned)version1, CLASSIC,
                                         ROW1_MODES) : -1;
         if (row1 < 0 && game_ready(G_T1)) tmst_log("tekken2: TEKKEN 1 STAGES row hidden (no Remake packs yet)");
         shown1 = version1;
@@ -1280,10 +1292,10 @@ static void menu(void) {
         shown = version = v;
         save();
         tmst_log("tekken2: TEKKEN 2 STAGES set to %s%s", version_labels[v],
-                 v == REMAKE && !version_made(REMAKE) ? " (no Remake packs yet: Classic drawn)" : "");
+                 remake_like(v) && !version_made(v) ? " (no such packs yet: Classic drawn)" : "");
     }
     v = row1 >= 0 ? tekken3_game_options_value(row1) : -1;
-    if (v >= 0 && v < VERSIONS && v != shown1) {
+    if (v >= 0 && v < T1_VERSIONS && v != shown1) {
         shown1 = version1 = v;
         save();
         tmst_log("tekken2: TEKKEN 1 STAGES set to %s%s", version_labels[v],
@@ -1304,7 +1316,7 @@ static void fight_start(void) {
      * hers and she gone: Team Battle's next member, Survival's next
      * opponent, on the same arena; wolf_pack()) */
     int stale = held_arena == arena && (held != want || (want >= 0 && held_version != as) ||
-                                        (want >= 0 && as == REMAKE && held_wolf != wolf_pack(fight, NULL, 0)));
+                                        (want >= 0 && held_wolf != wolf_pack(as, fight, NULL, 0)));
     int refused = want >= 0 && tried == arena && held_arena != arena;
     if (!stale && !refused) return;
     /* an arena the engine will load: not this one, not the one it holds, not
@@ -1316,7 +1328,7 @@ static void fight_start(void) {
     if (to < 0) return;
     switch_back = arena;
     switch_want = to;
-    int wolf = want >= 0 && as == REMAKE && wolf_pack(fight, NULL, 0);
+    int wolf = want >= 0 && wolf_pack(as, fight, NULL, 0);
     tmst_log("tekken2: the engine holds %s (%s%s) for arena %d, %s (%s%s) wanted: arena %d until it loads that one",
              held == HELD_REAL ? "the game's pack" : held == HELD_BLANK ? "the empty pack" : held >= 0 ? names[held]
              : "nothing", held >= 0 ? held_words[held_version] : "-", held >= 0 && held_wolf ? ", Unknown's" : "", arena,

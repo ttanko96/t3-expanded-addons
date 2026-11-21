@@ -35,6 +35,7 @@ STEP_TEXT = {
     'tekken2_stages': ('Making the Tekken 2 stages', 'From your Tekken 2 disc: its backgrounds and floors. A few seconds.'),
     'tekken2_remake_pictures': ('Opening the Tekken 2 Remake backgrounds', 'With your Tekken 2 disc. A few seconds.'),
     'tekken2_remake_stages': ('Building the Tekken 2 Remake stages', 'From your Tekken 2 disc and tekken3.zip: the remade stages. A few minutes.'),
+    'tekken2_performance_stages': ('Making the Tekken 2 Performance stages', 'The Remake stages with less on them, for slower computers; a few built again with less scenery. A minute or two.'),
     'ttt_ps2_music': ('Making the Jukebox’s TTT console music', 'From the TTT PS2 music the Expanded’s setup imported. The first time takes a minute.'),
     'ttt_arcade_music': ('Making the Jukebox’s TTT arcade music', 'Rendered from tektagt.zip’s music with the Expanded’s compiler.'),
     'tekken5dr_music': ('Making the Jukebox’s Tekken 5 DR music', 'From the Dark Resurrection ISO the Expanded’s setup was given.'),

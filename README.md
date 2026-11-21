@@ -154,7 +154,7 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
   newcomer on one that suits it (Xiaoyu and Jin in the school outfit at the school). **RANDOM** draws a fighter's
   Tekken 2 stage too: one chance in four with Tekken 1 Content's Stages on, in three without. The STAGE line and
   Tournament Mode come first.
-- **Version:** GAME OPTION's **TEKKEN 2 STAGES** row, **CLASSIC** or **REMAKE**.
+- **Version:** GAME OPTION's **TEKKEN 2 STAGES** row, **CLASSIC**, **REMAKE** or **PERFORMANCE**.
 - **Light:** on both versions the fighters are lit by daylight, dimmed only on the dark stages (Church, Pagoda,
   Serene Forest, Taj Mahal, Mirror and Eternal Darkness).
 
@@ -188,6 +188,26 @@ Tekken 2's 23 stages, drawn by the game's stage engine as Tekken 3 arcade's are.
   Darkness have the top of their background trimmed, so that her wolf and the add-on's letters keep their room in the
   video memory. In every other fight, these stages show the whole background. Hong Kong is always trimmed. In
   Tournament Mode's team fights, the stage switches when she comes in or leaves.
+
+**Performance**
+- **The Remake, lighter:** for slower computers. The setup makes it from the Remake's stages, which stay as they
+  are.
+- **What it leaves out:**
+  - the grass on the ground (Morning Fields, Serene Forest, Cambodian Wetlands, Athens, Hills, Arizona);
+  - the birds and the other animals: Grand Canyon's eagle, the birds of Szechwan, Beach, London and Korean, the
+    flocks over Kyoto and the Great Wall, Launch Pad's drones, the rabbits, pigeons, crabs, lizards and spiders;
+  - Hong Kong's helicopter, flags and neon sign, Akihabara's ship, Cambodian Wetlands' boat and nets;
+  - New York's lit windows and newspapers, Nowhere Desert's tumbleweeds and dust devil, the Pagoda statue's
+    glowing eyes, the Great Wall beacon's fire and smoke, Launch Pad's steam, Mirror Darkness's fog;
+  - the butterflies, dragonflies and glowing insects of Szechwan, the Great Wall, Serene Forest and the Taj Mahal,
+    and fewer petals and leaves there and on Morning Fields;
+  - less scenery: Szechwan (every other bamboo clump, a third of the tufts, no sheaves), Church (no pillars, pews
+    or candelabra, one chandelier: the fighters walk where the pews stood), the Pagoda (none), the Great Wall (no
+    banners), Cambodian Wetlands (no naga balustrade), Athens (no flag, Parthenon colonnade or steles), the Taj Mahal
+    (no fountains, oil lamps or jali screens), London (no phone box), Korean (no lotus lanterns, a third of the tufts).
+- **What stays:** the backgrounds and their animations, the rest of the scenery, the rain, the lightning.
+- **More speed:** most of the game's time on a slow graphics chip goes to the picture, not the stage. In the launcher, set
+  **Supersampling** lower and **Antialiasing** off.
 
 #### Wireframe Mode
 Tekken 2's hidden Wireframe Mode: your fighter drawn in glowing green lines, no fill, and the camera just behind its
